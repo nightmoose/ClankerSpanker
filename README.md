@@ -18,6 +18,20 @@ GrokDispatch/          # repo folder (historical name)
 └── shared/
 ```
 
+## Git
+
+This folder is a git repo (`main`). Host token and session data stay **outside** the repo (`~/.grok-dispatch/`).
+
+```bash
+cd ~/Projects/GrokDispatch
+git status
+git log --oneline
+# roll back working tree to last commit (destructive to uncommitted edits):
+#   git checkout -- .
+# roll back to a tag:
+#   git switch --detach v0.2.3
+```
+
 ## 1. Host (Mac Mini)
 
 ```bash

@@ -1,15 +1,16 @@
 {
-  "name": "grok-dispatch-host",
-  "version": "0.1.0",
+  "name": "clankerspanker-host",
+  "version": "0.3.0",
   "private": true,
-  "description": "Local-first host gateway for Grok Dispatch (iPhone → Mac Mini Grok Build)",
+  "description": "Local-first host gateway for ClankerSpanker (browser + iOS → Grok Build / Claude Code)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "install-service": "bash scripts/install-service.sh"
   },
   "engines": {
     "node": ">=20"

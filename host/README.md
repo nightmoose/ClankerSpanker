@@ -1,30 +1,39 @@
-# Grok Dispatch Host
+# ClankerSpanker Host
 
-Thin local gateway on your Mac Mini. The iPhone app talks REST + WebSocket over Tailscale; this process speaks ACP to `grok agent stdio`.
+Cross-platform local gateway. Clients (browser UI or iOS app) talk REST + WebSocket over LAN / Tailscale; this process drives **Grok Build** (ACP) and **Claude Code** on the machine where the code lives.
+
+Works on **macOS**, **Linux**, and (with agents installed) **Windows** via `npm start`. User-service install helpers exist for macOS launchd and Linux systemd.
 
 ## Quick start
 
 ```bash
 cd host
 npm install
-npm run dev
+npm run dev          # or: npm run build && npm start
 ```
 
-On first run a config is written to `~/.grok-dispatch/config.json` including a **host token**. Put that token in the iOS app.
+First run writes `~/.grok-dispatch/config.json` including a **host token**.
 
-### Production
+| URL | Purpose |
+|-----|---------|
+| `http://<host>:8787/app/` | Browser control plane |
+| `http://<host>:8787/setup` | Token + deep link for iOS |
+| `http://<host>:8787/health` | Liveness |
+
+### Run as a background service
 
 ```bash
-npm install
-npm run build
-npm start
-# or install as a login item:
-./scripts/install-launchd.sh
+./scripts/install-service.sh   # macOS → launchd, Linux → systemd --user
 ```
+
+Or OS-specific:
+
+- macOS: `./scripts/install-launchd.sh`
+- Linux: `./scripts/install-systemd-user.sh`
 
 ## API
 
-All routes except `GET /health` require:
+All routes except `GET /health`, `GET /`, `GET /setup`, `GET /app/*`, and `GET /connect.json` require:
 
 ```
 Authorization: Bearer <hostToken>
@@ -33,38 +42,23 @@ Authorization: Bearer <hostToken>
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Liveness |
+| GET | `/app/` | Browser UI |
 | POST | `/auth/validate` | Check token |
 | GET | `/projects` | Allowlisted project dirs |
-| GET | `/sessions` | Dispatched sessions |
-| GET | `/sessions/:id` | Detail + transcript + pending approval |
+| GET | `/sessions` | Active + archived + disk hints |
+| GET | `/sessions/:id` | Detail + transcript + pending approval/question |
 | GET | `/sessions/:id/diff` | `git diff HEAD` in session cwd |
 | POST | `/dispatch` | Start a task |
-| POST | `/sessions/:id/prompt` | Follow-up on live session |
-| POST | `/sessions/:id/approve` | `{ approvalId, optionId?, comment? }` |
-| POST | `/sessions/:id/reject` | `{ approvalId, optionId?, comment? }` |
+| POST | `/sessions/attach` | Resume Grok disk session |
+| POST | `/sessions/attach-claude` | Resume Claude / hand off to Grok |
+| POST | `/sessions/:id/prompt` | Follow-up |
+| POST | `/sessions/:id/approve` | Tool approval |
+| POST | `/sessions/:id/reject` | Tool rejection |
+| POST | `/sessions/:id/answer-questions` | Questionnaire answers |
+| POST | `/sessions/:id/archive` | Soft-archive |
+| POST | `/sessions/:id/unarchive` | Restore |
 | POST | `/sessions/:id/cancel` | Cancel |
-| WS | `/ws?token=<hostToken>` | Live `event` stream |
-
-### Dispatch body
-
-```json
-{
-  "prompt": "Add a settings toggle for dark mode",
-  "projectId": "grok-dispatch",
-  "planMode": true,
-  "worktree": true,
-  "subagents": true,
-  "model": "grok-build"
-}
-```
-
-## Security model
-
-- Bind is `0.0.0.0:8787` by default — **only expose on Tailscale**, not the public internet.
-- Host token authenticates the phone.
-- Mac-side Grok auth uses your existing `grok login` / `XAI_API_KEY`.
-- File edits and dangerous tools require phone approval. Reads/searches auto-approve (`autoApproveKinds` in config).
-- Never starts Grok with `--always-approve` / yolo.
+| WS | `/ws?token=<hostToken>` | Live event stream |
 
 ## Config
 
@@ -75,15 +69,23 @@ Authorization: Bearer <hostToken>
   "hostToken": "…",
   "bindHost": "0.0.0.0",
   "bindPort": 8787,
-  "grokBinary": "/Users/you/.grok/bin/grok",
+  "grokBinary": "grok",
   "projects": [
-    { "id": "my-app", "name": "My App", "path": "/Users/you/Projects/MyApp" }
+    { "id": "my-app", "name": "My App", "path": "/home/you/code/my-app" }
   ],
   "allowCustomPaths": true,
-  "autoApproveKinds": ["read", "search", "think", "fetch", "other"],
-  "notifyMac": true,
-  "dataDir": "/Users/you/.grok-dispatch"
+  "autoApproveKinds": ["read", "search", "think", "fetch"],
+  "notifyDesktop": true,
+  "dataDir": "/home/you/.grok-dispatch"
 }
 ```
 
-Env overrides: `GROK_DISPATCH_HOST`, `GROK_DISPATCH_PORT`, `GROK_DISPATCH_TOKEN`, `GROK_BINARY`, `GROK_DISPATCH_CONFIG`.
+- `notifyDesktop` — OS notifications (macOS/Linux/Windows best-effort). Legacy key `notifyMac` still accepted.
+- Env: `GROK_DISPATCH_HOST`, `GROK_DISPATCH_PORT`, `GROK_DISPATCH_TOKEN`, `GROK_BINARY`, `GROK_DISPATCH_CONFIG`, `GROK_DISPATCH_LAN_URL` (advertised URL on setup page when browsing via localhost).
+
+## Security
+
+- Bind is `0.0.0.0:8787` by default — **Tailscale or LAN only**, not the public internet.
+- Bearer host token authenticates browser and phone.
+- Agent auth is whatever is already configured on the host (`grok login`, Claude CLI, etc.).
+- Never starts Grok with `--always-approve` / yolo for write/execute tools.

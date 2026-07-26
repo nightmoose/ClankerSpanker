@@ -27,7 +27,7 @@ import {
   gitDiff,
   listClaudeSessions,
 } from "../sessions/reader.js";
-import { notifyMac } from "../notify/local.js";
+import { notifyDesktop } from "../notify/local.js";
 import { AcpClient } from "./client.js";
 import { ClaudeRunner } from "../claude/runner.js";
 
@@ -1384,7 +1384,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private maybeNotify(title: string, message: string): void {
-    if (this.config.notifyMac) notifyMac(title, message);
+    if (this.config.notifyDesktop ?? this.config.notifyMac) notifyDesktop(title, message);
   }
 
   async shutdown(): Promise<void> {

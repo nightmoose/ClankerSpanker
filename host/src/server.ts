@@ -1,4 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { extname, join, normalize, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { HostConfigFile } from "./types.js";
@@ -15,6 +18,21 @@ import type {
 import { isAuthorized, unauthorizedBody } from "./auth.js";
 import { SessionManager } from "./acp/session-manager.js";
 import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
+import { preferredClientHost } from "./platform.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+/** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
+const WEB_ROOT = (() => {
+  const candidates = [
+    join(__dirname, "web"),
+    join(__dirname, "../web"),
+    join(__dirname, "../../web"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(join(c, "index.html"))) return c;
+  }
+  return join(__dirname, "../web");
+})();
 
 type WsClient = WebSocket & { isAlive?: boolean };
 
@@ -84,8 +102,11 @@ export function startServer(config: HostConfigFile, manager: SessionManager) {
   });
 
   server.listen(config.bindPort, config.bindHost, () => {
-    console.log(`[server] Grok Dispatch Host listening on http://${config.bindHost}:${config.bindPort}`);
-    console.log(`[server] WebSocket: ws://${config.bindHost}:${config.bindPort}/ws?token=<hostToken>`);
+    const lan = preferredClientHost(config.bindPort);
+    console.log(`[server] ClankerSpanker host listening on http://${config.bindHost}:${config.bindPort}`);
+    console.log(`[server] Browser UI:  http://${lan}/app/`);
+    console.log(`[server] Setup page:  http://${lan}/setup`);
+    console.log(`[server] WebSocket:   ws://${config.bindHost}:${config.bindPort}/ws?token=<hostToken>`);
   });
 
   const shutdown = async () => {
@@ -129,11 +150,16 @@ async function handleHttp(
     return;
   }
 
-  // Phone-friendly setup page (local network / Tailscale only — do not expose publicly)
+  // Setup + landing (LAN / Tailscale only — do not expose publicly)
   if (method === "GET" && (path === "/setup" || path === "/")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(setupHtml(config, req));
     return;
+  }
+
+  // Browser control plane (same host as API)
+  if (method === "GET" && (path === "/app" || path.startsWith("/app/"))) {
+    if (serveWebStatic(req, res, path)) return;
   }
 
   if (method === "GET" && path === "/connect.json") {
@@ -480,16 +506,13 @@ function requestHost(req: IncomingMessage, config: HostConfigFile): string {
   const h = req.headers.host;
   if (h) {
     const lower = h.toLowerCase();
-    // Phone can't use 127.0.0.1 — rewrite to LAN IP if we know it
+    // Clients on another device can't use loopback — rewrite to a LAN/Tailscale address
     if (lower.startsWith("127.0.0.1") || lower.startsWith("localhost")) {
-      const lan = process.env.GROK_DISPATCH_LAN_URL?.replace(/^https?:\/\//, "");
-      if (lan) return lan.includes(":") ? lan : `${lan}:${config.bindPort}`;
-      // Common home LAN for this Mac Mini (updated by install script / env)
-      return `192.168.50.9:${config.bindPort}`;
+      return preferredClientHost(config.bindPort);
     }
     return h.includes(":") ? h : `${h}:${config.bindPort}`;
   }
-  return `192.168.50.9:${config.bindPort}`;
+  return preferredClientHost(config.bindPort);
 }
 
 function connectPayload(config: HostConfigFile, req: IncomingMessage) {
@@ -499,9 +522,45 @@ function connectPayload(config: HostConfigFile, req: IncomingMessage) {
     hostURL,
     hostToken: config.hostToken,
     deepLink: `clankerspanker://configure?url=${encodeURIComponent(hostURL)}&token=${encodeURIComponent(config.hostToken)}`,
+    webApp: `${hostURL}/app/`,
     projects: config.projects,
-    note: "Paste hostURL + hostToken into the Grok Dispatch app, or open the deepLink on your iPhone.",
+    note: "Use the browser UI at /app/, or paste hostURL + hostToken into the iOS app / deep link.",
   };
+}
+
+function serveWebStatic(req: IncomingMessage, res: ServerResponse, path: string): boolean {
+  // /app → /app/index.html ; /app/foo.js → web/foo.js
+  let rel = path.replace(/^\/app\/?/, "") || "index.html";
+  // prevent path traversal
+  rel = normalize(rel).replace(/^(\.\.(\/|\\|$))+/, "");
+  const filePath = resolve(WEB_ROOT, rel);
+  if (!filePath.startsWith(resolve(WEB_ROOT))) {
+    res.writeHead(403).end("Forbidden");
+    return true;
+  }
+  let target = filePath;
+  if (!existsSync(target) || statSync(target).isDirectory()) {
+    target = join(WEB_ROOT, "index.html");
+  }
+  if (!existsSync(target)) {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Web UI not found. Expected host/web/index.html next to the host package.");
+    return true;
+  }
+  const ext = extname(target).toLowerCase();
+  const types: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".json": "application/json",
+    ".ico": "image/x-icon",
+  };
+  const body = readFileSync(target);
+  res.writeHead(200, { "Content-Type": types[ext] ?? "application/octet-stream" });
+  res.end(body);
+  return true;
 }
 
 function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
@@ -509,6 +568,7 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
   const token = payload.hostToken;
   const url = payload.hostURL;
   const deep = payload.deepLink;
+  const webApp = payload.webApp;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -517,17 +577,17 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
   <title>ClankerSpanker Setup</title>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: -apple-system, system-ui, sans-serif; background:#0b0b10; color:#f2f2f7;
+    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#0b0b10; color:#f2f2f7;
       margin:0; padding:24px; line-height:1.45; }
     h1 { font-size:1.6rem; margin:0 0 8px; }
     p { color:#a1a1aa; margin:0 0 16px; }
     .card { background:#16161f; border:1px solid #2a2a36; border-radius:16px; padding:16px; margin:16px 0; }
     label { display:block; font-size:12px; color:#a1a1aa; margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em; }
-    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break:break-all; }
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break:break-all; }
     .value { background:#0b0b10; border-radius:12px; padding:12px; margin-bottom:10px; border:1px solid #2a2a36; }
     button, a.btn { display:block; width:100%; box-sizing:border-box; text-align:center;
       background:#73b8ff; color:#000; font-weight:700; border:0; border-radius:14px;
-      padding:14px 16px; margin:10px 0; text-decoration:none; font-size:16px; }
+      padding:14px 16px; margin:10px 0; text-decoration:none; font-size:16px; cursor:pointer; }
     a.btn.secondary { background:transparent; color:#fff; border:1px solid #3a3a4a; }
     .ok { color:#5fd68a; }
     .steps { padding-left:18px; color:#d4d4d8; }
@@ -536,7 +596,9 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
 </head>
 <body>
   <h1>ClankerSpanker</h1>
-  <p>Use these exact values in the iPhone app. Phone and Mac must be on the same Wi‑Fi or both on Tailscale. Controls Grok Build + Claude Code on this Mac.</p>
+  <p>Local-first control plane for Grok Build and Claude Code on this machine. Use the browser UI, or connect the iOS app over LAN / Tailscale.</p>
+
+  <a class="btn" href="${escapeHtml(webApp)}">Open browser UI</a>
 
   <div class="card">
     <label>1 · Host URL</label>
@@ -548,15 +610,15 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
     <button type="button" onclick="copy('token')">Copy Host token</button>
   </div>
 
-  <a class="btn" href="${escapeHtml(deep)}">Open &amp; auto-fill ClankerSpanker</a>
+  <a class="btn secondary" href="${escapeHtml(deep)}">Open iOS app (deep link)</a>
   <a class="btn secondary" href="#" onclick="copyBoth(); return false;">Copy both as text</a>
 
   <div class="card">
     <p class="ok">Host is online.</p>
     <ol class="steps">
-      <li>Copy Host URL and Host token (or tap auto-fill).</li>
-      <li>Leave <strong>xAI API key</strong> blank — the Mac already has Grok auth.</li>
-      <li>Tap <strong>Save &amp; connect</strong>.</li>
+      <li><strong>Browser:</strong> open the UI above — token is stored in this browser only.</li>
+      <li><strong>iOS:</strong> paste Host URL + token (or deep link). Leave xAI key blank if the host machine already has Grok auth.</li>
+      <li>Do not expose this port on the public internet.</li>
     </ol>
   </div>
 

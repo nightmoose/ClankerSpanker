@@ -1,19 +1,17 @@
-ClankerSpanker — paste into the iPhone app
-==========================================
+ClankerSpanker — connect a client
+=================================
 
-Host URL:
-http://192.168.50.9:8787
+1) Start the host (on the machine with your code):
+   cd host && npm run build && npm start
+   # or: ./scripts/install-service.sh
 
-Host token:
-(see ~/.grok-dispatch/config.json → hostToken)
+2) Open setup on that machine (or from phone on same LAN/Tailscale):
+   http://<host-ip>:8787/setup
 
-OR Safari on phone (same Wi‑Fi):
-http://192.168.50.9:8787/setup
+3) Clients:
+   - Browser UI:  http://<host-ip>:8787/app/
+   - iOS app: paste Host URL + token from /setup
+     Project: ios/GrokDispatch/ClankerSpanker.xcodeproj
+     Bundle:  com.nightmoose.clankerspanker
 
-Open project:
-ios/GrokDispatch/ClankerSpanker.xcodeproj
-
-Bundle ID: com.nightmoose.clankerspanker
-Team: NightMoose (XHS7K665C9)
-
-Note: Keychain service name changed with the rename — re-enter host URL + token once on onboarding.
+Do not expose port 8787 on the public internet.

@@ -73,7 +73,7 @@ struct SettingsView: View {
                     }
 
                     Section("About") {
-                        LabeledContent("App", value: "ClankerSpanker 0.2.3")
+                        LabeledContent("App", value: "ClankerSpanker 0.2.4")
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker")
                     }
                     .listRowBackground(DispatchColors.card)

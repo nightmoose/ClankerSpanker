@@ -40,16 +40,6 @@ struct DashboardView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
 
-                    if tab == .active {
-                        Picker("Active scope", selection: $showArchived) {
-                            Text("Inbox (\(appState.sessions.count))").tag(false)
-                            Text("Archived (\(appState.archivedSessions.count))").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                    }
-
                     if let err = vm.errorMessage ?? appState.lastRefreshError {
                         Text(err)
                             .font(.footnote)
@@ -70,7 +60,7 @@ struct DashboardView: View {
                     }
                 }
             }
-            .navigationTitle("ClankerSpanker")
+            .navigationTitle(showArchived && tab == .active ? "Archived" : "ClankerSpanker")
             .navigationDestination(for: String.self) { id in
                 SessionDetailView(sessionId: id)
             }
@@ -79,7 +69,15 @@ struct DashboardView: View {
             }
             .searchable(text: $search, prompt: searchPrompt)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if tab == .active {
+                        Button {
+                            showArchived.toggle()
+                        } label: {
+                            Image(systemName: showArchived ? "tray.full.fill" : "tray")
+                        }
+                        .accessibilityLabel(showArchived ? "Show inbox" : "Show archived")
+                    }
                     Button {
                         Task { await vm.load(appState: appState) }
                     } label: {

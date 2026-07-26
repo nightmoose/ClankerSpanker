@@ -2,9 +2,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { EventEmitter } from "node:events";
 import { findClaudeBinary } from "../sessions/reader.js";
+import { agentPathEnv } from "../platform.js";
 
 export interface ClaudeRunnerOptions {
   cwd: string;
@@ -68,7 +68,7 @@ export class ClaudeRunner extends EventEmitter {
       cwd: this.opts.cwd,
       env: {
         ...process.env,
-        PATH: `${homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}`,
+        PATH: agentPathEnv(),
         CLAUDE_DISPATCH_SESSION_ID: this.opts.dispatchSessionId,
         CLAUDE_DISPATCH_HOST: this.opts.hostBaseUrl,
         CLAUDE_DISPATCH_TOKEN: this.opts.hostToken,

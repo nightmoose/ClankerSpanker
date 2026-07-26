@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClankerSpanker</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="brand">
+        <span class="logo">ClankerSpanker</span>
+        <span id="conn" class="pill muted">offline</span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button type="button" data-tab="active" class="tab active">Active</button>
+        <button type="button" data-tab="grok" class="tab">Grok</button>
+        <button type="button" data-tab="claude" class="tab">Claude</button>
+        <button type="button" data-tab="compose" class="tab">Compose</button>
+      </nav>
+      <div class="actions">
+        <button type="button" id="btn-archived" class="icon-btn" title="Toggle archived">📥</button>
+        <button type="button" id="btn-refresh" class="icon-btn" title="Refresh">↻</button>
+        <button type="button" id="btn-settings" class="icon-btn" title="Connection">⚙</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section id="view-list" class="view"></section>
+      <section id="view-detail" class="view hidden"></section>
+      <section id="view-compose" class="view hidden"></section>
+      <section id="view-settings" class="view hidden"></section>
+    </main>
+
+    <p id="banner" class="banner hidden"></p>
+  </div>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

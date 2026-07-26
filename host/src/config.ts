@@ -4,31 +4,41 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostConfigFile, ProjectInfo } from "./types.js";
+import {
+  defaultProjectPathCandidates,
+  findGrokBinaryCandidates,
+  firstExistingBinary,
+} from "./platform.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = join(homedir(), ".grok-dispatch");
 const DEFAULT_CONFIG_PATH = join(DEFAULT_DATA_DIR, "config.json");
 
-// Note: do NOT include "other" — AskUserQuestion uses kind=other and must reach the phone.
+// Note: do NOT include "other" — AskUserQuestion uses kind=other and must reach the client.
 const DEFAULT_AUTO_APPROVE = ["read", "search", "think", "fetch"];
 
 function defaultProjects(): ProjectInfo[] {
-  const home = homedir();
-  // host/src → repo root is two levels up when running from source or dist/src mirror
-  const repoRoot = resolve(__dirname, "../..");
+  // host/src → host root when running from dist is host/dist → one up is host, two is repo
+  // When compiled: dist/config.js → ../.. = host package root; we want monorepo root if present
+  const hostRoot = resolve(__dirname, "..");
+  const repoRoot = resolve(hostRoot, "..");
   const candidates: ProjectInfo[] = [
     {
-      id: "grok-dispatch",
-      name: "Grok Dispatch",
-      path: repoRoot,
-    },
-    {
-      id: "projects",
-      name: "Projects",
-      path: join(home, "Projects"),
+      id: "clankerspanker",
+      name: "ClankerSpanker",
+      path: existsSync(join(repoRoot, "host")) ? repoRoot : hostRoot,
     },
   ];
-  // de-dupe by path
+  let i = 0;
+  for (const path of defaultProjectPathCandidates()) {
+    if (!existsSync(path)) continue;
+    candidates.push({
+      id: i === 0 ? "projects" : `projects-${i}`,
+      name: path.split(/[/\\]/).filter(Boolean).pop() ?? "Projects",
+      path,
+    });
+    i += 1;
+  }
   const seen = new Set<string>();
   return candidates.filter((p) => {
     if (!existsSync(p.path) || seen.has(p.path)) return false;
@@ -38,18 +48,7 @@ function defaultProjects(): ProjectInfo[] {
 }
 
 function findGrokBinary(): string {
-  const candidates = [
-    process.env.GROK_BINARY,
-    join(homedir(), ".grok/bin/grok"),
-    "/opt/homebrew/bin/grok",
-    "/usr/local/bin/grok",
-    "grok",
-  ].filter(Boolean) as string[];
-
-  for (const c of candidates) {
-    if (c === "grok" || existsSync(c)) return c;
-  }
-  return "grok";
+  return firstExistingBinary(findGrokBinaryCandidates(), "grok");
 }
 
 export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFAULT_CONFIG_PATH): HostConfigFile {
@@ -64,7 +63,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
       projects: defaultProjects(),
       allowCustomPaths: true,
       autoApproveKinds: DEFAULT_AUTO_APPROVE,
-      notifyMac: true,
+      notifyDesktop: true,
       dataDir: DEFAULT_DATA_DIR,
     };
     writeFileSync(configPath, JSON.stringify(created, null, 2) + "\n", "utf8");
@@ -73,7 +72,16 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     return created;
   }
 
-  const raw = JSON.parse(readFileSync(configPath, "utf8")) as Partial<HostConfigFile>;
+  const raw = JSON.parse(readFileSync(configPath, "utf8")) as Partial<HostConfigFile> & {
+    notifyMac?: boolean;
+  };
+  const notifyDesktop =
+    typeof raw.notifyDesktop === "boolean"
+      ? raw.notifyDesktop
+      : typeof raw.notifyMac === "boolean"
+        ? raw.notifyMac
+        : true;
+
   const merged: HostConfigFile = {
     hostToken: raw.hostToken ?? randomBytes(24).toString("hex"),
     bindHost: raw.bindHost ?? "0.0.0.0",
@@ -82,7 +90,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     projects: raw.projects?.length ? raw.projects : defaultProjects(),
     allowCustomPaths: raw.allowCustomPaths ?? true,
     autoApproveKinds: raw.autoApproveKinds ?? DEFAULT_AUTO_APPROVE,
-    notifyMac: raw.notifyMac ?? true,
+    notifyDesktop,
     dataDir: raw.dataDir ?? DEFAULT_DATA_DIR,
   };
 
@@ -112,7 +120,9 @@ export function resolveProjectPath(
     const resolved = resolve(cwd);
     if (!existsSync(resolved)) throw new Error(`cwd does not exist: ${resolved}`);
     if (!config.allowCustomPaths) {
-      const allowed = config.projects.some((p) => resolved === p.path || resolved.startsWith(p.path + "/"));
+      const allowed = config.projects.some(
+        (p) => resolved === p.path || resolved.startsWith(p.path + "/") || resolved.startsWith(p.path + "\\"),
+      );
       if (!allowed) throw new Error("Custom paths are disabled; pick an allowlisted project");
     }
     const match = config.projects.find((p) => p.path === resolved);

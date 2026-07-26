@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { EventEmitter } from "node:events";
+import { agentPathEnv } from "../platform.js";
 
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -72,8 +73,8 @@ export class AcpClient extends EventEmitter {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        // Ensure managed grok install is on PATH for child tools
-        PATH: `${process.env.HOME}/.grok/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}`,
+        // Agent binaries + common install locations for tools Grok may shell out to
+        PATH: agentPathEnv(),
       },
     });
 

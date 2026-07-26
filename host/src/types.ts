@@ -218,9 +218,15 @@ export interface HostConfigFile {
   grokBinary: string;
   projects: ProjectInfo[];
   allowCustomPaths: boolean;
-  /** Tool kinds that auto-approve without phone (default: read/search/think/fetch). */
+  /** Tool kinds that auto-approve without client (default: read/search/think/fetch). */
   autoApproveKinds: string[];
-  notifyMac: boolean;
+  /**
+   * Desktop OS notifications when a session needs attention.
+   * Prefer `notifyDesktop`. `notifyMac` is accepted as a legacy alias when loading config.
+   */
+  notifyDesktop: boolean;
+  /** @deprecated Use notifyDesktop */
+  notifyMac?: boolean;
   dataDir: string;
 }
 

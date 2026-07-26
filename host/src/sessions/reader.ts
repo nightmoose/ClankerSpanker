@@ -5,6 +5,7 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { findClaudeBinaryCandidates, firstExistingBinary } from "../platform.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -271,15 +272,5 @@ export async function gitDiff(cwd: string, maxBytes = 200_000): Promise<string> 
 }
 
 export function findClaudeBinary(): string {
-  const candidates = [
-    process.env.CLAUDE_BINARY,
-    join(homedir(), ".local/bin/claude"),
-    "/opt/homebrew/bin/claude",
-    "/usr/local/bin/claude",
-    "claude",
-  ].filter(Boolean) as string[];
-  for (const c of candidates) {
-    if (c === "claude" || existsSync(c)) return c;
-  }
-  return "claude";
+  return firstExistingBinary(findClaudeBinaryCandidates(), "claude");
 }

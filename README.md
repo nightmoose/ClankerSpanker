@@ -20,14 +20,17 @@ GrokDispatch/          # repo folder (historical name)
 
 ## Git
 
-This folder is a git repo (`main`). Host token and session data stay **outside** the repo (`~/.grok-dispatch/`).
+- **Remote (private):** https://github.com/nightmoose/ClankerSpanker  
+- Local folder name is still `GrokDispatch`; GitHub repo is `ClankerSpanker`.
+- Host token and session data stay **outside** the repo (`~/.grok-dispatch/`).
 
 ```bash
 cd ~/Projects/GrokDispatch
 git status
 git log --oneline
-# roll back working tree to last commit (destructive to uncommitted edits):
-#   git checkout -- .
+git push                      # after commits
+# roll back uncommitted edits:
+#   git restore .
 # roll back to a tag:
 #   git switch --detach v0.2.3
 ```

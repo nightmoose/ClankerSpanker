@@ -1,0 +1,19 @@
+ClankerSpanker — paste into the iPhone app
+==========================================
+
+Host URL:
+http://192.168.50.9:8787
+
+Host token:
+(see ~/.grok-dispatch/config.json → hostToken)
+
+OR Safari on phone (same Wi‑Fi):
+http://192.168.50.9:8787/setup
+
+Open project:
+ios/GrokDispatch/ClankerSpanker.xcodeproj
+
+Bundle ID: com.nightmoose.clankerspanker
+Team: NightMoose (XHS7K665C9)
+
+Note: Keychain service name changed with the rename — re-enter host URL + token once on onboarding.

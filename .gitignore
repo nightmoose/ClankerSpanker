@@ -1,0 +1,51 @@
+# Host
+host/node_modules/
+host/dist/
+host/*.log
+npm-debug.log*
+yarn-error.log*
+
+# Xcode / iOS
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/**/DerivedData/
+ios/**/build/
+ios/**/*.xcodeproj.bak/
+ios/**/*.xcodeproj.bak
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+.swiftpm/
+*.xccheckout
+*.xcscmblueprint
+
+# Local build scratch (CLI installs)
+/tmp/
+
+# Secrets / local env — never commit host tokens or keys
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+secrets/
+config.local.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

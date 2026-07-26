@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Grok Dispatch Host API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8787
+paths:
+  /health:
+    get:
+      summary: Liveness (no auth)
+  /auth/validate:
+    post:
+      summary: Validate host token
+      security: [{ bearerAuth: [] }]
+  /projects:
+    get:
+      summary: Allowlisted projects
+      security: [{ bearerAuth: [] }]
+  /sessions:
+    get:
+      summary: List dispatched sessions
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}:
+    get:
+      summary: Session detail
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/diff:
+    get:
+      summary: git diff in session cwd
+      security: [{ bearerAuth: [] }]
+  /dispatch:
+    post:
+      summary: Create and start a task
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/prompt:
+    post:
+      summary: Follow-up prompt on live session
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/approve:
+    post:
+      summary: Approve pending tool permission
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/reject:
+    post:
+      summary: Reject pending tool permission
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/cancel:
+    post:
+      summary: Cancel session
+      security: [{ bearerAuth: [] }]
+  /ws:
+    get:
+      summary: WebSocket event stream (?token=)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

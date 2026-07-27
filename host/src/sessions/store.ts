@@ -65,6 +65,11 @@ export class SessionStore {
       isLive,
       archived: s.archived === true,
       archivedAt: s.archivedAt,
+      backend: s.backend,
+      profileId: s.profileId,
+      profileName: s.profileName,
+      profileColor: s.profileColor,
+      claudeSessionId: s.claudeSessionId,
     };
   }
 

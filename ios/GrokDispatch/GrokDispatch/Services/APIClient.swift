@@ -18,6 +18,21 @@ enum APIError: LocalizedError {
     }
 }
 
+/// Credentials for one host machine.
+struct HostAuth: Sendable {
+    let baseURL: URL
+    let token: String
+
+    init(host: HostEndpoint) throws {
+        let raw = host.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let url = URL(string: raw) else { throw APIError.invalidURL }
+        let token = host.loadToken()
+        guard !token.isEmpty else { throw APIError.notConfigured }
+        self.baseURL = url
+        self.token = token
+    }
+}
+
 actor APIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -25,78 +40,79 @@ actor APIClient {
 
     init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForRequest = 120
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()
     }
 
-    private var baseURL: URL {
-        get throws {
-            guard let raw = KeychainHelper.loadString(key: KeychainHelper.Keys.hostURL)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty,
-                  let url = URL(string: raw)
-            else { throw APIError.notConfigured }
-            return url
-        }
+    // MARK: - Public API (host-scoped)
+
+    func health(host: HostEndpoint) async throws -> HealthResponse {
+        try await get("/health", host: host, authorized: false)
     }
 
-    private var token: String {
-        get throws {
-            guard let t = KeychainHelper.loadString(key: KeychainHelper.Keys.hostToken), !t.isEmpty
-            else { throw APIError.notConfigured }
-            return t
-        }
-    }
-
-    func health() async throws -> HealthResponse {
-        try await get("/health", authorized: false)
-    }
-
-    func validate() async throws {
-        // Host returns { ok: true, projects: N } — projects is Int, not Bool
+    func validate(host: HostEndpoint) async throws {
         struct ValidateResponse: Decodable {
             let ok: Bool?
             let projects: Int?
         }
-        let res: ValidateResponse = try await post("/auth/validate", body: [String: String]())
+        let res: ValidateResponse = try await post("/auth/validate", body: [String: String](), host: host)
         if res.ok == false {
             throw APIError.http(401, "Host rejected token")
         }
     }
 
-    func projects() async throws -> ProjectsResponse {
-        try await get("/projects")
+    func projects(host: HostEndpoint) async throws -> ProjectsResponse {
+        try await get("/projects", host: host)
     }
 
-    func sessions() async throws -> SessionsResponse {
-        try await get("/sessions")
+    func profiles(host: HostEndpoint) async throws -> ProfilesResponse {
+        try await get("/profiles", host: host)
     }
 
-    func session(id: String) async throws -> SessionDetail {
-        try await get("/sessions/\(id)")
+    func sessions(host: HostEndpoint) async throws -> SessionsResponse {
+        try await get("/sessions", host: host)
     }
 
-    func diff(id: String) async throws -> DiffResponse {
-        try await get("/sessions/\(id)/diff")
+    func session(id: String, host: HostEndpoint) async throws -> SessionDetail {
+        try await get("/sessions/\(id)", host: host)
     }
 
-    func dispatch(_ body: DispatchRequestBody) async throws -> SessionDetail {
-        try await post("/dispatch", body: body)
+    func diff(id: String, host: HostEndpoint) async throws -> DiffResponse {
+        try await get("/sessions/\(id)/diff", host: host)
     }
 
-    func attach(grokSessionId: String, cwd: String, title: String?, prompt: String?) async throws -> SessionDetail {
+    func dispatch(_ body: DispatchRequestBody, host: HostEndpoint) async throws -> SessionDetail {
+        try await post("/dispatch", body: body, host: host)
+    }
+
+    func attach(
+        grokSessionId: String,
+        cwd: String,
+        title: String?,
+        prompt: String?,
+        profileId: String?,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
         struct Body: Codable {
             var grokSessionId: String
             var cwd: String
             var title: String?
             var prompt: String?
+            var profileId: String?
         }
         return try await post(
             "/sessions/attach",
-            body: Body(grokSessionId: grokSessionId, cwd: cwd, title: title, prompt: prompt)
+            body: Body(
+                grokSessionId: grokSessionId,
+                cwd: cwd,
+                title: title,
+                prompt: prompt,
+                profileId: profileId
+            ),
+            host: host
         )
     }
 
@@ -105,7 +121,9 @@ actor APIClient {
         cwd: String,
         title: String?,
         mode: String,
-        transcriptPath: String?
+        transcriptPath: String?,
+        profileId: String?,
+        host: HostEndpoint
     ) async throws -> SessionDetail {
         struct Body: Codable {
             var claudeSessionId: String
@@ -113,6 +131,7 @@ actor APIClient {
             var title: String?
             var mode: String?
             var transcriptPath: String?
+            var profileId: String?
         }
         return try await post(
             "/sessions/attach-claude",
@@ -121,26 +140,49 @@ actor APIClient {
                 cwd: cwd,
                 title: title,
                 mode: mode,
-                transcriptPath: transcriptPath
-            )
+                transcriptPath: transcriptPath,
+                profileId: profileId
+            ),
+            host: host
         )
     }
 
-    func prompt(sessionId: String, text: String) async throws -> SessionDetail {
-        try await post("/sessions/\(sessionId)/prompt", body: PromptBody(prompt: text))
+    func prompt(
+        sessionId: String,
+        text: String,
+        images: [PromptImagePayload]? = nil,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
+        try await post(
+            "/sessions/\(sessionId)/prompt",
+            body: PromptBody(prompt: text, images: images),
+            host: host
+        )
     }
 
-    func approve(sessionId: String, approvalId: String, comment: String?) async throws -> SessionDetail {
+    func approve(
+        sessionId: String,
+        approvalId: String,
+        comment: String?,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
         try await post(
             "/sessions/\(sessionId)/approve",
-            body: ApprovalBody(approvalId: approvalId, comment: comment)
+            body: ApprovalBody(approvalId: approvalId, comment: comment),
+            host: host
         )
     }
 
-    func reject(sessionId: String, approvalId: String, comment: String?) async throws -> SessionDetail {
+    func reject(
+        sessionId: String,
+        approvalId: String,
+        comment: String?,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
         try await post(
             "/sessions/\(sessionId)/reject",
-            body: ApprovalBody(approvalId: approvalId, comment: comment)
+            body: ApprovalBody(approvalId: approvalId, comment: comment),
+            host: host
         )
     }
 
@@ -148,7 +190,8 @@ actor APIClient {
         sessionId: String,
         questionId: String?,
         answers: [String],
-        comment: String?
+        comment: String?,
+        host: HostEndpoint
     ) async throws -> SessionDetail {
         struct Body: Codable {
             var questionId: String?
@@ -158,52 +201,53 @@ actor APIClient {
         }
         return try await post(
             "/sessions/\(sessionId)/answer-questions",
-            body: Body(questionId: questionId, answers: answers, comment: comment, outcome: "accepted")
+            body: Body(questionId: questionId, answers: answers, comment: comment, outcome: "accepted"),
+            host: host
         )
     }
 
-    func cancel(sessionId: String) async throws -> SessionDetail {
-        try await post("/sessions/\(sessionId)/cancel", body: [String: String]())
+    func cancel(sessionId: String, host: HostEndpoint) async throws -> SessionDetail {
+        try await post("/sessions/\(sessionId)/cancel", body: [String: String](), host: host)
     }
 
-    func renameSession(sessionId: String, title: String) async throws -> SessionDetail {
+    func renameSession(sessionId: String, title: String, host: HostEndpoint) async throws -> SessionDetail {
         struct Body: Codable { var title: String }
-        return try await post("/sessions/\(sessionId)/title", body: Body(title: title))
+        return try await post("/sessions/\(sessionId)/title", body: Body(title: title), host: host)
     }
 
-    func archiveSession(sessionId: String) async throws -> SessionDetail {
-        try await post("/sessions/\(sessionId)/archive", body: [String: String]())
+    func archiveSession(sessionId: String, host: HostEndpoint) async throws -> SessionDetail {
+        try await post("/sessions/\(sessionId)/archive", body: [String: String](), host: host)
     }
 
-    func unarchiveSession(sessionId: String) async throws -> SessionDetail {
-        try await post("/sessions/\(sessionId)/unarchive", body: [String: String]())
+    func unarchiveSession(sessionId: String, host: HostEndpoint) async throws -> SessionDetail {
+        try await post("/sessions/\(sessionId)/unarchive", body: [String: String](), host: host)
     }
 
     // MARK: - Internals
 
-    private func get<T: Decodable>(_ path: String, authorized: Bool = true) async throws -> T {
-        var req = try makeRequest(path: path, method: "GET", authorized: authorized)
+    private func get<T: Decodable>(_ path: String, host: HostEndpoint, authorized: Bool = true) async throws -> T {
+        var req = try makeRequest(path: path, method: "GET", host: host, authorized: authorized)
         return try await send(req)
     }
 
-    private func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
-        var req = try makeRequest(path: path, method: "POST", authorized: true)
+    private func post<T: Decodable, B: Encodable>(_ path: String, body: B, host: HostEndpoint) async throws -> T {
+        var req = try makeRequest(path: path, method: "POST", host: host, authorized: true)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(body)
         return try await send(req)
     }
 
-    private func makeRequest(path: String, method: String, authorized: Bool) throws -> URLRequest {
-        let url = try joinURL(base: try baseURL, path: path)
+    private func makeRequest(path: String, method: String, host: HostEndpoint, authorized: Bool) throws -> URLRequest {
+        let auth = try HostAuth(host: host)
+        let url = try joinURL(base: auth.baseURL, path: path)
         var req = URLRequest(url: url)
         req.httpMethod = method
         if authorized {
-            req.setValue("Bearer \(try token)", forHTTPHeaderField: "Authorization")
+            req.setValue("Bearer \(auth.token)", forHTTPHeaderField: "Authorization")
         }
         return req
     }
 
-    /// Join host base + API path without dropping the port (Swift relative URL pitfall).
     private func joinURL(base: URL, path: String) throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
@@ -233,7 +277,6 @@ actor APIClient {
         }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8)
-            // Prefer host JSON error message when present
             if let body,
                let obj = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
                let err = obj["error"] as? String {

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum SessionStatus: String, Codable, CaseIterable, Sendable {
     case queued
@@ -61,6 +62,47 @@ struct ProjectInfo: Codable, Identifiable, Hashable, Sendable {
     let path: String
 }
 
+/// Concurrent agent account (FullScore / Astro / NightMoose …) — colored nav segment.
+struct AgentProfile: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var backend: String
+    var color: String
+    var model: String?
+    var hasCredentials: Bool?
+
+    var isClaude: Bool { backend == "claude" }
+    var isGrok: Bool { backend == "grok" }
+
+    var uiColor: Color {
+        Color(hex: color) ?? (isClaude ? Color.orange : Color(red: 0.45, green: 0.72, blue: 1.0))
+    }
+}
+
+extension Color {
+    /// Parse #RGB or #RRGGBB (optional leading #).
+    init?(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        var value: UInt64 = 0
+        guard Scanner(string: s).scanHexInt64(&value) else { return nil }
+        let r, g, b: Double
+        switch s.count {
+        case 3:
+            r = Double((value >> 8) & 0xF) / 15
+            g = Double((value >> 4) & 0xF) / 15
+            b = Double(value & 0xF) / 15
+        case 6:
+            r = Double((value >> 16) & 0xFF) / 255
+            g = Double((value >> 8) & 0xFF) / 255
+            b = Double(value & 0xFF) / 255
+        default:
+            return nil
+        }
+        self.init(red: r, green: g, blue: b)
+    }
+}
+
 struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     let id: String
     var grokSessionId: String?
@@ -81,6 +123,11 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     var isLive: Bool?
     var archived: Bool?
     var archivedAt: String?
+    var backend: String?
+    var profileId: String?
+    var profileName: String?
+    var profileColor: String?
+    var claudeSessionId: String?
 
     var isArchived: Bool { archived == true }
 
@@ -199,6 +246,10 @@ struct SessionsResponse: Codable, Sendable {
     var archivedSessions: [SessionSummary]?
     var diskSessions: [DiskSessionHint]?
     var claudeSessions: [DiskSessionHint]?
+}
+
+struct ProfilesResponse: Codable, Sendable {
+    let profiles: [AgentProfile]
 }
 
 struct ProjectsResponse: Codable, Sendable {

@@ -9,10 +9,20 @@ struct DispatchRequestBody: Codable, Sendable {
     var planMode: Bool?
     var subagents: Bool?
     var worktree: Bool?
+    var profileId: String?
+}
+
+struct PromptImagePayload: Codable, Sendable {
+    /// e.g. image/jpeg
+    var mimeType: String
+    /// Raw base64 (no data: prefix)
+    var data: String
+    var name: String?
 }
 
 struct PromptBody: Codable, Sendable {
     var prompt: String
+    var images: [PromptImagePayload]?
 }
 
 struct ApprovalBody: Codable, Sendable {

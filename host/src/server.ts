@@ -19,6 +19,7 @@ import { isAuthorized, unauthorizedBody } from "./auth.js";
 import { SessionManager } from "./acp/session-manager.js";
 import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
+import { publicProfiles } from "./profiles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
@@ -179,17 +180,38 @@ async function handleHttp(
     return;
   }
 
+  // GET /profiles — public agent accounts for nav segments (no secrets)
+  if (method === "GET" && path === "/profiles") {
+    json(res, 200, { profiles: publicProfiles(config) });
+    return;
+  }
+
   // GET /sessions
   // Default: only non-archived in `sessions`. Archived live in `archivedSessions`.
   // Pass ?includeArchived=1 to put everything in `sessions` (legacy / debugging).
   if (method === "GET" && path === "/sessions") {
     const includeArchived = url.searchParams.get("includeArchived") === "1";
-    const all = manager.list().map((s) => ({
-      ...manager.store.toSummary(s, manager.isLive(s.id)),
-      isLive: manager.isLive(s.id),
-      backend: s.backend ?? "grok",
-      claudeSessionId: s.claudeSessionId,
-    }));
+    const all = manager.list().map((s) => {
+      const summary = manager.store.toSummary(s, manager.isLive(s.id));
+      // Backfill profile fields for older sessions
+      if (!summary.profileId) {
+        const backend = s.backend ?? "grok";
+        const profiles = publicProfiles(config);
+        const fallback = profiles.find((p) => p.backend === backend) ?? profiles[0];
+        if (fallback) {
+          summary.profileId = fallback.id;
+          summary.profileName = fallback.name;
+          summary.profileColor = fallback.color;
+          summary.backend = backend;
+        }
+      }
+      return {
+        ...summary,
+        isLive: manager.isLive(s.id),
+        backend: summary.backend ?? s.backend ?? "grok",
+        claudeSessionId: s.claudeSessionId,
+      };
+    });
     const active = all.filter((s) => !s.archived);
     const archived = all.filter((s) => s.archived);
     const disk = listDiskSessions(30);
@@ -337,7 +359,7 @@ async function handleHttp(
     const id = decodeURIComponent(promptMatch[1]!);
     const body = (await readJson(req)) as PromptFollowUpRequest;
     try {
-      const session = await manager.followUp(id, body.prompt);
+      const session = await manager.followUp(id, body.prompt, body.images);
       json(res, 200, {
         ...manager.store.toDetail(session, manager.getPendingApproval(id)),
         isLive: manager.isLive(id),

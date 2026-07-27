@@ -219,7 +219,11 @@ struct OnboardingView: View {
         )
 
         do {
-            try await appState.api.validate()
+            guard let host = appState.hosts.first else {
+                errorMessage = "Host not saved"
+                return
+            }
+            try await appState.api.validate(host: host)
             successMessage = "Connected"
             await appState.refreshSessions()
         } catch {

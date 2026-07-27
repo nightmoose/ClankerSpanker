@@ -123,7 +123,7 @@ struct SettingsView: View {
                     }
 
                     Section("About") {
-                        LabeledContent("App", value: "ClankerSpanker 0.5.1")
+                        LabeledContent("App", value: "ClankerSpanker 0.5.2")
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker")
                         LabeledContent("Hosts", value: "\(appState.hosts.count)")
                         LabeledContent("Profiles", value: "\(appState.boundProfiles.count)")

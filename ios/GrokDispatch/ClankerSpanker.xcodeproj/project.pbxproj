@@ -10,6 +10,7 @@
 		0B5F5C3FF9C89354D52B38F7 /* GrokDispatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2315C70325F7DED760F60ABF /* GrokDispatchApp.swift */; };
 		18D0964AD3BBC7AF01241A60 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683082A20E1800578F7CFF3B /* WebSocketClient.swift */; };
 		29A41A23319B8C17784B8B29 /* SessionDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000102DBF13531D5802145FA /* SessionDetailViewModel.swift */; };
+		38EB3218F5ACE0E665695A28 /* ProfileSegmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60BA86694F3987D050FD384 /* ProfileSegmentBar.swift */; };
 		454384CAD1EAF197BDA621F2 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A685BAFD961F5E6C694D6F5 /* TranscriptView.swift */; };
 		48EF81BEFF16016F0481783B /* DispatchRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED12B678941A0286FD8609D2 /* DispatchRequest.swift */; };
 		507FC2695AC71D3A633537FA /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824F5F99CAD6D4621AC0B67E /* SessionRowView.swift */; };
@@ -58,6 +59,7 @@
 		8A685BAFD961F5E6C694D6F5 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
 		8C73742B5DD261F9F27151E9 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		9CB2B868A6D8625E7F9C0616 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A60BA86694F3987D050FD384 /* ProfileSegmentBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSegmentBar.swift; sourceTree = "<group>"; };
 		B1C54E265F3E7A4EB846CC33 /* TaskComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskComposerView.swift; sourceTree = "<group>"; };
 		BEE7D6F1ECA8E6C2253E28BA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		C2D21C1458B4A04811A73C1C /* ConnectionDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDefaults.swift; sourceTree = "<group>"; };
@@ -84,6 +86,7 @@
 			isa = PBXGroup;
 			children = (
 				8C73742B5DD261F9F27151E9 /* DesignSystem.swift */,
+				A60BA86694F3987D050FD384 /* ProfileSegmentBar.swift */,
 				EC1CD2D17C71B8DB8D6E5F11 /* Auth */,
 				A2460228E009A2778BB5F4FE /* Composer */,
 				E5CA2BAA16F31A6925471DC6 /* Dashboard */,
@@ -287,6 +290,7 @@
 				DD2639F0F29B9CB005E76495 /* KeychainHelper.swift in Sources */,
 				E480BD8A8C3BC6521202F34D /* NotificationService.swift in Sources */,
 				66D6E65384815C0E50BCC47C /* OnboardingView.swift in Sources */,
+				38EB3218F5ACE0E665695A28 /* ProfileSegmentBar.swift in Sources */,
 				F7AD9F6C12A0E632490E53C5 /* QuestionBarView.swift in Sources */,
 				EF973D15BBC11EFE6BE94509 /* Session.swift in Sources */,
 				EADD25B4E5CDC3E3EE8C0B92 /* SessionDetailView.swift in Sources */,
@@ -338,7 +342,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -359,7 +363,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker;
@@ -449,7 +453,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -476,7 +480,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

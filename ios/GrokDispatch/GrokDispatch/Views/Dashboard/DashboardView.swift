@@ -12,9 +12,10 @@ struct DashboardView: View {
             ZStack {
                 DispatchBackground()
                 VStack(spacing: 0) {
-                    profilePicker
+                    ProfileSegmentBar()
                         .padding(.horizontal)
-                        .padding(.top, 8)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
 
                     if let err = vm.errorMessage ?? appState.lastRefreshError {
                         Text(err)
@@ -72,54 +73,6 @@ struct DashboardView: View {
         let name = appState.selectedBoundProfile?.displayName ?? "sessions"
         let host = appState.selectedBoundProfile?.hostLabel ?? ""
         return host.isEmpty ? "Search \(name)" : "Search \(name) · \(host)"
-    }
-
-    // MARK: - Colored profile chips (per host)
-
-    private var profilePicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(appState.boundProfiles) { bound in
-                    let selected = bound.id == appState.selectedBoundProfileId
-                    Button {
-                        appState.selectBoundProfile(bound.id)
-                        showArchived = false
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(bound.uiColor)
-                                    .frame(width: 8, height: 8)
-                                Text(bound.displayName)
-                                    .font(.subheadline.weight(selected ? .bold : .semibold))
-                                Text(bound.backendLabel)
-                                    .font(.caption2.weight(.bold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(bound.uiColor.opacity(selected ? 0.35 : 0.18))
-                                    .clipShape(Capsule())
-                            }
-                            Text(bound.hostLabel)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(selected ? bound.uiColor.opacity(0.22) : Color.white.opacity(0.06))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(selected ? bound.uiColor : Color.white.opacity(0.08), lineWidth: selected ? 1.5 : 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 4)
-        }
     }
 
     @ViewBuilder

@@ -5,12 +5,41 @@ struct TaskComposerView: View {
     @StateObject private var vm = ComposerViewModel()
     @State private var navigateTo: SessionRoute?
 
+    private var selectedProject: ProjectInfo? {
+        vm.projects.first { $0.id == vm.selectedProjectId }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 DispatchBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        // Profile: same segmented control as Sessions (shared selection)
+                        DispatchCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Who runs this task")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                ProfileSegmentBar(
+                                    selection: $vm.selectedBoundProfileId,
+                                    onChange: { b in
+                                        vm.applyModelDefaults(for: b)
+                                        Task { await vm.load(appState: appState) }
+                                    }
+                                )
+                                if let b = appState.boundProfiles.first(where: { $0.id == vm.selectedBoundProfileId }) {
+                                    Text(
+                                        b.profile.isClaude
+                                            ? "Starts a new Claude session as \(b.displayName)."
+                                            : "Starts a new Grok session as \(b.displayName)."
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
                         DispatchCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Task")
@@ -30,7 +59,7 @@ struct TaskComposerView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                                     .overlay(alignment: .topLeading) {
                                         if vm.prompt.isEmpty {
-                                            Text("Describe what the agent should do on that host…")
+                                            Text("Describe what the agent should do…")
                                                 .foregroundStyle(.secondary)
                                                 .padding(.top, 16)
                                                 .padding(.leading, 12)
@@ -42,83 +71,46 @@ struct TaskComposerView: View {
 
                         DispatchCard {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Agent profile · host")
+                                Text("Working directory on host")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.secondary)
-                                if appState.boundProfiles.isEmpty {
-                                    Text("No profiles yet. Add a host in Settings.")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    // Visible chips (not a buried menu) so Claude profiles are first-class
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 8) {
-                                            ForEach(appState.boundProfiles) { b in
-                                                let selected = b.id == vm.selectedBoundProfileId
-                                                Button {
-                                                    vm.selectedBoundProfileId = b.id
-                                                    appState.selectBoundProfile(b.id)
-                                                    vm.applyModelDefaults(for: b)
-                                                    Task { await vm.load(appState: appState) }
-                                                } label: {
-                                                    VStack(alignment: .leading, spacing: 2) {
-                                                        HStack(spacing: 6) {
-                                                            Circle().fill(b.uiColor).frame(width: 8, height: 8)
-                                                            Text(b.displayName)
-                                                                .font(.subheadline.weight(selected ? .bold : .semibold))
-                                                            Text(b.backendLabel)
-                                                                .font(.caption2.weight(.bold))
-                                                                .padding(.horizontal, 6)
-                                                                .padding(.vertical, 2)
-                                                                .background(b.uiColor.opacity(0.25))
-                                                                .clipShape(Capsule())
-                                                        }
-                                                        Text(b.hostLabel)
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                    .padding(.horizontal, 12)
-                                                    .padding(.vertical, 8)
-                                                    .background(
-                                                        RoundedRectangle(cornerRadius: 12)
-                                                            .fill(selected ? b.uiColor.opacity(0.22) : Color.white.opacity(0.06))
-                                                    )
-                                                    .overlay(
-                                                        RoundedRectangle(cornerRadius: 12)
-                                                            .stroke(selected ? b.uiColor : Color.white.opacity(0.08), lineWidth: selected ? 1.5 : 1)
-                                                    )
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                    }
-                                    if let b = appState.boundProfiles.first(where: { $0.id == vm.selectedBoundProfileId }) {
-                                        Text(b.profile.isClaude
-                                             ? "New session will run as Claude (\(b.displayName)) on \(b.hostLabel)."
-                                             : "New session will run as Grok (\(b.displayName)) on \(b.hostLabel).")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Text("Project")
-                                    .font(.subheadline.weight(.semibold))
+                                Text("Folder where the agent reads and writes code on the selected machine. This is not the AI account — pick that above.")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
 
                                 if vm.projects.isEmpty {
-                                    Text("No projects loaded from this host.")
+                                    Text("No allowlisted folders on this host. Add paths under projects in ~/.grok-dispatch/config.json, or type an absolute path below.")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                 } else {
-                                    Picker("Project", selection: $vm.selectedProjectId) {
+                                    Picker("Working directory", selection: $vm.selectedProjectId) {
                                         ForEach(vm.projects) { p in
                                             Text(p.name).tag(Optional(p.id))
                                         }
                                     }
                                     .pickerStyle(.menu)
+
+                                    if let p = selectedProject {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(p.name)
+                                                .font(.subheadline.weight(.semibold))
+                                            Text(p.path)
+                                                .font(.system(.caption, design: .monospaced))
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        }
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color.white.opacity(0.05))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
                                 }
 
-                                TextField("Or absolute path on that host", text: $vm.customPath)
+                                Text("Or override with any absolute path on that host")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                TextField("/Users/…/path/to/repo", text: $vm.customPath)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                     .padding(10)
@@ -127,15 +119,27 @@ struct TaskComposerView: View {
                                     .onChange(of: vm.customPath) { _, newValue in
                                         if !newValue.isEmpty { vm.selectedProjectId = nil }
                                     }
+                                if !vm.customPath.isEmpty {
+                                    Text("Using custom path — allowlisted project is ignored.")
+                                        .font(.caption2)
+                                        .foregroundStyle(DispatchColors.warning)
+                                }
                             }
                         }
 
                         DispatchCard {
                             VStack(spacing: 12) {
-                                Toggle("Plan mode first", isOn: $vm.planMode)
-                                Toggle("Allow subagents", isOn: $vm.subagents)
-                                Toggle("Isolated worktree", isOn: $vm.worktree)
                                 let bound = appState.boundProfiles.first { $0.id == vm.selectedBoundProfileId }
+                                if bound?.profile.isClaude != true {
+                                    Toggle("Plan mode first", isOn: $vm.planMode)
+                                    Toggle("Allow subagents", isOn: $vm.subagents)
+                                    Toggle("Isolated worktree", isOn: $vm.worktree)
+                                } else {
+                                    Text("Claude sessions use the selected account on that host. Plan/worktree toggles apply to Grok profiles.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                                 Picker("Model", selection: $vm.model) {
                                     ForEach(vm.models(for: bound), id: \.self) { Text($0).tag($0) }
                                 }
@@ -174,6 +178,11 @@ struct TaskComposerView: View {
             .task { await vm.load(appState: appState) }
             .onChange(of: appState.selectedBoundProfileId) { _, _ in
                 Task { await vm.load(appState: appState) }
+            }
+            .onChange(of: appState.selectedTab) { _, tab in
+                if tab == .compose {
+                    Task { await vm.load(appState: appState) }
+                }
             }
         }
     }

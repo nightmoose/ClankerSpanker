@@ -8,23 +8,15 @@ final class DashboardViewModel: ObservableObject {
     func load(appState: AppState) async {
         isLoading = true
         defer { isLoading = false }
-        do {
-            let response = try await appState.api.sessions()
-            appState.sessions = response.sessions
-            appState.archivedSessions = response.archivedSessions ?? []
-            appState.diskSessions = response.diskSessions ?? []
-            appState.claudeSessions = response.claudeSessions ?? []
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        await appState.refreshSessions()
+        errorMessage = appState.lastRefreshError
     }
 
-    /// Returns true when the host accepted the archive.
     @discardableResult
     func archive(sessionId: String, appState: AppState) async -> Bool {
+        guard let host = appState.selectedHost else { return false }
         do {
-            _ = try await appState.api.archiveSession(sessionId: sessionId)
+            _ = try await appState.api.archiveSession(sessionId: sessionId, host: host)
             errorMessage = nil
             await load(appState: appState)
             return true
@@ -34,11 +26,11 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    /// Returns true when the host accepted the unarchive.
     @discardableResult
     func unarchive(sessionId: String, appState: AppState) async -> Bool {
+        guard let host = appState.selectedHost else { return false }
         do {
-            _ = try await appState.api.unarchiveSession(sessionId: sessionId)
+            _ = try await appState.api.unarchiveSession(sessionId: sessionId, host: host)
             errorMessage = nil
             await load(appState: appState)
             return true
@@ -48,9 +40,13 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    func attach(disk: DiskSessionHint, appState: AppState) async -> String? {
+    func attach(disk: DiskSessionHint, appState: AppState) async -> SessionRoute? {
         guard let cwd = disk.cwd, !cwd.isEmpty else {
             errorMessage = "That Grok session has no cwd on disk — open it from the Mac TUI once, or dispatch fresh."
+            return nil
+        }
+        guard let host = appState.selectedHost else {
+            errorMessage = "No host selected"
             return nil
         }
         isLoading = true
@@ -60,20 +56,25 @@ final class DashboardViewModel: ObservableObject {
                 grokSessionId: disk.id,
                 cwd: cwd,
                 title: disk.title,
-                prompt: nil
+                prompt: nil,
+                profileId: appState.selectedBoundProfile?.profile.id,
+                host: host
             )
             await load(appState: appState)
-            return detail.id
+            return SessionRoute(hostId: host.id, sessionId: detail.id)
         } catch {
             errorMessage = error.localizedDescription
             return nil
         }
     }
 
-    /// mode: continue-with-grok (default) | resume-claude
-    func attachClaude(disk: DiskSessionHint, mode: String, appState: AppState) async -> String? {
+    func attachClaude(disk: DiskSessionHint, mode: String, appState: AppState) async -> SessionRoute? {
         guard let cwd = disk.cwd, !cwd.isEmpty else {
             errorMessage = "Could not resolve project path for that Claude session."
+            return nil
+        }
+        guard let host = appState.selectedHost else {
+            errorMessage = "No host selected"
             return nil
         }
         isLoading = true
@@ -84,10 +85,12 @@ final class DashboardViewModel: ObservableObject {
                 cwd: cwd,
                 title: disk.title,
                 mode: mode,
-                transcriptPath: disk.transcriptPath
+                transcriptPath: disk.transcriptPath,
+                profileId: appState.selectedBoundProfile?.profile.id,
+                host: host
             )
             await load(appState: appState)
-            return detail.id
+            return SessionRoute(hostId: host.id, sessionId: detail.id)
         } catch {
             errorMessage = error.localizedDescription
             return nil

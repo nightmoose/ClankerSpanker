@@ -51,6 +51,7 @@ export class AcpClient extends EventEmitter {
   constructor(
     private readonly grokBinary: string,
     private readonly agentArgs: string[] = [],
+    private readonly extraEnv: NodeJS.ProcessEnv = {},
   ) {
     super();
   }
@@ -73,6 +74,7 @@ export class AcpClient extends EventEmitter {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
+        ...this.extraEnv,
         // Agent binaries + common install locations for tools Grok may shell out to
         PATH: agentPathEnv(),
       },

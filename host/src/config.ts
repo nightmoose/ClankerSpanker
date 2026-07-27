@@ -9,6 +9,7 @@ import {
   findGrokBinaryCandidates,
   firstExistingBinary,
 } from "./platform.js";
+import { defaultProfiles, normalizeProfiles } from "./profiles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = join(homedir(), ".grok-dispatch");
@@ -62,6 +63,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
       grokBinary: findGrokBinary(),
       projects: defaultProjects(),
       allowCustomPaths: true,
+      profiles: defaultProfiles(),
       autoApproveKinds: DEFAULT_AUTO_APPROVE,
       notifyDesktop: true,
       dataDir: DEFAULT_DATA_DIR,
@@ -69,6 +71,12 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     writeFileSync(configPath, JSON.stringify(created, null, 2) + "\n", "utf8");
     console.log(`[config] Wrote new config → ${configPath}`);
     console.log(`[config] Host token (save this for ClankerSpanker):\n  ${created.hostToken}`);
+    console.log(
+      `[config] Profiles: ${created.profiles.map((p) => `${p.name}(${p.backend})`).join(", ")}`,
+    );
+    console.log(
+      `[config] Tip: set profiles[].env.ANTHROPIC_API_KEY (or claudeConfigDir) for each Claude account.`,
+    );
     return created;
   }
 
@@ -82,6 +90,18 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
         ? raw.notifyMac
         : true;
 
+  const profiles = normalizeProfiles(raw.profiles);
+  // Persist profiles into existing configs that lack them
+  if (!raw.profiles?.length) {
+    try {
+      const next = { ...raw, profiles };
+      writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      console.log(`[config] Added default profiles to ${configPath}`);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   const merged: HostConfigFile = {
     hostToken: raw.hostToken ?? randomBytes(24).toString("hex"),
     bindHost: raw.bindHost ?? "0.0.0.0",
@@ -89,6 +109,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     grokBinary: raw.grokBinary ?? findGrokBinary(),
     projects: raw.projects?.length ? raw.projects : defaultProjects(),
     allowCustomPaths: raw.allowCustomPaths ?? true,
+    profiles,
     autoApproveKinds: raw.autoApproveKinds ?? DEFAULT_AUTO_APPROVE,
     notifyDesktop,
     dataDir: raw.dataDir ?? DEFAULT_DATA_DIR,

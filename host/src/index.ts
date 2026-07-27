@@ -7,6 +7,9 @@ async function main() {
   console.log(`[boot] Config: ${DEFAULT_CONFIG_PATH}`);
   console.log(`[boot] Grok binary: ${config.grokBinary}`);
   console.log(`[boot] Projects: ${config.projects.map((p) => p.name).join(", ") || "(none)"}`);
+  console.log(
+    `[boot] Profiles: ${config.profiles.map((p) => `${p.name}/${p.backend}`).join(", ") || "(none)"}`,
+  );
   console.log(`[boot] Data dir: ${config.dataDir}`);
   console.log(`[boot] Auto-approve kinds: ${config.autoApproveKinds.join(", ")}`);
   console.log(`[boot] Host token (first 8): ${config.hostToken.slice(0, 8)}…`);

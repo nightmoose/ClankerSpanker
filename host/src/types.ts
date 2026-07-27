@@ -29,14 +29,56 @@ export interface DispatchRequest {
   subagents?: boolean;
   worktree?: boolean;
   permissionMode?: "default" | "acceptEdits" | "dontAsk";
+  /** Agent profile id (FullScore / Astro / NightMoose …). Required for multi-account Claude. */
+  profileId?: string;
 }
 
 export type SessionBackend = "grok" | "claude";
+
+/**
+ * Concurrent agent identity. Multiple Claude profiles can run at once
+ * (each with its own API key / config dir). Shown as colored nav segments on clients.
+ */
+export interface AgentProfile {
+  id: string;
+  /** Display name in the phone/browser nav, e.g. FullScore, Astro, NightMoose */
+  name: string;
+  backend: SessionBackend;
+  /** Hex (#F97316) or simple name (orange, blue, purple, green, amber) */
+  color: string;
+  /**
+   * Process env for this profile only (merged over process.env when spawning).
+   * Typical: ANTHROPIC_API_KEY, optional CLAUDE_CONFIG_DIR for full isolation.
+   * Never returned to clients via API.
+   */
+  env?: Record<string, string>;
+  /** Optional override of Claude home/config directory for full multi-login isolation. */
+  claudeConfigDir?: string;
+  /** Default model id when dispatching with this profile. */
+  model?: string;
+}
+
+/** Safe profile for wire format (no secrets). */
+export interface PublicAgentProfile {
+  id: string;
+  name: string;
+  backend: SessionBackend;
+  color: string;
+  model?: string;
+  /** True when a non-empty API key / env is configured for this profile. */
+  hasCredentials: boolean;
+}
 
 export interface DispatchSession {
   id: string;
   /** Which agent process powers this Dispatch chat. Default grok. */
   backend?: SessionBackend;
+  /** Agent profile (account) this session runs under. */
+  profileId?: string;
+  /** Denormalized display name for list UI. */
+  profileName?: string;
+  /** Denormalized color for list UI. */
+  profileColor?: string;
   grokSessionId?: string;
   /** Claude Code session UUID when backend=claude or attached from Claude history. */
   claudeSessionId?: string;
@@ -181,8 +223,17 @@ export interface RejectRequest {
   comment?: string;
 }
 
+/** Screenshot / photo attached to a follow-up prompt (base64, no data: URL prefix). */
+export interface PromptImage {
+  mimeType: string;
+  data: string;
+  name?: string;
+}
+
 export interface PromptFollowUpRequest {
   prompt: string;
+  /** Optional screenshots for UI/app debugging (ACP image blocks / Claude file paths). */
+  images?: PromptImage[];
 }
 
 /** Attach / resume an existing Grok Build session from ~/.grok/sessions. */
@@ -194,6 +245,7 @@ export interface AttachRequest {
   model?: string;
   /** Optional first message after attach. */
   prompt?: string;
+  profileId?: string;
 }
 
 /**
@@ -209,6 +261,8 @@ export interface AttachClaudeRequest {
   /** Optional first message after open. */
   prompt?: string;
   transcriptPath?: string;
+  /** Which Claude account profile to use for resume / handoff. */
+  profileId?: string;
 }
 
 export interface HostConfigFile {
@@ -218,6 +272,8 @@ export interface HostConfigFile {
   grokBinary: string;
   projects: ProjectInfo[];
   allowCustomPaths: boolean;
+  /** Concurrent agent accounts — each is a colored nav segment on clients. */
+  profiles: AgentProfile[];
   /** Tool kinds that auto-approve without client (default: read/search/think/fetch). */
   autoApproveKinds: string[];
   /**
@@ -251,6 +307,11 @@ export interface PublicSessionSummary {
   isLive?: boolean;
   archived?: boolean;
   archivedAt?: string;
+  backend?: SessionBackend;
+  profileId?: string;
+  profileName?: string;
+  profileColor?: string;
+  claudeSessionId?: string;
 }
 
 export interface PublicSessionDetail extends PublicSessionSummary {

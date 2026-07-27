@@ -18,6 +18,8 @@ export interface ClaudeRunnerOptions {
   dataDir: string;
   /** When true, Edit/Write/Bash wait for phone via PreToolUse hook. */
   requirePhoneApproval: boolean;
+  /** Profile-specific env (ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR, …) for multi-account. */
+  profileEnv?: NodeJS.ProcessEnv;
 }
 
 export interface ClaudeRunnerEvents {
@@ -68,6 +70,7 @@ export class ClaudeRunner extends EventEmitter {
       cwd: this.opts.cwd,
       env: {
         ...process.env,
+        ...(this.opts.profileEnv ?? {}),
         PATH: agentPathEnv(),
         CLAUDE_DISPATCH_SESSION_ID: this.opts.dispatchSessionId,
         CLAUDE_DISPATCH_HOST: this.opts.hostBaseUrl,

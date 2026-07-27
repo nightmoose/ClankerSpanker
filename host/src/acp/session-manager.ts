@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HostConfigFile } from "../types.js";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execFile } from "node:child_process";
@@ -16,6 +16,7 @@ import type {
   PendingApproval,
   PendingQuestion,
   PlanEntry,
+  PromptImage,
   SessionEvent,
   ToolCallRecord,
   TranscriptEntry,
@@ -28,6 +29,7 @@ import {
   listClaudeSessions,
 } from "../sessions/reader.js";
 import { notifyDesktop } from "../notify/local.js";
+import { profileProcessEnv, resolveProfile } from "../profiles.js";
 import { AcpClient } from "./client.js";
 import { ClaudeRunner } from "../claude/runner.js";
 
@@ -151,17 +153,26 @@ export class SessionManager extends EventEmitter {
   async dispatch(req: DispatchRequest): Promise<DispatchSession> {
     if (!req.prompt?.trim()) throw new Error("prompt is required");
 
+    const profile = resolveProfile(this.config, req.profileId);
     const { path: cwd, projectId } = resolveProjectPath(this.config, req.projectId, req.cwd);
     const id = randomUUID();
     const createdAt = now();
+    const model =
+      req.model ??
+      profile.model ??
+      (profile.backend === "claude" ? "claude" : "grok-build");
 
     const session: DispatchSession = {
       id,
+      backend: profile.backend,
+      profileId: profile.id,
+      profileName: profile.name,
+      profileColor: profile.color,
       title: shortTitle(req.prompt, req.title),
       prompt: req.prompt.trim(),
       cwd,
       projectId,
-      model: req.model ?? "grok-build",
+      model,
       planMode: req.planMode ?? false,
       subagents: req.subagents ?? true,
       worktree: req.worktree ?? true,
@@ -182,10 +193,18 @@ export class SessionManager extends EventEmitter {
 
     this.store.save(session);
     this.emitEvent(session, "session.created", { session: this.store.toSummary(session) });
+    console.log(
+      `[dispatch] profile=${profile.id} (${profile.name}) backend=${profile.backend} model=${model} session=${id.slice(0, 8)}`,
+    );
 
     // Start async so HTTP returns immediately
     void this.runSession(session, req).catch((err) => {
       console.error(`[session ${id}] fatal:`, err);
+      session.status = "failed";
+      session.error = err instanceof Error ? err.message : String(err);
+      session.updatedAt = now();
+      this.persist(session);
+      this.emitEvent(session, "session.failed", { error: session.error });
     });
 
     return session;
@@ -200,14 +219,25 @@ export class SessionManager extends EventEmitter {
    * session from disk if the host restarted or the process died.
    * Claude-backed sessions use headless `claude -p --resume` per turn.
    */
-  async followUp(sessionId: string, prompt: string): Promise<DispatchSession> {
-    if (!prompt.trim()) throw new Error("prompt is required");
+  async followUp(
+    sessionId: string,
+    prompt: string,
+    images?: PromptImage[],
+  ): Promise<DispatchSession> {
+    const imgs = normalizeImages(images);
+    const text = (prompt ?? "").trim();
+    if (!text && imgs.length === 0) throw new Error("prompt or images required");
 
     const session = this.get(sessionId);
     if (!session) throw new Error("Session not found");
 
+    const displayText =
+      imgs.length === 0
+        ? text
+        : `📷 ${imgs.length} screenshot${imgs.length === 1 ? "" : "s"}${text ? `\n${text}` : ""}`;
+
     if (session.backend === "claude") {
-      return this.claudeTurn(sessionId, prompt.trim());
+      return this.claudeTurn(sessionId, text || displayText, imgs);
     }
 
     const live = await this.ensureLive(sessionId);
@@ -215,7 +245,7 @@ export class SessionManager extends EventEmitter {
     const entry: TranscriptEntry = {
       id: randomUUID(),
       role: "user",
-      text: prompt.trim(),
+      text: displayText,
       at: now(),
     };
     live.session.transcript.push(entry);
@@ -226,7 +256,7 @@ export class SessionManager extends EventEmitter {
     this.persist(live.session);
     this.emitEvent(live.session, "transcript", entry);
 
-    await this.promptTurn(live, prompt.trim());
+    await this.promptTurn(live, text || displayText, imgs);
     return live.session;
   }
 
@@ -248,15 +278,20 @@ export class SessionManager extends EventEmitter {
       return this.get(existing.id)!;
     }
 
+    const profile = resolveProfile(this.config, req.profileId, "grok");
     const id = randomUUID();
     const createdAt = now();
     const session: DispatchSession = {
       id,
+      backend: "grok",
+      profileId: profile.id,
+      profileName: profile.name,
+      profileColor: profile.color,
       grokSessionId: req.grokSessionId.trim(),
       title: shortTitle(req.prompt ?? "Resumed session", req.title),
       prompt: req.prompt?.trim() || `(Resumed Grok session ${req.grokSessionId.slice(0, 8)})`,
       cwd: req.cwd,
-      model: req.model ?? "grok-build",
+      model: req.model ?? profile.model ?? "grok-build",
       planMode: false,
       subagents: true,
       worktree: false,
@@ -334,6 +369,7 @@ export class SessionManager extends EventEmitter {
           `----- END EXCERPT -----\n\n` +
           `Acknowledge briefly what you understand the next step to be, then proceed.`;
 
+      const grokProfile = resolveProfile(this.config, req.profileId, "grok");
       const session = await this.dispatch({
         prompt: handoffPrompt,
         cwd: req.cwd,
@@ -341,7 +377,8 @@ export class SessionManager extends EventEmitter {
         planMode: false,
         worktree: false,
         subagents: true,
-        model: "grok-build",
+        model: grokProfile.model ?? "grok-build",
+        profileId: grokProfile.id,
       });
 
       // Annotate wrapper with Claude provenance
@@ -377,14 +414,18 @@ export class SessionManager extends EventEmitter {
       }
     }
 
+    const profile = resolveProfile(this.config, req.profileId, "claude");
     const session: DispatchSession = {
       id,
       backend: "claude",
+      profileId: profile.id,
+      profileName: profile.name,
+      profileColor: profile.color,
       claudeSessionId: claudeId,
       title: shortTitle(req.prompt ?? req.title ?? "Claude session", req.title),
       prompt: req.prompt?.trim() || `(Claude session ${claudeId.slice(0, 8)})`,
       cwd: req.cwd,
-      model: "claude",
+      model: profile.model ?? "claude",
       planMode: false,
       subagents: false,
       worktree: false,
@@ -396,7 +437,7 @@ export class SessionManager extends EventEmitter {
           id: randomUUID(),
           role: "system",
           text:
-            `Attached Claude Code session ${claudeId}. ` +
+            `Attached Claude Code session ${claudeId} as ${profile.name}. ` +
             `Streaming + phone approval for Edit/Write/Bash (via PreToolUse hook). ` +
             `Read-only tools auto-run.`,
           at: createdAt,
@@ -755,14 +796,27 @@ export class SessionManager extends EventEmitter {
   // ── internals ──────────────────────────────────────────────
 
   /** One Claude Code turn: stream-json + optional phone tool approvals. */
-  private async claudeTurn(sessionId: string, prompt: string): Promise<DispatchSession> {
+  private async claudeTurn(
+    sessionId: string,
+    prompt: string,
+    images: PromptImage[] = [],
+  ): Promise<DispatchSession> {
     const session = this.get(sessionId);
     if (!session) throw new Error("Session not found");
+
+    const savedPaths = savePromptImages(this.config.dataDir, sessionId, images);
+    const claudePrompt =
+      savedPaths.length === 0
+        ? prompt
+        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${savedPaths.map((p) => `- ${p}`).join("\n")}`;
 
     const entry: TranscriptEntry = {
       id: randomUUID(),
       role: "user",
-      text: prompt,
+      text:
+        images.length === 0
+          ? prompt
+          : `📷 ${images.length} screenshot${images.length === 1 ? "" : "s"}${prompt ? `\n${prompt}` : ""}`,
       at: now(),
     };
     session.transcript.push(entry);
@@ -778,12 +832,13 @@ export class SessionManager extends EventEmitter {
     const runner = new ClaudeRunner({
       cwd: session.cwd,
       resumeSessionId: session.claudeSessionId,
-      prompt,
+      prompt: claudePrompt,
       dispatchSessionId: session.id,
       hostBaseUrl: hostBase,
       hostToken: this.config.hostToken,
       dataDir: this.config.dataDir,
       requirePhoneApproval: true,
+      profileEnv: this.profileEnvFor(session),
     });
 
     let streamBuf = "";
@@ -894,11 +949,24 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  private profileEnvFor(session: DispatchSession): NodeJS.ProcessEnv {
+    try {
+      const profile = resolveProfile(
+        this.config,
+        session.profileId,
+        session.backend === "claude" ? "claude" : "grok",
+      );
+      return profileProcessEnv(profile);
+    } catch {
+      return { ...process.env };
+    }
+  }
+
   private async spawnAndLoad(session: DispatchSession, grokSessionId: string): Promise<LiveSession> {
     const agentArgs: string[] = [];
     if (session.model) agentArgs.push("--model", session.model);
 
-    const client = new AcpClient(this.config.grokBinary, agentArgs);
+    const client = new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session));
     const live: LiveSession = {
       session,
       client,
@@ -929,11 +997,16 @@ export class SessionManager extends EventEmitter {
   }
 
   private async runSession(session: DispatchSession, req: DispatchRequest): Promise<void> {
+    if (session.backend === "claude") {
+      await this.claudeTurn(session.id, session.prompt);
+      return;
+    }
+
     const agentArgs: string[] = [];
     if (session.model) agentArgs.push("--model", session.model);
     // Never pass --always-approve: phone is the human gate for file changes.
 
-    const client = new AcpClient(this.config.grokBinary, agentArgs);
+    const client = new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session));
     const live: LiveSession = {
       session,
       client,
@@ -996,7 +1069,11 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  private async promptTurn(live: LiveSession, text: string): Promise<void> {
+  private async promptTurn(
+    live: LiveSession,
+    text: string,
+    images: PromptImage[] = [],
+  ): Promise<void> {
     const { session, client } = live;
     if (!session.grokSessionId) throw new Error("Missing grok session id");
 
@@ -1007,10 +1084,28 @@ export class SessionManager extends EventEmitter {
     this.persist(session);
     this.emitEvent(session, "session.updated", { status: "running" });
 
+    // Persist attachments on disk (debug/audit) and send ACP image content blocks
+    savePromptImages(this.config.dataDir, session.id, images);
+
+    const promptBlocks: Array<Record<string, unknown>> = [];
+    if (text.trim()) {
+      promptBlocks.push({ type: "text", text });
+    }
+    for (const img of images) {
+      promptBlocks.push({
+        type: "image",
+        mimeType: img.mimeType,
+        data: img.data,
+      });
+    }
+    if (promptBlocks.length === 0) {
+      promptBlocks.push({ type: "text", text: "(empty)" });
+    }
+
     try {
       const result = (await client.request("session/prompt", {
         sessionId: session.grokSessionId,
-        prompt: [{ type: "text", text }],
+        prompt: promptBlocks,
       })) as { stopReason?: string };
 
       this.flushAssistant(live);
@@ -1468,4 +1563,49 @@ function findPendingAskUserTool(s: DispatchSession): PendingQuestion | null {
     };
   }
   return null;
+}
+
+const MAX_PROMPT_IMAGES = 4;
+const MAX_IMAGE_BYTES = 3_500_000; // ~decoded size cap per image
+
+function normalizeImages(images?: PromptImage[]): PromptImage[] {
+  if (!images?.length) return [];
+  const out: PromptImage[] = [];
+  for (const img of images.slice(0, MAX_PROMPT_IMAGES)) {
+    if (!img?.data || !img.mimeType) continue;
+    const mime = String(img.mimeType).toLowerCase();
+    if (!mime.startsWith("image/")) continue;
+    // Strip accidental data-URL prefix
+    let data = String(img.data).trim();
+    const comma = data.indexOf(",");
+    if (data.startsWith("data:") && comma >= 0) data = data.slice(comma + 1);
+    const approxBytes = Math.floor((data.length * 3) / 4);
+    if (approxBytes <= 0 || approxBytes > MAX_IMAGE_BYTES) continue;
+    out.push({
+      mimeType: mime === "image/jpg" ? "image/jpeg" : mime,
+      data,
+      name: img.name,
+    });
+  }
+  return out;
+}
+
+/** Save attachments under dataDir for Claude path-based access / audit. */
+function savePromptImages(dataDir: string, sessionId: string, images: PromptImage[]): string[] {
+  if (!images.length) return [];
+  const dir = join(dataDir, "sessions", sessionId, "attachments");
+  mkdirSync(dir, { recursive: true });
+  const paths: string[] = [];
+  for (const img of images) {
+    const ext =
+      img.mimeType.includes("png") ? "png" : img.mimeType.includes("webp") ? "webp" : "jpg";
+    const file = join(dir, `${randomUUID()}.${ext}`);
+    try {
+      writeFileSync(file, Buffer.from(img.data, "base64"));
+      paths.push(file);
+    } catch (err) {
+      console.warn("[attachments] failed to save image:", err);
+    }
+  }
+  return paths;
 }

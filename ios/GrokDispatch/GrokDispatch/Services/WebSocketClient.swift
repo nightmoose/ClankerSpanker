@@ -8,21 +8,21 @@ final class WebSocketClient: NSObject, ObservableObject {
     private var task: URLSessionWebSocketTask?
     private var session: URLSession?
     private var receiveLoopRunning = false
+    private var connectedHostId: UUID?
     var onEvent: ((Data) -> Void)?
 
-    func connect() {
+    func connect(host: HostEndpoint) {
+        // Already on this host
+        if isConnected, connectedHostId == host.id { return }
+
         disconnect()
-        guard
-            let host = KeychainHelper.loadString(key: KeychainHelper.Keys.hostURL),
-            let token = KeychainHelper.loadString(key: KeychainHelper.Keys.hostToken),
-            var components = URLComponents(string: host)
-        else {
+        let token = host.loadToken()
+        guard !token.isEmpty, var components = URLComponents(string: host.baseURL) else {
             lastError = "Missing host URL or token"
             return
         }
 
         components.scheme = (components.scheme == "https") ? "wss" : "ws"
-        // Ensure path /ws
         let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         components.path = basePath.isEmpty ? "/ws" : "/\(basePath)/ws"
         components.queryItems = [URLQueryItem(name: "token", value: token)]
@@ -37,15 +37,17 @@ final class WebSocketClient: NSObject, ObservableObject {
         self.session = session
         let task = session.webSocketTask(with: url)
         self.task = task
+        connectedHostId = host.id
         task.resume()
         isConnected = true
         lastError = nil
         receiveLoopRunning = true
-        receiveNext()
+        receiveNext(host: host)
     }
 
     func disconnect() {
         receiveLoopRunning = false
+        connectedHostId = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         session?.invalidateAndCancel()
@@ -53,12 +55,7 @@ final class WebSocketClient: NSObject, ObservableObject {
         isConnected = false
     }
 
-    func sendPing() {
-        let payload = #"{"type":"ping"}"#.data(using: .utf8)!
-        task?.send(.data(payload)) { _ in }
-    }
-
-    private func receiveNext() {
+    private func receiveNext(host: HostEndpoint) {
         guard receiveLoopRunning, let task else { return }
         task.receive { [weak self] result in
             Task { @MainActor in
@@ -67,10 +64,9 @@ final class WebSocketClient: NSObject, ObservableObject {
                 case .failure(let error):
                     self.lastError = error.localizedDescription
                     self.isConnected = false
-                    // Reconnect after short delay
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    if self.receiveLoopRunning {
-                        self.connect()
+                    if self.receiveLoopRunning, self.connectedHostId == host.id {
+                        self.connect(host: host)
                     }
                 case .success(let message):
                     switch message {
@@ -83,7 +79,7 @@ final class WebSocketClient: NSObject, ObservableObject {
                     @unknown default:
                         break
                     }
-                    self.receiveNext()
+                    self.receiveNext(host: host)
                 }
             }
         }

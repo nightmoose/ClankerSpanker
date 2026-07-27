@@ -14,6 +14,8 @@ const state = {
   disk: [],
   claude: [],
   projects: [],
+  profiles: [],
+  profileId: null,
   detail: null,
   token: localStorage.getItem(STORAGE_TOKEN) || "",
   // When served from /app/, same origin is the host
@@ -95,7 +97,10 @@ function renderList() {
   showView("list");
 
   if (state.tab === "active") {
-    const rows = state.showArchived ? state.archived : state.sessions;
+    const all = state.showArchived ? state.archived : state.sessions;
+    const rows = state.profileId
+      ? all.filter((s) => s.profileId === state.profileId || (!s.profileId && state.profiles.find((p) => p.id === state.profileId && p.backend === (s.backend || "grok"))))
+      : all;
     const title = state.showArchived ? "Archived" : "Active";
     if (!rows.length) {
       root.innerHTML = `<div class="list-empty">No ${title.toLowerCase()} chats.<br/><span style="font-size:13px">Compose a task or open Grok/Claude from disk.</span></div>`;
@@ -473,6 +478,7 @@ function renderCompose() {
           planMode: $("#c-plan").checked,
           worktree: $("#c-wt").checked,
           subagents: true,
+          profileId: state.profileId || undefined,
         }),
       });
       banner("Dispatched");
@@ -533,15 +539,18 @@ function renderSettings() {
 async function refresh() {
   if (!state.token) return;
   try {
-    const [sessions, projects] = await Promise.all([
+    const [sessions, projects, profiles] = await Promise.all([
       api("/sessions"),
       api("/projects").catch(() => ({ projects: [] })),
+      api("/profiles").catch(() => ({ profiles: [] })),
     ]);
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
     state.disk = sessions.diskSessions || [];
     state.claude = sessions.claudeSessions || [];
     state.projects = projects.projects || [];
+    state.profiles = profiles.profiles || [];
+    if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
     setConn(true);
     if (!state.detail) renderList();
     else if (state.detail?.id) {

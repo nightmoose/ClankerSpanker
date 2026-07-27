@@ -37,6 +37,7 @@ struct ApprovalBarView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             HStack(spacing: 12) {
+                // isActing only while THIS approve/reject is in flight — never while the agent turn is still open.
                 DispatchButton(
                     title: "Reject",
                     icon: "xmark",
@@ -44,6 +45,7 @@ struct ApprovalBarView: View {
                     isLoading: isActing,
                     action: onReject
                 )
+                .disabled(isActing)
                 DispatchButton(
                     title: "Approve",
                     icon: "checkmark",
@@ -51,6 +53,7 @@ struct ApprovalBarView: View {
                     isLoading: isActing,
                     action: onApprove
                 )
+                .disabled(isActing)
             }
         }
         .padding()

@@ -3,62 +3,113 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
 
-    @State private var hostURL = ""
-    @State private var hostToken = ""
-    @State private var xaiKey = ""
-    @State private var keepAwakeReminder = true
+    @State private var draftName = ""
+    @State private var draftURL = ""
+    @State private var draftToken = ""
+    @State private var editingHost: HostEndpoint?
     @State private var statusMessage: String?
-    @State private var isSaving = false
+    @State private var isWorking = false
+    @State private var keepAwakeReminder = true
 
     var body: some View {
         NavigationStack {
             ZStack {
                 DispatchBackground()
                 Form {
-                    Section("Host") {
-                        TextField("Host URL", text: $hostURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                        SecureField("Host token", text: $hostToken)
-                        SecureField("xAI API key (optional)", text: $xaiKey)
+                    Section {
+                        Text("Each host is a machine running the ClankerSpanker gateway (your Mac Mini, a client laptop, …). Profiles from every host appear as colored chips on Sessions.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Color.clear)
+
+                    Section("Hosts") {
+                        ForEach(appState.hosts) { host in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(host.name).font(.headline)
+                                    Spacer()
+                                    Button("Edit") {
+                                        editingHost = host
+                                        draftName = host.name
+                                        draftURL = host.baseURL
+                                        draftToken = host.loadToken()
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                }
+                                Text(host.baseURL)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(host.loadToken().isEmpty ? "No token" : "Token saved")
+                                    .font(.caption2)
+                                    .foregroundStyle(host.loadToken().isEmpty ? DispatchColors.danger : DispatchColors.success)
+                            }
+                            .listRowBackground(DispatchColors.card)
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    appState.removeHost(id: host.id)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+
+                        Button {
+                            editingHost = HostEndpoint(name: "", baseURL: "http://")
+                            draftName = ""
+                            draftURL = "http://"
+                            draftToken = ""
+                        } label: {
+                            Label("Add host", systemImage: "plus.circle.fill")
+                        }
+                        .listRowBackground(DispatchColors.card)
+                    }
+
+                    if let editingHost {
+                        Section(editingHost.name.isEmpty && draftName.isEmpty ? "New host" : "Edit host") {
+                            TextField("Name (e.g. FullScore MBP)", text: $draftName)
+                            TextField("Host URL", text: $draftURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                            SecureField("Host token", text: $draftToken)
+                            Button {
+                                Task { await saveHost(editingHost) }
+                            } label: {
+                                if isWorking { ProgressView() } else { Text("Save host") }
+                            }
+                            Button("Test this host") {
+                                Task { await testHost(editingHost) }
+                            }
+                            Button("Cancel", role: .cancel) {
+                                self.editingHost = nil
+                            }
+                        }
+                        .listRowBackground(DispatchColors.card)
+                    }
+
+                    Section("Connection") {
                         HStack {
                             Text("WebSocket")
                             Spacer()
                             Text(appState.connectionLabel)
                                 .foregroundStyle(appState.socket.isConnected ? DispatchColors.success : .secondary)
                         }
-                    }
-                    .listRowBackground(DispatchColors.card)
-
-                    Section("Reminders") {
-                        Toggle("Keep Mac awake reminder", isOn: $keepAwakeReminder)
-                        Text("When on, Dispatch can nudge you if the host is unreachable while a task is running.")
+                        Text(appState.selectedHost.map { "Active: \($0.name)" } ?? "No active host")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .listRowBackground(DispatchColors.card)
 
+                    Section("Reminders") {
+                        Toggle("Keep hosts reachable reminder", isOn: $keepAwakeReminder)
+                    }
+                    .listRowBackground(DispatchColors.card)
+
                     Section {
-                        Button {
-                            Task { await save() }
-                        } label: {
-                            if isSaving {
-                                ProgressView()
-                            } else {
-                                Text("Save")
-                            }
-                        }
-
-                        Button("Test connection") {
-                            Task { await test() }
-                        }
-
-                        Button("Sign out / clear secrets", role: .destructive) {
+                        Button("Sign out / clear all hosts", role: .destructive) {
                             appState.clearConfiguration()
-                            hostURL = ""
-                            hostToken = ""
-                            xaiKey = ""
                             statusMessage = "Cleared"
                         }
                     }
@@ -66,15 +117,16 @@ struct SettingsView: View {
 
                     if let statusMessage {
                         Section {
-                            Text(statusMessage)
-                                .font(.footnote)
+                            Text(statusMessage).font(.footnote)
                         }
                         .listRowBackground(Color.clear)
                     }
 
                     Section("About") {
-                        LabeledContent("App", value: "ClankerSpanker 0.2.4")
+                        LabeledContent("App", value: "ClankerSpanker 0.5.1")
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker")
+                        LabeledContent("Hosts", value: "\(appState.hosts.count)")
+                        LabeledContent("Profiles", value: "\(appState.boundProfiles.count)")
                     }
                     .listRowBackground(DispatchColors.card)
                 }
@@ -82,9 +134,6 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .onAppear {
-                hostURL = KeychainHelper.loadString(key: KeychainHelper.Keys.hostURL) ?? ""
-                hostToken = KeychainHelper.loadString(key: KeychainHelper.Keys.hostToken) ?? ""
-                xaiKey = KeychainHelper.loadString(key: KeychainHelper.Keys.xaiAPIKey) ?? ""
                 keepAwakeReminder = UserDefaults.standard.object(forKey: "keepAwakeReminder") as? Bool ?? true
             }
             .onChange(of: keepAwakeReminder) { _, value in
@@ -93,23 +142,35 @@ struct SettingsView: View {
         }
     }
 
-    private func save() async {
-        isSaving = true
-        defer { isSaving = false }
-        appState.saveConfiguration(
-            hostURL: hostURL,
-            hostToken: hostToken,
-            xaiKey: xaiKey.isEmpty ? nil : xaiKey
-        )
-        statusMessage = "Saved"
-        await test()
+    private func saveHost(_ base: HostEndpoint) async {
+        isWorking = true
+        defer { isWorking = false }
+        var host = base
+        host.name = draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Host"
+            : draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        host.baseURL = draftURL
+        appState.upsertHost(host, token: draftToken)
+        editingHost = nil
+        statusMessage = "Saved \(host.name)"
+        await appState.refreshSessions()
+        do {
+            try await appState.api.validate(host: host)
+            statusMessage = "\(host.name) reachable ✓"
+        } catch {
+            statusMessage = "\(host.name): \(error.localizedDescription)"
+        }
     }
 
-    private func test() async {
+    private func testHost(_ base: HostEndpoint) async {
+        var host = base
+        if !draftURL.isEmpty { host.baseURL = draftURL }
+        if !draftToken.isEmpty { host.saveToken(draftToken) }
         do {
-            try await appState.api.validate()
-            statusMessage = "Host reachable ✓"
-            appState.socket.connect()
+            try await appState.api.validate(host: host)
+            _ = try await appState.api.health(host: host)
+            statusMessage = "\(host.name.isEmpty ? "Host" : host.name) reachable ✓"
+            appState.socket.connect(host: host)
         } catch {
             statusMessage = error.localizedDescription
         }

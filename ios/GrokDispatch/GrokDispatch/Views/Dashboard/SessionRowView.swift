@@ -10,7 +10,15 @@ struct SessionRowView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
-                if session.model.lowercased().contains("claude") {
+                if let name = session.profileName, !name.isEmpty {
+                    Text(name)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .foregroundStyle(Color(hex: session.profileColor ?? "") ?? (session.backend == "claude" ? Color.orange : DispatchColors.accent))
+                        .background((Color(hex: session.profileColor ?? "") ?? Color.orange).opacity(0.15))
+                        .clipShape(Capsule())
+                } else if session.backend == "claude" || session.model.lowercased().contains("claude") {
                     Text("Claude")
                         .font(.caption2.weight(.bold))
                         .padding(.horizontal, 6)

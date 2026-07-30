@@ -2,7 +2,7 @@
   "name": "clankerspanker-host",
   "version": "0.3.1",
   "private": true,
-  "description": "Local-first host gateway for ClankerSpanker (browser + iOS → Grok Build / Claude Code)",
+  "description": "Local-first host gateway for ClankerSpanker (browser + iOS \u2192 Grok Build / Claude Code)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -10,7 +10,9 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "install-service": "bash scripts/install-service.sh"
+    "install-service": "bash scripts/install-service.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=20"
@@ -22,6 +24,7 @@
     "@types/node": "^22.15.30",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

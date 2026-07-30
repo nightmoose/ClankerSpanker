@@ -113,6 +113,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     autoApproveKinds: raw.autoApproveKinds ?? DEFAULT_AUTO_APPROVE,
     notifyDesktop,
     dataDir: raw.dataDir ?? DEFAULT_DATA_DIR,
+    promptIdleTimeoutMs:
+      typeof raw.promptIdleTimeoutMs === "number" ? raw.promptIdleTimeoutMs : undefined,
+    promptMaxMs: typeof raw.promptMaxMs === "number" ? raw.promptMaxMs : undefined,
   };
 
   // Env overrides
@@ -120,6 +123,12 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   if (process.env.GROK_DISPATCH_PORT) merged.bindPort = Number(process.env.GROK_DISPATCH_PORT);
   if (process.env.GROK_DISPATCH_TOKEN) merged.hostToken = process.env.GROK_DISPATCH_TOKEN;
   if (process.env.GROK_BINARY) merged.grokBinary = process.env.GROK_BINARY;
+  if (process.env.GROK_DISPATCH_PROMPT_IDLE_MS) {
+    merged.promptIdleTimeoutMs = Number(process.env.GROK_DISPATCH_PROMPT_IDLE_MS);
+  }
+  if (process.env.GROK_DISPATCH_PROMPT_MAX_MS) {
+    merged.promptMaxMs = Number(process.env.GROK_DISPATCH_PROMPT_MAX_MS);
+  }
 
   mkdirSync(merged.dataDir, { recursive: true });
   return merged;

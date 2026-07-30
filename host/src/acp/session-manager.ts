@@ -754,9 +754,19 @@ export class SessionManager extends EventEmitter {
     if (!selected) throw new Error("No permission option available");
 
     if (approval.rpcId !== undefined) {
-      live.client.respond(approval.rpcId, {
-        outcome: { outcome: "selected", optionId: selected },
-      });
+      const raw = approval.rawInput as { variant?: string } | undefined;
+      if (raw?.variant === "ExitPlanMode") {
+        // Grok exit_plan_mode expects accepted/rejected, not permission optionIds.
+        live.client.respond(approval.rpcId, {
+          outcome: {
+            outcome: decision === "approve" ? "accepted" : "rejected",
+          },
+        });
+      } else {
+        live.client.respond(approval.rpcId, {
+          outcome: { outcome: "selected", optionId: selected },
+        });
+      }
     }
 
     live.pendingApprovals.delete(approvalId);
@@ -764,11 +774,20 @@ export class SessionManager extends EventEmitter {
     live.session.status = "running";
     live.session.updatedAt = now();
 
-    if (comment?.trim()) {
+    let noteText: string | null = null;
+    if (rawIsExitPlan(approval.rawInput)) {
+      noteText =
+        decision === "approve"
+          ? "Plan approved — implementing."
+          : "Plan rejected — continue planning.";
+    } else if (comment?.trim()) {
+      noteText = `${decision === "approve" ? "Approved" : "Rejected"} with comment: ${comment.trim()}`;
+    }
+    if (noteText) {
       const note: TranscriptEntry = {
         id: randomUUID(),
         role: "system",
-        text: `${decision === "approve" ? "Approved" : "Rejected"} with comment: ${comment.trim()}`,
+        text: noteText,
         at: now(),
       };
       live.session.transcript.push(note);
@@ -914,39 +933,83 @@ export class SessionManager extends EventEmitter {
       void this.handleAgentMessage(live, msg);
     });
 
-    client.on("exit", () => {
-      if (this.live.get(session.id) === live) {
-        if (
-          session.status === "running" ||
-          session.status === "awaiting_approval" ||
-          session.status === "awaiting_question"
-        ) {
-          // Keep awaiting_question state so phone can still answer via reattach+prompt
-          if (session.status === "awaiting_question" && session.pendingQuestion) {
-            session.error =
-              "Agent process exited while waiting for your answers — reopen and submit answers again.";
-            session.updatedAt = now();
-            this.persist(session);
-            this.emitEvent(session, "session.updated", {
-              status: "awaiting_question",
-              process: "exited",
-            });
-          } else {
-            session.status = "failed";
-            session.error = "Agent process exited unexpectedly";
-            session.updatedAt = now();
-            this.persist(session);
-            this.emitEvent(session, "session.failed", { error: session.error });
-            this.maybeNotify("Grok Dispatch", `Session failed: ${session.title}`);
-          }
-        } else if (session.status === "idle" || session.status === "completed") {
+    client.on("exit", (info?: { code?: number | null; signal?: string | null; stderr?: string }) => {
+      if (this.live.get(session.id) !== live) return;
+
+      const stderr = (info?.stderr ?? client.lastStderr ?? "").trim();
+      const mapped =
+        mapAgentExitError(stderr) ??
+        (stderr
+          ? `Agent process exited (code=${info?.code ?? "?"}, signal=${info?.signal ?? "null"}): ${stderr.split("\n").slice(-2).join(" | ").slice(0, 400)}`
+          : null);
+
+      if (
+        session.status === "running" ||
+        session.status === "awaiting_approval" ||
+        session.status === "awaiting_question"
+      ) {
+        // Keep awaiting_question so phone can still answer after reattach.
+        if (session.status === "awaiting_question" && session.pendingQuestion) {
+          session.error =
+            mapped ??
+            "Agent process exited while waiting for your answers — reopen and submit answers again.";
           session.updatedAt = now();
           this.persist(session);
-          this.emitEvent(session, "session.updated", { status: session.status, process: "exited" });
+          this.emitEvent(session, "session.updated", {
+            status: "awaiting_question",
+            process: "exited",
+            recoverable: Boolean(session.grokSessionId),
+          });
+        } else if (session.grokSessionId) {
+          // Recoverable: disk session still exists — don't hard-fail the whole chat.
+          // Next follow-up / open will ensureLive → session/load.
+          session.status = "idle";
+          session.error = mapped ?? "Agent process disconnected — open the chat again to continue.";
+          session.updatedAt = now();
+          this.persist(session);
+          this.emitEvent(session, "session.updated", {
+            status: "idle",
+            process: "exited",
+            recoverable: true,
+            error: session.error,
+          });
+          this.maybeNotify("ClankerSpanker", `Disconnected (recoverable): ${session.title}`);
+        } else {
+          session.status = "failed";
+          session.error = mapped ?? "Agent process exited unexpectedly";
+          session.updatedAt = now();
+          this.persist(session);
+          this.emitEvent(session, "session.failed", {
+            error: session.error,
+            recoverable: false,
+          });
+          this.maybeNotify("ClankerSpanker", `Session failed: ${session.title}`);
         }
-        this.live.delete(session.id);
+      } else if (session.status === "idle" || session.status === "completed") {
+        session.updatedAt = now();
+        this.persist(session);
+        this.emitEvent(session, "session.updated", { status: session.status, process: "exited" });
       }
+      this.live.delete(session.id);
     });
+  }
+
+  private newAcpClient(session: DispatchSession): AcpClient {
+    const agentArgs: string[] = [];
+    if (session.model) agentArgs.push("--model", session.model);
+    return new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session), {
+      promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
+      promptMaxMs: this.config.promptMaxMs,
+    });
+  }
+
+  /** True while a prompt is parked on the human (do not idle-fail). */
+  private isHumanGateOpen(live: LiveSession): boolean {
+    const st = live.session.status;
+    if (st === "awaiting_approval" || st === "awaiting_question") return true;
+    if (live.pendingApprovals.size > 0 || live.pendingQuestions.size > 0) return true;
+    if (live.session.pendingApprovalId || live.session.pendingQuestionId) return true;
+    return false;
   }
 
   private profileEnvFor(session: DispatchSession): NodeJS.ProcessEnv {
@@ -963,10 +1026,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private async spawnAndLoad(session: DispatchSession, grokSessionId: string): Promise<LiveSession> {
-    const agentArgs: string[] = [];
-    if (session.model) agentArgs.push("--model", session.model);
-
-    const client = new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session));
+    const client = this.newAcpClient(session);
     const live: LiveSession = {
       session,
       client,
@@ -1002,11 +1062,8 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
-    const agentArgs: string[] = [];
-    if (session.model) agentArgs.push("--model", session.model);
     // Never pass --always-approve: phone is the human gate for file changes.
-
-    const client = new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session));
+    const client = this.newAcpClient(session);
     const live: LiveSession = {
       session,
       client,
@@ -1056,14 +1113,16 @@ export class SessionManager extends EventEmitter {
       session.status = "failed";
       const base = err instanceof Error ? err.message : String(err);
       const stderr = client.lastStderr?.trim();
-      session.error = stderr && !base.includes(stderr.slice(0, 40))
-        ? `${base}\n${stderr.slice(-500)}`
-        : base;
+      const mapped = mapAgentExitError(base) ?? mapAgentExitError(stderr ?? "");
+      session.error =
+        mapped ??
+        (stderr && !base.includes(stderr.slice(0, 40)) ? `${base}\n${stderr.slice(-500)}` : base);
       session.completedAt = now();
       session.updatedAt = now();
       this.persist(session);
       this.emitEvent(session, "session.failed", { error: session.error });
-      this.maybeNotify("Grok Dispatch", `Failed: ${session.title}`);
+      this.maybeNotify("ClankerSpanker", `Failed: ${session.title}`);
+      // Stop the child so the next follow-up/ensureLive can respawn cleanly.
       await client.stop().catch(() => undefined);
       this.live.delete(session.id);
     }
@@ -1103,17 +1162,31 @@ export class SessionManager extends EventEmitter {
     }
 
     try {
-      const result = (await client.request("session/prompt", {
-        sessionId: session.grokSessionId,
-        prompt: promptBlocks,
-      })) as { stopReason?: string };
+      // No short wall clock: long plan-mode / multi-tool turns and human gates
+      // must stay open. Idle hang detection resets on ACP activity and freezes
+      // while awaiting approval or questions on the phone.
+      const result = (await client.request(
+        "session/prompt",
+        {
+          sessionId: session.grokSessionId,
+          prompt: promptBlocks,
+        },
+        {
+          isIdlePaused: () => this.isHumanGateOpen(live),
+        },
+      )) as { stopReason?: string };
 
       this.flushAssistant(live);
 
       session.stopReason = result.stopReason;
       const statusNow = live.session.status;
       if (statusNow !== "cancelled" && statusNow !== "failed") {
-        if (statusNow !== "awaiting_approval" && live.pendingApprovals.size === 0) {
+        if (
+          statusNow !== "awaiting_approval" &&
+          statusNow !== "awaiting_question" &&
+          live.pendingApprovals.size === 0 &&
+          live.pendingQuestions.size === 0
+        ) {
           // Idle = ready for another message (multi-turn). Not a terminal "Done".
           live.session.status = "idle";
           live.session.updatedAt = now();
@@ -1122,18 +1195,23 @@ export class SessionManager extends EventEmitter {
             stopReason: result.stopReason,
             status: "idle",
           });
-          this.maybeNotify("Grok Dispatch", `Your turn: ${live.session.title}`);
+          this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
         }
       }
     } catch (err) {
       if (live.session.status === "cancelled") return;
+      this.flushAssistant(live);
       live.session.status = "failed";
-      live.session.error = err instanceof Error ? err.message : String(err);
+      const base = err instanceof Error ? err.message : String(err);
+      live.session.error = mapAgentExitError(base) ?? base;
       live.session.completedAt = now();
       live.session.updatedAt = now();
       this.persist(live.session);
       this.emitEvent(live.session, "session.failed", { error: live.session.error });
-      this.maybeNotify("Grok Dispatch", `Failed: ${live.session.title}`);
+      this.maybeNotify("ClankerSpanker", `Failed: ${live.session.title}`);
+      // Kill hung/orphaned agent so ensureLive can respawn on retry.
+      await client.stop().catch(() => undefined);
+      this.live.delete(live.session.id);
       throw err;
     }
   }
@@ -1143,8 +1221,10 @@ export class SessionManager extends EventEmitter {
     msg: { id?: number | string; method: string; params?: unknown },
   ): Promise<void> {
     const { session } = live;
+    // Grok sometimes prefixes extension methods with a leading underscore.
+    const method = normalizeAcpMethod(msg.method);
 
-    if (msg.method === "session/update") {
+    if (method === "session/update") {
       const params = msg.params as {
         sessionId?: string;
         update?: Record<string, unknown>;
@@ -1240,39 +1320,91 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
-    if (msg.method === "session/request_permission") {
+    if (method === "session/request_permission") {
       await this.handlePermissionRequest(live, msg.id!, msg.params);
       return;
     }
 
     // Grok extension: interactive questionnaire (the thing that was leaving sessions stuck)
-    if (msg.method === "x.ai/ask_user_question" && msg.id !== undefined) {
+    // Accept both x.ai/… and _x.ai/… (agent has used both).
+    if (method === "x.ai/ask_user_question" && msg.id !== undefined) {
       this.handleAskUserQuestionRequest(live, msg.id, msg.params);
       return;
     }
 
-    // Plan approval surface (optional — present as a simple approve/reject via approval bar later)
-    if (msg.method === "x.ai/exit_plan_mode" && msg.id !== undefined) {
-      // Auto-accept plan exit for MVP so implementation can proceed; plan text still streams via updates
-      live.client.respond(msg.id, { outcome: { outcome: "accepted" } });
+    // Plan approval surface — park on phone when possible; auto-accept if no UI path.
+    if (method === "x.ai/exit_plan_mode" && msg.id !== undefined) {
+      await this.handleExitPlanMode(live, msg.id, msg.params);
       return;
     }
 
     // Client-side fs methods if agent asks — deny writes, allow nothing for MVP safety
-    if (msg.method === "fs/read_text_file" && msg.id !== undefined) {
+    if (method === "fs/read_text_file" && msg.id !== undefined) {
       live.client.respondError(msg.id, -32000, "fs/read_text_file not implemented by host; use agent tools");
       return;
     }
-    if (msg.method === "fs/write_text_file" && msg.id !== undefined) {
+    if (method === "fs/write_text_file" && msg.id !== undefined) {
       live.client.respondError(msg.id, -32000, "Client-side writes disabled");
       return;
     }
 
     // Don't leave the agent hung on unknown inbound requests
-    if (msg.id !== undefined && msg.method) {
-      console.warn(`[acp] unhandled request method=${msg.method} id=${msg.id}`);
-      live.client.respondError(msg.id, -32601, `Method not supported by Grok Dispatch host: ${msg.method}`);
+    if (msg.id !== undefined && method) {
+      console.warn(`[acp] unhandled request method=${msg.method} (normalized=${method}) id=${msg.id}`);
+      live.client.respondError(msg.id, -32601, `Method not supported by ClankerSpanker host: ${method}`);
     }
+  }
+
+  /**
+   * Agent wants to leave plan mode. Prefer phone approve/reject when we can
+   * surface it; otherwise accept so long jobs are not stuck forever.
+   */
+  private async handleExitPlanMode(
+    live: LiveSession,
+    rpcId: number | string,
+    params: unknown,
+  ): Promise<void> {
+    const p = (params ?? {}) as {
+      title?: string;
+      plan?: unknown;
+      options?: Array<{ optionId: string; name: string; kind: string }>;
+    };
+
+    // If the agent already sent a structured plan, keep it on the session.
+    if (Array.isArray(p.plan)) {
+      live.session.plan = p.plan as PlanEntry[];
+    }
+
+    const options = p.options?.length
+      ? p.options
+      : [
+          { optionId: "accept", name: "Approve plan & implement", kind: "allow_once" },
+          { optionId: "reject", name: "Keep planning", kind: "reject_once" },
+        ];
+
+    const approvalId = randomUUID();
+    const approval: PendingApproval & { rpcId: number | string; source?: "grok" | "claude" } = {
+      id: approvalId,
+      sessionId: live.session.id,
+      title: p.title ?? "Approve plan to implement",
+      kind: "other",
+      rawInput: { variant: "ExitPlanMode", plan: p.plan ?? live.session.plan },
+      options,
+      createdAt: now(),
+      rpcId,
+      source: "grok",
+    };
+
+    live.pendingApprovals.set(approvalId, approval);
+    live.session.pendingApprovalId = approvalId;
+    live.session.status = "awaiting_approval";
+    live.session.updatedAt = now();
+    this.persist(live.session);
+
+    const { rpcId: _r, source: _s, ...publicApproval } = approval;
+    this.emitEvent(live.session, "approval.needed", publicApproval);
+    this.emitEvent(live.session, "session.updated", { status: "awaiting_approval" });
+    this.maybeNotify("Plan ready for approval", live.session.title);
   }
 
   private handleAskUserQuestionRequest(
@@ -1487,6 +1619,45 @@ export class SessionManager extends EventEmitter {
     await Promise.allSettled(stops);
     this.live.clear();
   }
+}
+
+/** Normalize ACP extension method names (`_x.ai/…` → `x.ai/…`). */
+function normalizeAcpMethod(method: string): string {
+  if (method.startsWith("_x.ai/")) return "x.ai/" + method.slice("_x.ai/".length);
+  if (method.startsWith("_")) {
+    // Generic leading underscore used by some agent builds for extensions
+    const rest = method.slice(1);
+    if (rest.startsWith("x.ai/")) return rest;
+  }
+  return method;
+}
+
+function mapAgentExitError(detail: string | undefined | null): string | null {
+  if (!detail) return null;
+  const lower = detail.toLowerCase();
+  // Nested worker noise often says AuthorizationRequired even while the main
+  // session is healthy. Only map to a hard auth message when it looks terminal.
+  if (
+    lower.includes("authorizationrequired") ||
+    lower.includes("auth(authorizationrequired)")
+  ) {
+    if (lower.includes("worker quit") || lower.includes("transport channel closed")) {
+      return (
+        "Grok agent worker disconnected (auth/transport). " +
+        "Usually transient — reopen the chat to continue. " +
+        "If every new session fails immediately, run `grok login` on the Mac."
+      );
+    }
+    return (
+      "Grok auth issue on the host (AuthorizationRequired). " +
+      "If new sessions fail, run `grok login` on the Mac."
+    );
+  }
+  return null;
+}
+
+function rawIsExitPlan(raw: unknown): boolean {
+  return Boolean(raw && typeof raw === "object" && (raw as { variant?: string }).variant === "ExitPlanMode");
 }
 
 function findClaudeTranscriptPath(sessionId: string): string | undefined {

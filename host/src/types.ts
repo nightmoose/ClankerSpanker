@@ -284,6 +284,16 @@ export interface HostConfigFile {
   /** @deprecated Use notifyDesktop */
   notifyMac?: boolean;
   dataDir: string;
+  /**
+   * Idle hang detection for open `session/prompt` turns (ms of no ACP activity).
+   * Default 15 minutes. Frozen while awaiting phone approval/answers. `0` disables.
+   */
+  promptIdleTimeoutMs?: number;
+  /**
+   * Absolute ceiling for a single `session/prompt` (ms). Default 6 hours. `0` disables.
+   * This is NOT the old 120s wall clock — only an orphan safety net.
+   */
+  promptMaxMs?: number;
 }
 
 export interface PublicSessionSummary {

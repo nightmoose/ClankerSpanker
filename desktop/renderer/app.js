@@ -610,23 +610,40 @@ function renderHost() {
   const cfg = state.hostConfig;
   const logs = (hs?.logs || []).join("\n");
 
+  const install = hs?.install || {};
+  const service = hs?.service || {};
   root.innerHTML = `
     <div class="host-grid two">
       <div class="stack-gap">
+        <div class="card">
+          <h3>Install gateway (out of git tree)</h3>
+          <p class="kv">Installed: <strong>${install.installed ? escapeHtml(install.installRoot) : "No"}</strong></p>
+          <p class="kv">User service: <strong>${
+            service.active ? `active · ${escapeHtml(service.name || "")}` : service.loaded ? "unit present" : "not loaded"
+          }</strong></p>
+          <p class="hint">Same idea as the Mac app: copy a built host into a stable folder, enable systemd/launchd, keep config in <code>~/.grok-dispatch</code>.</p>
+          <div class="inline-actions">
+            <button type="button" class="primary" id="h-install">Install / update host</button>
+            <button type="button" class="secondary" id="h-svc-load">Load service</button>
+            <button type="button" class="secondary" id="h-svc-unload">Unload service</button>
+            <button type="button" class="ghost" id="h-uninstall">Uninstall files…</button>
+          </div>
+          <div class="log-box" id="h-install-logs" style="margin-top:10px">${escapeHtml(state._installLogs || "(install log)")}</div>
+        </div>
         <div class="card">
           <h3>Gateway process</h3>
           <p class="kv">Mode: <strong>${escapeHtml(hs?.mode || "—")}</strong></p>
           <p class="kv">Package: <strong>${escapeHtml(hs?.hostRoot || "—")}</strong></p>
           <p class="kv">API: <strong>${hs?.probe?.ok ? "reachable" : escapeHtml(hs?.probe?.error || "down")}</strong></p>
           <p class="kv">Process: <strong>${hs?.running ? `running (pid ${hs.pid})` : "stopped"}</strong>
-            ${hs?.startedByUs ? " · owned by desktop" : hs?.running ? " · external" : ""}</p>
+            ${hs?.startedByUs ? " · owned by desktop" : hs?.probe?.ok ? " · external/service" : ""}</p>
           <div class="inline-actions">
             <button type="button" class="primary" id="h-start">Start</button>
             <button type="button" class="secondary" id="h-stop">Stop</button>
             <button type="button" class="secondary" id="h-restart">Restart</button>
             <button type="button" class="ghost" id="h-force-stop">Force stop</button>
           </div>
-          <p class="hint" style="margin-top:10px">Start runs <code>host/dist/index.js</code>. Build first with <code>cd host && npm run build</code> if needed.</p>
+          <p class="hint" style="margin-top:10px">Prefer <strong>Install / update host</strong> + user service for production. Start is for foreground/dev ownership.</p>
         </div>
         <div class="card">
           <h3>Logs</h3>
@@ -792,6 +809,47 @@ function renderHost() {
       profiles,
     };
   };
+
+  $("#h-install")?.addEventListener("click", async () => {
+    banner("Installing host…");
+    state._installLogs = "Installing…\n";
+    const box = $("#h-install-logs");
+    if (box) box.textContent = state._installLogs;
+    const r = await window.clanker.hostInstall({ loadService: true });
+    state._installLogs = (r.logs || []).join("") || r.error || "";
+    if (box) box.textContent = state._installLogs || "(done)";
+    if (!r.ok) banner(r.error || "Install failed", true);
+    else {
+      banner("Host installed");
+      await syncConnection();
+      await refreshHostStatus();
+      await loadHostConfigPanel();
+      await refreshSessions();
+      renderHost();
+    }
+  });
+  $("#h-svc-load")?.addEventListener("click", async () => {
+    const r = await window.clanker.hostServiceLoad();
+    if (!r.ok) banner(r.error || "Load failed", true);
+    else banner("User service loaded");
+    await refreshHostStatus();
+    renderHost();
+  });
+  $("#h-svc-unload")?.addEventListener("click", async () => {
+    const r = await window.clanker.hostServiceUnload();
+    if (!r.ok) banner(r.error || "Unload failed", true);
+    else banner("User service unloaded");
+    await refreshHostStatus();
+    renderHost();
+  });
+  $("#h-uninstall")?.addEventListener("click", async () => {
+    if (!confirm("Remove installed host package files and unload the user service?")) return;
+    const r = await window.clanker.hostUninstall({ removeFiles: true });
+    if (!r.ok) banner(r.error || "Uninstall failed", true);
+    else banner("Host package removed");
+    await refreshHostStatus();
+    renderHost();
+  });
 
   $("#h-start")?.addEventListener("click", async () => {
     const r = await window.clanker.hostStart();

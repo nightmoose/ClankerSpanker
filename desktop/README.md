@@ -15,8 +15,19 @@ Electron (Linux)  ──REST + WS──►  host/ gateway (:8787)
 
 | Mode | Behavior |
 |------|----------|
-| **Managed** (default) | Finds `../host` (or configured path), can start/stop it, syncs token from `~/.grok-dispatch/config.json` |
+| **Managed** (default) | Uses installed host (`~/.local/share/clankerspanker/host`) or sibling `../host`; start/stop; syncs token from `~/.grok-dispatch` |
 | **Remote** | Connect to an existing host URL; process controls disabled |
+
+### Install gateway (like Mac)
+
+In the app: **Host → Install / update host**
+
+1. Builds/copies host out of the monorepo into **`~/.local/share/clankerspanker/host`**  
+2. `npm install --omit=dev`  
+3. Enables **systemd --user** unit `clankerspanker-host.service`  
+4. Points managed mode at the install path  
+
+You no longer need the AppImage to sit next to a git checkout for day-to-day use (you only need a **source** `host/` once to install from).
 
 ## Requirements
 

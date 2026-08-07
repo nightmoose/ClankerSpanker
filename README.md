@@ -67,8 +67,10 @@ cd host && npm run build          # once
 cd ../desktop && npm install && npm start
 ```
 
-Managed mode auto-starts sibling `host/` and reads `~/.grok-dispatch`.  
-**AppImage / deb:** run `npm run dist:linux` **on Linux** (or Linux CI). See `desktop/README.md`.
+**Host → Install / update host** copies the gateway to `~/.local/share/clankerspanker/host` and enables a systemd user service (parity with Mac).  
+Config remains `~/.grok-dispatch`.  
+**AppImage / deb:** run `npm run dist:linux` **on Linux** (or Linux CI). See `desktop/README.md`.  
+Standalone host + agent CLIs: [docs/STANDALONE-INSTALLS.md](docs/STANDALONE-INSTALLS.md).
 
 ### Browser (any OS)
 

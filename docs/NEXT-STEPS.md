@@ -49,15 +49,12 @@ Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
    That produces `.AppImage` / `.deb` under `desktop/release/`.  
    **You cannot reliably build those on this Mac** — electron-builder needs Linux for those targets.
 
-5. **AppImage “host path” (what that means):**  
-   The Electron app is only a **remote control**. The gateway that runs agents is still the `host/` Node process.  
-   When you install an AppImage, it is *not* sitting next to your git checkout, so it does not know where `host/dist/index.js` lives.  
-   In Desktop settings you set **Host package path** to an absolute folder, e.g.  
-   `/home/you/Projects/GrokDispatch/host`  
-   (must contain `package.json` + `dist/index.js`).  
-   Until that path is set (or you only use “remote” mode against an already-running host), managed start/stop cannot find the gateway.
+5. **Host install from Linux desktop (done in product code):**  
+   **Host → Install / update host** installs to `~/.local/share/clankerspanker/host` and enables systemd user service — same idea as Mac Application Support + LaunchAgent.  
+   You only need a monorepo `host/` **once** as the install *source*; day-to-day does not require the AppImage to live next to git.  
+   Soak-test on a real Linux box still open.
 
-6. Optional later: systemd install button on Linux like Mac LaunchAgent.
+6. **Standalone agent CLIs** (Grok + Claude) on all OSes — see [STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md). Optional future: one-click installer buttons in the desktop apps.
 
 ### P2 — Product polish
 
@@ -69,14 +66,8 @@ Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 ### P3 — Hygiene
 
 11. **event-horizon/** — excluded via `.gitignore` until you move it (e.g. `~/Projects/event-horizon`). Not ClankerSpanker product.  
-12. **Host tests (“vitest / rollup”):**  
-    Automated tests for `host/` are run with `cd host && npm test`.  
-    On this machine they failed because `node_modules` was missing a platform binary (`@rollup/rollup-darwin-arm64`) — usually a broken or partial `npm install`, not bad product code.  
-    Fix when convenient:
-    ```bash
-    cd host && rm -rf node_modules && npm install && npm test && npm run typecheck && npm run build
-    ```
-    That is the quality gate before trusting host changes. Typecheck already passed without reinstall.
+12. **Host tests:** Gate is `cd host && npm test && npm run typecheck && npm run build`.  
+    Re-run after dependency surgery. (Restored here with `npm install` → **18 tests passed**.)
 
 ---
 

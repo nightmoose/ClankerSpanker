@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld("clanker", {
   hostStart: () => ipcRenderer.invoke("host:start"),
   hostStop: (opts) => ipcRenderer.invoke("host:stop", opts),
   hostRestart: () => ipcRenderer.invoke("host:restart"),
+  hostInstall: (opts) => ipcRenderer.invoke("host:install", opts),
+  hostUninstall: (opts) => ipcRenderer.invoke("host:uninstall", opts),
+  hostServiceLoad: () => ipcRenderer.invoke("host:service-load"),
+  hostServiceUnload: () => ipcRenderer.invoke("host:service-unload"),
 
   // Host gateway config.json
   getHostConfig: () => ipcRenderer.invoke("host:get-config"),

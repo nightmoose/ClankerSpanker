@@ -23,6 +23,7 @@ const {
   regenerateHostToken,
   hostConfigPath,
 } = require("./host-config-io");
+const hostInstaller = require("./host-installer.js");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -268,6 +269,12 @@ function registerIpc() {
     const conn = effectiveConnection();
     const proc = hostProc.snapshot();
     const probe = await hostProc.probe(conn.hostURL);
+    let service = { loaded: false, active: false, name: "" };
+    try {
+      service = await hostInstaller.serviceStatus();
+    } catch {
+      /* */
+    }
     return {
       ...proc,
       mode: desktop.mode,
@@ -275,7 +282,78 @@ function registerIpc() {
       hostConfigPath: hostConfigPath(),
       probe,
       connection: conn,
+      install: hostInstaller.installStatus(),
+      service,
     };
+  });
+
+  ipcMain.handle("host:install", async (_e, opts) => {
+    const logs = [];
+    try {
+      const desktop = loadConfig();
+      const sourcePath = opts?.sourcePath || desktop.hostPackagePath || undefined;
+      const result = await hostInstaller.installHost({
+        sourcePath,
+        loadService: opts?.loadService !== false,
+        onLog: (line) => {
+          logs.push(line);
+          sendToRenderer("host:log", { line: String(line).replace(/\n$/, "") });
+        },
+      });
+      saveConfig({ hostPackagePath: result.installRoot, mode: "managed" });
+      syncTokenFromHostFile();
+      // Prefer user service; if it did not come up, try direct start
+      const conn = effectiveConnection();
+      for (let i = 0; i < 25; i++) {
+        const probe = await hostProc.probe(conn.hostURL);
+        if (probe.ok) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      let probe = await hostProc.probe(conn.hostURL);
+      if (!probe.ok) {
+        await ipcStartHost();
+        probe = await hostProc.probe(conn.hostURL);
+      }
+      startMonitor();
+      return { ok: true, ...result, logs, probe };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e), logs };
+    }
+  });
+
+  ipcMain.handle("host:uninstall", async (_e, opts) => {
+    const logs = [];
+    try {
+      await hostInstaller.uninstallHost({
+        removeFiles: Boolean(opts?.removeFiles),
+        onLog: (line) => logs.push(line),
+      });
+      return { ok: true, logs };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e), logs };
+    }
+  });
+
+  ipcMain.handle("host:service-load", async () => {
+    const logs = [];
+    try {
+      await hostInstaller.installUserService({
+        onLog: (line) => logs.push(line),
+      });
+      return { ok: true, logs };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e), logs };
+    }
+  });
+
+  ipcMain.handle("host:service-unload", async () => {
+    const logs = [];
+    try {
+      await hostInstaller.uninstallUserService({ onLog: (line) => logs.push(line) });
+      return { ok: true, logs };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e), logs };
+    }
   });
 
   ipcMain.handle("host:start", () => ipcStartHost());

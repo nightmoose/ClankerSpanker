@@ -35,7 +35,7 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 | Grok / Claude disk attach | Yes (via host API) | Yes | Yes |
 | Multi-host registry | Yes | Remote mode + URL | URL in settings |
 | Start/stop **local** host | Yes | Yes (managed mode) | No |
-| Install host out of repo tree | Yes (App Support + LaunchAgent) | Path override / sibling `host/` | systemd/launchd scripts on host |
+| Install host out of repo tree | Yes (App Support + LaunchAgent) | Yes (`~/.local/share/clankerspanker/host` + systemd user) | Scripts only |
 | Menu bar / tray | Menu bar extra | System tray | No |
 | OS notifications | UNUserNotification + host `notify-send` | Electron Notification + host | Host only |
 | Multi-folder project picker | Yes (Mac panel) | Host config JSON / UI | Host config only |
@@ -66,6 +66,8 @@ Gaps are product work on the **owning** client for that platform, not a reason t
 | Electron (dev) | `cd desktop && npm i && npm start` (host must be built) |
 | Electron Linux packages | **`npm run dist:linux` on a Linux machine** (or Linux CI). Cross-build from macOS is unreliable. |
 | Mac app | `cd ios/GrokDispatch && ./run-mac.sh` or Xcode scheme **ClankerSpanker** → **My Mac** |
+
+Standalone host + agent CLI installs (all OSes): **[STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md)**.
 
 ## Naming (“desktop app”)
 

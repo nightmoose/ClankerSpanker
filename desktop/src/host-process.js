@@ -24,11 +24,18 @@ class HostProcessManager extends EventEmitter {
   }
 
   /**
-   * Resolve host package root (directory with package.json name clankerspanker-host or dist/index.js).
+   * Resolve host package root (directory with package.json + dist/index.js).
+   * Preference: explicit config → installed Application Support/XDG share → sibling monorepo host/.
    */
   resolveHostRoot(desktopConfig) {
     if (desktopConfig.hostPackagePath) {
       return path.resolve(desktopConfig.hostPackagePath);
+    }
+    try {
+      const { installedHostRoot, isInstalled } = require("./host-installer.js");
+      if (isInstalled()) return installedHostRoot();
+    } catch {
+      /* installer optional at load time */
     }
     // Dev: desktop/ is sibling of host/
     const sibling = path.resolve(__dirname, "..", "..", "host");

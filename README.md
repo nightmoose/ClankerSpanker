@@ -78,7 +78,12 @@ Open `/app/` with the host token. No local process management.
 
 ### iPhone
 
-Swift sources live under `ios/`; phone Run scheme is deferred while Mac is the focus.
+```bash
+open ios/GrokDispatch/ClankerSpanker.xcodeproj
+# Scheme: ClankerSpankerPhone → your iPhone (unlocked + trusted) → Run
+```
+
+Do not use “My Mac (Designed for iPad)” for the phone scheme.
 
 ## Features
 

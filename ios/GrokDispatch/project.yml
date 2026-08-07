@@ -9,14 +9,12 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.6.0"
-    CURRENT_PROJECT_VERSION: "14"
+    MARKETING_VERSION: "0.6.1"
+    CURRENT_PROJECT_VERSION: "15"
     DEVELOPMENT_TEAM: "XHS7K665C9"
     CODE_SIGN_STYLE: Automatic
+    # Phone target turns this OFF — generated merge was dropping NSAppTransportSecurity.
     GENERATE_INFOPLIST_FILE: YES
-    # Let Xcode derive the binary name from PRODUCT_NAME (do not set EXECUTABLE_NAME)
-    INFOPLIST_KEY_NSUserNotificationsUsageDescription: "ClankerSpanker notifies you when tasks finish or need approval."
-    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Attach screenshots so the agent can debug your app UI."
 targets:
   # ── iPhone only — DO NOT run this scheme on Mac ───────────
   ClankerSpanker:
@@ -30,7 +28,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker
-        # Name makes it obvious if you accidentally Run this on Mac
         PRODUCT_NAME: ClankerSpankerPhone
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -40,16 +37,13 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPAD: NO
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
-        INFOPLIST_KEY_CFBundleDisplayName: "ClankerSpanker Phone"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_NSCameraUsageDescription: "Capture a screenshot of the app under test for the agent."
+        # Critical: do not generate+merge Info.plist — ATS for LAN HTTP was lost in the merge.
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: GrokDispatch/Info.plist
     info:
       path: GrokDispatch/Info.plist
       properties:
-        CFBundleDisplayName: "ClankerSpanker Phone"
+        CFBundleDisplayName: ClankerSpanker
         CFBundleName: ClankerSpankerPhone
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"

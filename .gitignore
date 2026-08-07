@@ -5,6 +5,12 @@ host/*.log
 npm-debug.log*
 yarn-error.log*
 
+# Electron desktop (Linux client)
+desktop/node_modules/
+desktop/release/
+desktop/dist/
+desktop/*.log
+
 # Xcode / iOS
 ios/**/xcuserdata/
 ios/**/*.xcuserstate

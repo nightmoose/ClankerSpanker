@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http: https: ws: wss:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+  <title>ClankerSpanker</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app" class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">ClankerSpanker</span>
+        <span id="ws-pill" class="pill muted">offline</span>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button type="button" data-nav="sessions" class="nav-item active">Sessions</button>
+        <button type="button" data-nav="compose" class="nav-item">Compose</button>
+        <button type="button" data-nav="grok" class="nav-item">Grok disk</button>
+        <button type="button" data-nav="claude" class="nav-item">Claude disk</button>
+        <div class="nav-sep"></div>
+        <button type="button" data-nav="host" class="nav-item">Host</button>
+        <button type="button" data-nav="settings" class="nav-item">Desktop</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div id="host-mini" class="host-mini">Host …</div>
+        <div class="host-mini-actions">
+          <button type="button" id="btn-host-start" class="mini-btn" title="Start host">▶</button>
+          <button type="button" id="btn-host-stop" class="mini-btn" title="Stop host">■</button>
+          <button type="button" id="btn-refresh" class="mini-btn" title="Refresh">↻</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="toolbar" id="toolbar">
+        <div class="toolbar-left">
+          <h2 id="view-title">Sessions</h2>
+          <div id="profile-bar" class="profile-bar"></div>
+        </div>
+        <div class="toolbar-right">
+          <label class="toggle">
+            <input type="checkbox" id="show-archived" />
+            Archived
+          </label>
+        </div>
+      </header>
+
+      <main id="main" class="main">
+        <!-- sessions: split list + detail -->
+        <section id="view-sessions" class="view split active">
+          <div id="session-list" class="panel list-panel"></div>
+          <div id="session-detail" class="panel detail-panel empty-detail">
+            <p class="muted-center">Select a session</p>
+          </div>
+        </section>
+
+        <section id="view-compose" class="view hidden"></section>
+        <section id="view-disk" class="view hidden"></section>
+        <section id="view-host" class="view hidden"></section>
+        <section id="view-settings" class="view hidden"></section>
+      </main>
+    </div>
+  </div>
+
+  <p id="banner" class="banner hidden"></p>
+  <script src="./api.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

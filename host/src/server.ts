@@ -144,7 +144,7 @@ async function handleHttp(
     json(res, 200, {
       ok: true,
       service: "clankerspanker-host",
-      version: "0.2.0",
+      version: "0.3.2",
       name: "ClankerSpanker",
       time: new Date().toISOString(),
     });

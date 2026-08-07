@@ -155,6 +155,11 @@ export class SessionManager extends EventEmitter {
 
     const profile = resolveProfile(this.config, req.profileId);
     const { path: cwd, projectId } = resolveProjectPath(this.config, req.projectId, req.cwd);
+    // Claude never uses Grok plan-mode / worktree meta — ignore client flags that would confuse UI.
+    const planMode = profile.backend === "claude" ? false : Boolean(req.planMode);
+    const worktree = profile.backend === "claude" ? false : Boolean(req.worktree);
+    const subagents = profile.backend === "claude" ? false : (req.subagents ?? true);
+
     const id = randomUUID();
     const createdAt = now();
     const model =
@@ -173,9 +178,9 @@ export class SessionManager extends EventEmitter {
       cwd,
       projectId,
       model,
-      planMode: req.planMode ?? false,
-      subagents: req.subagents ?? true,
-      worktree: req.worktree ?? true,
+      planMode,
+      subagents,
+      worktree,
       status: "queued",
       createdAt,
       updatedAt: createdAt,
@@ -194,7 +199,8 @@ export class SessionManager extends EventEmitter {
     this.store.save(session);
     this.emitEvent(session, "session.created", { session: this.store.toSummary(session) });
     console.log(
-      `[dispatch] profile=${profile.id} (${profile.name}) backend=${profile.backend} model=${model} session=${id.slice(0, 8)}`,
+      `[dispatch] profile=${profile.id} (${profile.name}) backend=${profile.backend} model=${model} ` +
+        `cwd=${cwd} planMode=${planMode} worktree=${worktree} session=${id.slice(0, 8)}`,
     );
 
     // Start async so HTTP returns immediately
@@ -756,12 +762,21 @@ export class SessionManager extends EventEmitter {
     if (approval.rpcId !== undefined) {
       const raw = approval.rawInput as { variant?: string } | undefined;
       if (raw?.variant === "ExitPlanMode") {
-        // Grok exit_plan_mode expects accepted/rejected, not permission optionIds.
-        live.client.respond(approval.rpcId, {
+        // Grok exit_plan_mode: try the shapes used by recent agent builds.
+        // Primary: { outcome: { outcome: "accepted"|"rejected" } }
+        // Fallback optionId path kept for permission-shaped UIs.
+        const exitOutcome = decision === "approve" ? "accepted" : "rejected";
+        const response = {
           outcome: {
-            outcome: decision === "approve" ? "accepted" : "rejected",
+            outcome: exitOutcome,
+            // Some builds also look at selected option ids
+            ...(decision === "approve" ? { optionId: selected || "accept" } : {}),
           },
-        });
+        };
+        console.log(
+          `[acp] exit_plan_mode respond session=${sessionId.slice(0, 8)} decision=${decision} body=${JSON.stringify(response)}`,
+        );
+        live.client.respond(approval.rpcId, response);
       } else {
         live.client.respond(approval.rpcId, {
           outcome: { outcome: "selected", optionId: selected },
@@ -776,10 +791,17 @@ export class SessionManager extends EventEmitter {
 
     let noteText: string | null = null;
     if (rawIsExitPlan(approval.rawInput)) {
-      noteText =
-        decision === "approve"
-          ? "Plan approved — implementing."
-          : "Plan rejected — continue planning.";
+      if (decision === "approve") {
+        // Critical: clear host-side plan lock so follow-ups and UI know we left plan mode.
+        live.session.planMode = false;
+        noteText =
+          "Plan approved — implementing. (If edits are still rejected, start a new session with Plan mode off.)";
+        console.log(
+          `[acp] planMode cleared session=${sessionId.slice(0, 8)} after exit_plan_mode approve`,
+        );
+      } else {
+        noteText = "Plan rejected — continue planning.";
+      }
     } else if (comment?.trim()) {
       noteText = `${decision === "approve" ? "Approved" : "Rejected"} with comment: ${comment.trim()}`;
     }
@@ -1370,6 +1392,10 @@ export class SessionManager extends EventEmitter {
       options?: Array<{ optionId: string; name: string; kind: string }>;
     };
 
+    console.log(
+      `[acp] exit_plan_mode request session=${live.session.id.slice(0, 8)} rpcId=${rpcId} keys=${Object.keys(p).join(",")}`,
+    );
+
     // If the agent already sent a structured plan, keep it on the session.
     if (Array.isArray(p.plan)) {
       live.session.plan = p.plan as PlanEntry[];
@@ -1403,7 +1429,11 @@ export class SessionManager extends EventEmitter {
 
     const { rpcId: _r, source: _s, ...publicApproval } = approval;
     this.emitEvent(live.session, "approval.needed", publicApproval);
-    this.emitEvent(live.session, "session.updated", { status: "awaiting_approval" });
+    this.emitEvent(live.session, "session.updated", {
+      status: "awaiting_approval",
+      planExit: true,
+      planMode: live.session.planMode,
+    });
     this.maybeNotify("Plan ready for approval", live.session.title);
   }
 

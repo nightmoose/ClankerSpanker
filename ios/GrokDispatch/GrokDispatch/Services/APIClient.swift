@@ -39,9 +39,12 @@ actor APIClient {
     private let encoder: JSONEncoder
 
     init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 120
-        config.waitsForConnectivity = true
+        let config = URLSessionConfiguration.ephemeral
+        // Local host on loopback must not sit in "waiting for connectivity"
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
         self.session = URLSession(configuration: config)
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()

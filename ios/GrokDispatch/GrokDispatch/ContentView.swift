@@ -4,6 +4,13 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
+        #if os(macOS)
+        // Mac never uses phone TabView — even before "configured".
+        // Bootstrap wires localhost; empty state still shows the command center.
+        MacCommandCenter()
+            .environmentObject(appState)
+            .preferredColorScheme(.dark)
+        #else
         Group {
             if appState.isConfigured {
                 MainTabView()
@@ -12,8 +19,11 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.isConfigured)
+        #endif
     }
 }
+
+// MARK: - iOS only
 
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState

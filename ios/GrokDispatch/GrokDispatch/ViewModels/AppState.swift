@@ -17,6 +17,9 @@ final class AppState: ObservableObject {
     @Published var boundProfiles: [BoundProfile] = []
     @Published var selectedBoundProfileId: String?
 
+    /// macOS command center: session selected in the middle list (inline detail).
+    @Published var macSelectedSessionId: String?
+
     /// Sessions for the currently selected host (filtered by profile in the dashboard).
     @Published var sessions: [SessionSummary] = []
     @Published var archivedSessions: [SessionSummary] = []
@@ -39,6 +42,66 @@ final class AppState: ObservableObject {
             self?.handleSocketData(data)
         }
     }
+
+    #if os(macOS)
+    /// Bricklayer-style: on the machine that owns the gateway, wire ourselves up automatically.
+    /// Reads `~/.grok-dispatch/config.json`, starts host if needed, registers localhost + token.
+    func ensureLocalHostOnMac() async throws {
+        let hostCtrl = LocalHostController.shared
+        await hostCtrl.refreshStatus()
+
+        if !hostCtrl.apiReachable {
+            // Start local gateway (no-op if already running externally but unreachable path)
+            if !hostCtrl.isRunning {
+                hostCtrl.start()
+            }
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                await hostCtrl.refreshStatus()
+                if hostCtrl.apiReachable { break }
+            }
+        }
+
+        guard hostCtrl.apiReachable else {
+            throw APIError.transport(
+                NSError(
+                    domain: "ClankerSpanker",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Local host not reachable at \(hostCtrl.localBaseURL). Build host (`cd host && npm run build`) and set package path under Host.",
+                    ]
+                )
+            )
+        }
+
+        guard let token = hostCtrl.readHostToken(), !token.isEmpty else {
+            throw APIError.notConfigured
+        }
+
+        let url = hostCtrl.localBaseURL
+        // Reuse existing localhost host if present; otherwise create
+        if let existing = hosts.first(where: { isLoopbackURL($0.baseURL) }) {
+            var h = existing
+            h.baseURL = url
+            if h.name.isEmpty || h.name == "Primary" { h.name = "This Mac" }
+            upsertHost(h, token: token)
+        } else {
+            let h = HostEndpoint(name: "This Mac", baseURL: url)
+            upsertHost(h, token: token)
+        }
+
+        // Prefer local host for session list
+        if let local = hosts.first(where: { isLoopbackURL($0.baseURL) }) {
+            socket.connect(host: local)
+        }
+    }
+
+    private func isLoopbackURL(_ raw: String) -> Bool {
+        guard let u = URL(string: raw), let host = u.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+    #endif
 
     var selectedBoundProfile: BoundProfile? {
         boundProfiles.first { $0.id == selectedBoundProfileId } ?? boundProfiles.first
@@ -156,44 +219,59 @@ final class AppState: ObservableObject {
     func refreshSessions() async {
         guard !hosts.isEmpty else {
             lastRefreshError = "Add a host in Settings"
+            sessions = []
+            archivedSessions = []
+            boundProfiles = []
             return
         }
 
+        // Prefer loopback host when present (this machine is the gateway)
+        let orderedHosts: [HostEndpoint] = {
+            let local = hosts.filter { h in
+                guard let u = URL(string: h.baseURL), let host = u.host?.lowercased() else { return false }
+                return host == "127.0.0.1" || host == "localhost" || host == "::1"
+            }
+            let remote = hosts.filter { h in !local.contains(where: { $0.id == h.id }) }
+            return local + remote
+        }()
+
         var merged: [BoundProfile] = []
         var errors: [String] = []
+        var firstWorkingHost: HostEndpoint?
 
-        await withTaskGroup(of: (HostEndpoint, Result<ProfilesResponse, Error>).self) { group in
-            for host in hosts {
-                group.addTask {
-                    do {
-                        let p = try await self.api.profiles(host: host)
-                        return (host, .success(p))
-                    } catch {
-                        return (host, .failure(error))
-                    }
-                }
+        for host in orderedHosts {
+            let token = host.loadToken()
+            if token.isEmpty {
+                errors.append("\(host.name): no token")
+                continue
             }
-            for await (host, result) in group {
-                switch result {
-                case .success(let res):
-                    for p in res.profiles {
-                        merged.append(BoundProfile(host: host, profile: p))
-                    }
-                case .failure(let err):
-                    errors.append("\(host.name): \(err.localizedDescription)")
+            do {
+                let p = try await api.profiles(host: host)
+                for prof in p.profiles {
+                    merged.append(BoundProfile(host: host, profile: prof))
                 }
+                if firstWorkingHost == nil { firstWorkingHost = host }
+            } catch {
+                // Ignore cancellation noise from SwiftUI task teardown
+                let msg = error.localizedDescription
+                if msg.lowercased().contains("cancel") { continue }
+                errors.append("\(host.name): \(msg)")
             }
         }
 
-        boundProfiles = merged.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        boundProfiles = merged.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
 
         if selectedBoundProfileId == nil || !boundProfiles.contains(where: { $0.id == selectedBoundProfileId }) {
             selectedBoundProfileId = boundProfiles.first?.id
             HostStore.selectedBoundProfileId = selectedBoundProfileId
         }
 
-        guard let host = selectedHost else {
-            lastRefreshError = errors.first
+        // Session host: selected profile's host, else first working, else first configured
+        let host = selectedHost ?? firstWorkingHost ?? orderedHosts.first
+        guard let host else {
+            lastRefreshError = errors.first ?? "No host"
             return
         }
 
@@ -206,7 +284,10 @@ final class AppState: ObservableObject {
             lastRefreshError = errors.isEmpty ? nil : errors.joined(separator: " · ")
             socket.connect(host: host)
         } catch {
-            lastRefreshError = error.localizedDescription
+            let msg = error.localizedDescription
+            if !msg.lowercased().contains("cancel") {
+                lastRefreshError = msg
+            }
         }
     }
 
@@ -253,4 +334,7 @@ final class AppState: ObservableObject {
 
 extension Notification.Name {
     static let dispatchSocketEvent = Notification.Name("dispatchSocketEvent")
+    static let macShowCompose = Notification.Name("macShowCompose")
+    static let macShowHost = Notification.Name("macShowHost")
+    static let macShowSettings = Notification.Name("macShowSettings")
 }

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    #if os(macOS)
+    @ObservedObject private var localHost = LocalHostController.shared
+    #endif
 
     @State private var draftName = ""
     @State private var draftURL = ""
@@ -22,6 +25,60 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .listRowBackground(Color.clear)
+
+                    #if os(macOS)
+                    Section("Local host (this Mac)") {
+                        LabeledContent("API") {
+                            Text(localHost.apiReachable ? "Up" : "Down")
+                                .foregroundStyle(localHost.apiReachable ? DispatchColors.success : .secondary)
+                        }
+                        LabeledContent("Process") {
+                            Text(localHost.isRunning ? "pid \(localHost.pid.map(String.init) ?? "?")" : "Stopped")
+                        }
+                        TextField("Host package path", text: $localHost.hostPackagePath)
+                            .textFieldStyle(.roundedBorder)
+                        HStack {
+                            Button("Save path") {
+                                localHost.savePackagePath(localHost.hostPackagePath)
+                                statusMessage = "Saved host package path"
+                            }
+                            Button("Start") { localHost.start() }
+                                .disabled(localHost.isRunning)
+                            Button("Stop") { localHost.stop() }
+                                .disabled(!localHost.isRunning)
+                            Button("Connect") {
+                                Task {
+                                    if let pair = await localHost.bootstrapLocalHost() {
+                                        appState.saveConfiguration(
+                                            hostURL: pair.url,
+                                            hostToken: pair.token,
+                                            xaiKey: nil
+                                        )
+                                        statusMessage = "Connected to \(pair.url)"
+                                        await appState.refreshSessions()
+                                    } else {
+                                        statusMessage = localHost.lastError ?? "Could not bootstrap local host"
+                                    }
+                                }
+                            }
+                        }
+                        if let err = localHost.lastError, !err.isEmpty {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(DispatchColors.danger)
+                        }
+                        if !localHost.logs.isEmpty {
+                            Text(localHost.logs.suffix(12).joined(separator: "\n"))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        Text("Starts `host/dist/index.js` with Node. Build the host package first. Sandbox is off so the app can manage a local gateway.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(DispatchColors.card)
+                    #endif
 
                     Section("Hosts") {
                         ForEach(appState.hosts) { host in
@@ -70,9 +127,11 @@ struct SettingsView: View {
                         Section(editingHost.name.isEmpty && draftName.isEmpty ? "New host" : "Edit host") {
                             TextField("Name (e.g. FullScore MBP)", text: $draftName)
                             TextField("Host URL", text: $draftURL)
+                                #if os(iOS)
                                 .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
                                 .keyboardType(.URL)
+                                #endif
+                                .autocorrectionDisabled()
                             SecureField("Host token", text: $draftToken)
                             Button {
                                 Task { await saveHost(editingHost) }
@@ -123,8 +182,14 @@ struct SettingsView: View {
                     }
 
                     Section("About") {
-                        LabeledContent("App", value: "ClankerSpanker 0.5.3")
+                        LabeledContent("App", value: "ClankerSpanker 0.6.0")
+                        #if os(macOS)
+                        LabeledContent("Bundle", value: "com.nightmoose.clankerspanker.mac")
+                        LabeledContent("Platform", value: "macOS")
+                        #else
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker")
+                        LabeledContent("Platform", value: "iOS")
+                        #endif
                         LabeledContent("Hosts", value: "\(appState.hosts.count)")
                         LabeledContent("Profiles", value: "\(appState.boundProfiles.count)")
                     }

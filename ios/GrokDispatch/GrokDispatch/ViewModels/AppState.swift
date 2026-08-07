@@ -215,6 +215,25 @@ final class AppState: ObservableObject {
         Task { await refreshSessions() }
     }
 
+    /// Whether a session belongs under the currently selected profile chip.
+    /// When several profiles share a backend (e.g. Personal + FullScore Claude), only
+    /// exact `profileId` matches count — never "any Claude session under any Claude chip".
+    func sessionMatchesSelectedProfile(_ s: SessionSummary) -> Bool {
+        guard let bound = selectedBoundProfile else { return true }
+        let want = bound.profile.id
+        if let sp = s.profileId, !sp.isEmpty {
+            return sp == want
+        }
+        // Untagged session: only attach to a profile if it is the *sole* profile for that backend
+        let backend = s.backend
+            ?? (s.model.lowercased().contains("claude") ? "claude" : "grok")
+        let sameBackend = boundProfiles.filter { $0.profile.backend == backend && $0.host.id == bound.host.id }
+        if sameBackend.count == 1, sameBackend[0].profile.id == want {
+            return backend == bound.profile.backend
+        }
+        return false
+    }
+
     /// Refresh profiles from all hosts; sessions for the selected host.
     func refreshSessions() async {
         guard !hosts.isEmpty else {

@@ -31,4 +31,12 @@ That means an old **iPhone** scheme is selected. This project no longer ships a 
 
 ## Phone app
 
-Still in the project as target `ClankerSpanker` (iOS) for later. It is **not** wired to a scheme until we deliberately bring phone work back.
+Scheme: **`ClankerSpankerPhone`** → destination = your **physical iPhone** (or a Simulator).
+
+Do **not** pick “My Mac (Designed for iPad)” for the phone scheme — that is the broken phone UI on the Mac.
+
+```bash
+# After phone is unlocked + trusted for development:
+open ClankerSpanker.xcodeproj
+# Scheme menu: ClankerSpankerPhone → your iPhone → Run (⌘R)
+```

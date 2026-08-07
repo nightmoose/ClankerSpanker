@@ -49,6 +49,9 @@ xcuserdata/
 secrets/
 config.local.json
 
+# Not part of ClankerSpanker product (move out of tree when you have a home for it)
+event-horizon/
+
 # OS / editor
 .DS_Store
 .idea/

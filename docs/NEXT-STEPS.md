@@ -42,9 +42,22 @@ Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 ### P1 — Linux ship
 
-4. On a Linux box or CI: `cd desktop && npm ci && npm run dist:linux`.  
-5. Document absolute `host/` path for AppImage.  
-6. Optional: systemd user unit install button parity with Mac LaunchAgent.
+4. On a **Linux** machine (or Linux CI), build installable packages:
+   ```bash
+   cd desktop && npm ci && npm run dist:linux
+   ```
+   That produces `.AppImage` / `.deb` under `desktop/release/`.  
+   **You cannot reliably build those on this Mac** — electron-builder needs Linux for those targets.
+
+5. **AppImage “host path” (what that means):**  
+   The Electron app is only a **remote control**. The gateway that runs agents is still the `host/` Node process.  
+   When you install an AppImage, it is *not* sitting next to your git checkout, so it does not know where `host/dist/index.js` lives.  
+   In Desktop settings you set **Host package path** to an absolute folder, e.g.  
+   `/home/you/Projects/GrokDispatch/host`  
+   (must contain `package.json` + `dist/index.js`).  
+   Until that path is set (or you only use “remote” mode against an already-running host), managed start/stop cannot find the gateway.
+
+6. Optional later: systemd install button on Linux like Mac LaunchAgent.
 
 ### P2 — Product polish
 
@@ -55,14 +68,24 @@ Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 ### P3 — Hygiene
 
-11. Decide fate of **event-horizon/** (own commit, submodule, or `~/Projects/`).  
-12. Repair host vitest native deps; keep gate: `cd host && npm test && npm run typecheck && npm run build`.  
-13. Graphite/stack vs single push — estate preference.
+11. **event-horizon/** — excluded via `.gitignore` until you move it (e.g. `~/Projects/event-horizon`). Not ClankerSpanker product.  
+12. **Host tests (“vitest / rollup”):**  
+    Automated tests for `host/` are run with `cd host && npm test`.  
+    On this machine they failed because `node_modules` was missing a platform binary (`@rollup/rollup-darwin-arm64`) — usually a broken or partial `npm install`, not bad product code.  
+    Fix when convenient:
+    ```bash
+    cd host && rm -rf node_modules && npm install && npm test && npm run typecheck && npm run build
+    ```
+    That is the quality gate before trusting host changes. Typecheck already passed without reinstall.
 
 ---
 
-## Don’t
+## Operator notes (for *you*, not the agent)
 
-- Don’t maintain a second full session UI on Mac in Electron.  
-- Don’t invent a second host gateway.  
-- Don’t run Xcode **Designed for iPad** for laptop work.  
+When using the products day-to-day:
+
+- **Mac laptop:** Xcode scheme **ClankerSpanker** → destination **My Mac** (never “Designed for iPad”).  
+- **Linux laptop:** Electron app in `desktop/`.  
+- **One gateway:** `host/` + config in `~/.grok-dispatch/`.  
+
+Agents reading the repo should follow [CLIENTS.md](CLIENTS.md) and [AGENTS.md](../AGENTS.md).

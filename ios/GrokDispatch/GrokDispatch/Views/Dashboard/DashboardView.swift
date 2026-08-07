@@ -279,10 +279,7 @@ struct DashboardView: View {
     private var filteredClaudeDisk: [DiskSessionHint] { filterDisk(appState.claudeSessions) }
 
     private func matchesSelectedProfile(_ s: SessionSummary) -> Bool {
-        guard let bound = appState.selectedBoundProfile else { return true }
-        if let sp = s.profileId { return sp == bound.profile.id }
-        let backend = s.backend ?? (s.model.lowercased().contains("claude") ? "claude" : "grok")
-        return backend == bound.profile.backend
+        appState.sessionMatchesSelectedProfile(s)
     }
 
     private func filterSessions(_ items: [SessionSummary]) -> [SessionSummary] {

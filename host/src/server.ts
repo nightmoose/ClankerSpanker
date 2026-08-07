@@ -193,17 +193,20 @@ async function handleHttp(
     const includeArchived = url.searchParams.get("includeArchived") === "1";
     const all = manager.list().map((s) => {
       const summary = manager.store.toSummary(s, manager.isLive(s.id));
-      // Backfill profile fields for older sessions
+      // Backfill profile fields for older sessions — only when exactly one profile
+      // matches the backend. With Personal + FullScore both Claude, do NOT invent
+      // a profileId (that was dumping every Claude chat onto FullScore).
       if (!summary.profileId) {
         const backend = s.backend ?? "grok";
         const profiles = publicProfiles(config);
-        const fallback = profiles.find((p) => p.backend === backend) ?? profiles[0];
-        if (fallback) {
+        const sameBackend = profiles.filter((p) => p.backend === backend);
+        if (sameBackend.length === 1) {
+          const fallback = sameBackend[0]!;
           summary.profileId = fallback.id;
           summary.profileName = fallback.name;
           summary.profileColor = fallback.color;
-          summary.backend = backend;
         }
+        summary.backend = backend;
       }
       return {
         ...summary,

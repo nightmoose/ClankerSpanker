@@ -108,13 +108,19 @@ targets:
               - grokdispatch
         NSPrincipalClass: NSApplication
 
-# ONLY the Mac app is runnable right now. Phone target stays in the project for later
-# but has no scheme — so Xcode cannot “helpfully” switch you to Designed for iPad.
+# Two schemes with explicit names — never use “My Mac (Designed for iPad)” for phone.
 schemes:
+  # Mac laptop command center (native)
   ClankerSpanker:
     build:
       targets:
         ClankerSpankerMac: all
     run:
       config: Debug
-      # native Mac only
+  # Physical iPhone / Simulator only
+  ClankerSpankerPhone:
+    build:
+      targets:
+        ClankerSpanker: all
+    run:
+      config: Debug

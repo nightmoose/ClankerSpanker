@@ -19,7 +19,20 @@ struct HostEndpoint: Identifiable, Codable, Equatable, Hashable, Sendable {
     var tokenKey: String { "hostToken.\(id.uuidString)" }
 
     func loadToken() -> String {
-        KeychainHelper.loadString(key: tokenKey) ?? ""
+        if let t = KeychainHelper.loadString(key: tokenKey), !t.isEmpty {
+            return t
+        }
+        // Legacy single-host key
+        if let t = KeychainHelper.loadString(key: KeychainHelper.Keys.hostToken), !t.isEmpty {
+            return t
+        }
+        #if os(macOS)
+        // Loopback hosts: read live gateway token from disk (source of truth).
+        if isLoopback, let t = LocalHostConfigFile.readToken(), !t.isEmpty {
+            return t
+        }
+        #endif
+        return ""
     }
 
     func saveToken(_ token: String) {
@@ -28,7 +41,17 @@ struct HostEndpoint: Identifiable, Codable, Equatable, Hashable, Sendable {
             KeychainHelper.delete(key: tokenKey)
         } else {
             KeychainHelper.save(string: t, key: tokenKey)
+            // Keep legacy key in sync for first/local host
+            if isLoopback {
+                KeychainHelper.save(string: t, key: KeychainHelper.Keys.hostToken)
+                KeychainHelper.save(string: baseURL, key: KeychainHelper.Keys.hostURL)
+            }
         }
+    }
+
+    var isLoopback: Bool {
+        guard let u = URL(string: baseURL), let host = u.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
     }
 
     func deleteToken() {

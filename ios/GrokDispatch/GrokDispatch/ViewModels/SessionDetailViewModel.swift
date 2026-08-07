@@ -1,17 +1,16 @@
 import Foundation
 import Combine
-import UIKit
 
 struct ChatImageAttachment: Identifiable, Hashable {
     let id: UUID
     let jpegData: Data
-    let preview: UIImage
+    let preview: PlatformImage
 
-    init(id: UUID = UUID(), image: UIImage, maxDimension: CGFloat = 1600, quality: CGFloat = 0.72) {
+    init(id: UUID = UUID(), image: PlatformImage, maxDimension: CGFloat = 1600, quality: CGFloat = 0.72) {
         self.id = id
         let resized = image.cs_resized(maxDimension: maxDimension)
         self.preview = resized
-        self.jpegData = resized.jpegData(compressionQuality: quality) ?? Data()
+        self.jpegData = resized.cs_jpegData(compressionQuality: quality) ?? Data()
     }
 }
 
@@ -116,7 +115,7 @@ final class SessionDetailViewModel: ObservableObject {
         }
     }
 
-    func addImages(_ images: [UIImage]) {
+    func addImages(_ images: [PlatformImage]) {
         let room = max(0, 4 - pendingImages.count)
         guard room > 0 else {
             errorMessage = "Max 4 screenshots per message"
@@ -306,21 +305,6 @@ final class SessionDetailViewModel: ObservableObject {
             || detail?.pendingQuestion != nil
         {
             isSending = false
-        }
-    }
-}
-
-private extension UIImage {
-    func cs_resized(maxDimension: CGFloat) -> UIImage {
-        let w = size.width
-        let h = size.height
-        let longest = max(w, h)
-        guard longest > maxDimension, longest > 0 else { return self }
-        let scale = maxDimension / longest
-        let newSize = CGSize(width: floor(w * scale), height: floor(h * scale))
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        return renderer.image { _ in
-            draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
 }

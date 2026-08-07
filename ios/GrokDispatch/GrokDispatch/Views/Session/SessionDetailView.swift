@@ -1,6 +1,8 @@
 import SwiftUI
 import PhotosUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 struct SessionDetailView: View {
     @EnvironmentObject private var appState: AppState
@@ -34,20 +36,8 @@ struct SessionDetailView: View {
             VStack(spacing: 0) {
                 if let detail = vm.detail {
                     header(detail)
-                    Picker("Section", selection: $selectedTab) {
-                        ForEach(DetailTab.allCases, id: \.self) { tab in
-                            Text(tab.rawValue).tag(tab)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
 
-                    ScrollView {
-                        content(for: detail)
-                            .padding()
-                    }
-
+                    // Input / approvals at top — transcript reads top→bottom with newest updates below.
                     if let pendingQ = detail.pendingQuestion {
                         QuestionBarView(
                             pending: pendingQ,
@@ -65,8 +55,21 @@ struct SessionDetailView: View {
                             onReject: { Task { await vm.reject(api: appState.api) } }
                         )
                     } else if detail.status.allowsFollowUp || detail.status == .failed {
-                        // Failed still shows bar so you can retry a follow-up (host re-attaches).
                         followUpBar
+                    }
+
+                    Picker("Section", selection: $selectedTab) {
+                        ForEach(DetailTab.allCases, id: \.self) { tab in
+                            Text(tab.rawValue).tag(tab)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                    ScrollView {
+                        content(for: detail)
+                            .padding()
                     }
                 } else if vm.isLoading {
                     ProgressView("Loading session…")
@@ -79,9 +82,11 @@ struct SessionDetailView: View {
             }
         }
         .navigationTitle(isEditingTitle ? "Rename" : (vm.detail?.title ?? "Session"))
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
                         draftTitle = vm.detail?.title ?? ""
@@ -257,7 +262,7 @@ struct SessionDetailView: View {
                     HStack(spacing: 8) {
                         ForEach(vm.pendingImages) { att in
                             ZStack(alignment: .topTrailing) {
-                                Image(uiImage: att.preview)
+                                Image(platformImage: att.preview)
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 64, height: 64)
@@ -293,6 +298,7 @@ struct SessionDetailView: View {
                     Task { await loadPickerItems(items) }
                 }
 
+                #if os(iOS)
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     Button {
                         showCamera = true
@@ -304,6 +310,7 @@ struct SessionDetailView: View {
                     }
                     .disabled(vm.isSending || vm.pendingImages.count >= 4)
                 }
+                #endif
 
                 TextField("Message agent…", text: $vm.followUp, axis: .vertical)
                     .lineLimit(1...5)
@@ -328,6 +335,7 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(.ultraThinMaterial)
+        #if os(iOS)
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in
                 if let image {
@@ -336,14 +344,15 @@ struct SessionDetailView: View {
             }
             .ignoresSafeArea()
         }
+        #endif
     }
 
     private func loadPickerItems(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
-        var images: [UIImage] = []
+        var images: [PlatformImage] = []
         for item in items {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
+               let image = PlatformImage.cs_fromData(data) {
                 images.append(image)
             }
         }
@@ -354,10 +363,11 @@ struct SessionDetailView: View {
     }
 }
 
-// MARK: - Camera
+// MARK: - Camera (iOS only)
 
+#if os(iOS)
 private struct CameraPicker: UIViewControllerRepresentable {
-    var onImage: (UIImage?) -> Void
+    var onImage: (PlatformImage?) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
@@ -373,8 +383,8 @@ private struct CameraPicker: UIViewControllerRepresentable {
     }
 
     final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let onImage: (UIImage?) -> Void
-        init(onImage: @escaping (UIImage?) -> Void) { self.onImage = onImage }
+        let onImage: (PlatformImage?) -> Void
+        init(onImage: @escaping (PlatformImage?) -> Void) { self.onImage = onImage }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             onImage(nil)
@@ -390,3 +400,4 @@ private struct CameraPicker: UIViewControllerRepresentable {
         }
     }
 }
+#endif

@@ -18,13 +18,50 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("ClankerSpanker")
                             .font(.largeTitle.bold())
+                        #if os(macOS)
+                        Text("Command center for Grok Build + Claude Code. Connect to a local host on this Mac, or any gateway on LAN / Tailscale.")
+                            .foregroundStyle(.secondary)
+                        #else
                         Text("Remote control for Grok Build + Claude Code on your Mac. Two fields only.")
                             .foregroundStyle(.secondary)
+                        #endif
                     }
                     .padding(.top, 24)
 
+                    #if os(macOS)
+                    DispatchCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Use this Mac as the host", systemImage: "desktopcomputer")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(DispatchColors.accent)
+                            Text("Starts the local gateway (if needed) and imports the token from ~/.grok-dispatch/config.json.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            DispatchButton(
+                                title: isTesting ? "Starting…" : "Start & connect local host",
+                                icon: "play.circle.fill",
+                                isLoading: isTesting
+                            ) {
+                                Task { await connectLocalMac() }
+                            }
+                        }
+                    }
+                    #endif
+
                     DispatchCard {
                         VStack(alignment: .leading, spacing: 14) {
+                            #if os(macOS)
+                            Label("Or connect to any host", systemImage: "1.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(DispatchColors.accent)
+                            numbered("Run the host on this Mac or another machine")
+                            numbered("Open the setup page and copy the host token")
+                            Text(ConnectionDefaults.setupPageURL.absoluteString)
+                                .font(.system(.footnote, design: .monospaced))
+                                .foregroundStyle(DispatchColors.accent)
+                                .textSelection(.enabled)
+                            numbered("Paste URL + token below and Save & connect")
+                            #else
                             Label("Do this on your iPhone", systemImage: "1.circle.fill")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(DispatchColors.accent)
@@ -37,6 +74,7 @@ struct OnboardingView: View {
                                 .textSelection(.enabled)
                             numbered("Tap “Copy Host token”, paste below")
                             numbered("Tap Save & connect (leave API key blank forever)")
+                            #endif
                         }
                     }
 
@@ -65,13 +103,15 @@ struct OnboardingView: View {
                                     SecureField("Paste token from /setup page", text: $hostToken)
                                 }
                             }
+                            #if os(iOS)
                             .textInputAutocapitalization(.never)
+                            #endif
                             .autocorrectionDisabled()
                             .padding(12)
                             .background(Color.white.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                            Text("xAI API key is NOT needed. The Mac already has Grok signed in.")
+                            Text("xAI API key is NOT needed. The host machine already has Grok / Claude signed in.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -139,9 +179,11 @@ struct OnboardingView: View {
                     SecureField(prompt, text: text)
                 } else {
                     TextField(prompt, text: text)
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                         .keyboardType(.URL)
+                        #endif
+                        .autocorrectionDisabled()
                 }
             }
             .padding(12)
@@ -149,6 +191,35 @@ struct OnboardingView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
+
+    #if os(macOS)
+    private func connectLocalMac() async {
+        errorMessage = nil
+        successMessage = nil
+        isTesting = true
+        defer { isTesting = false }
+
+        guard let pair = await LocalHostController.shared.bootstrapLocalHost() else {
+            errorMessage = LocalHostController.shared.lastError
+                ?? "Could not start local host. Build host/ and set package path in Settings."
+            return
+        }
+        hostURL = pair.url
+        hostToken = pair.token
+        appState.saveConfiguration(hostURL: pair.url, hostToken: pair.token, xaiKey: nil)
+        do {
+            guard let host = appState.hosts.first else {
+                errorMessage = "Host not saved"
+                return
+            }
+            try await appState.api.validate(host: host)
+            successMessage = "Connected to local host"
+            await appState.refreshSessions()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
 
     private func applyDeepLink(_ url: URL) {
         guard url.scheme == "clankerspanker" || url.scheme == "grokdispatch" else { return }

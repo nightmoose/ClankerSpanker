@@ -7,9 +7,11 @@ final class ComposerViewModel: ObservableObject {
     @Published var projects: [ProjectInfo] = []
     @Published var selectedProjectId: String?
     @Published var customPath: String = ""
-    @Published var planMode = true
+    /// Opt-in: plan mode locks file edits until exit_plan_mode succeeds.
+    /// Default off so "just do the task" dispatches actually implement.
+    @Published var planMode = false
     @Published var subagents = true
-    @Published var worktree = true
+    @Published var worktree = false
     @Published var model = "grok-build"
     @Published var selectedBoundProfileId: String?
     @Published var isSubmitting = false
@@ -104,18 +106,30 @@ final class ComposerViewModel: ObservableObject {
             return model
         }()
 
+        let trimmedCustom = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selectedProjectId == nil {
+            if trimmedCustom.isEmpty {
+                errorMessage = "Pick a working directory on the host (or enter a custom path)"
+                return nil
+            }
+            if trimmedCustom == "/" || trimmedCustom == "\\" {
+                errorMessage = "Working directory cannot be / — pick a real project folder"
+                return nil
+            }
+        }
+
         var body = DispatchRequestBody(
             prompt: text,
             projectId: selectedProjectId,
             title: title.isEmpty ? nil : title,
             model: dispatchModel,
-            planMode: planMode,
+            planMode: bound.profile.isClaude ? false : planMode,
             subagents: bound.profile.isClaude ? false : subagents,
             worktree: bound.profile.isClaude ? false : worktree,
             profileId: bound.profile.id
         )
-        if selectedProjectId == nil, !customPath.isEmpty {
-            body.cwd = customPath
+        if selectedProjectId == nil, !trimmedCustom.isEmpty {
+            body.cwd = trimmedCustom
         }
 
         do {

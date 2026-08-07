@@ -32,16 +32,18 @@ final class WebSocketClient: NSObject, ObservableObject {
             return
         }
 
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
+        config.waitsForConnectivity = false
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         self.session = session
         let task = session.webSocketTask(with: url)
         self.task = task
         connectedHostId = host.id
-        task.resume()
-        isConnected = true
+        // Do NOT mark Live until didOpen — premature Live hid broken REST.
+        isConnected = false
         lastError = nil
         receiveLoopRunning = true
+        task.resume()
         receiveNext(host: host)
     }
 

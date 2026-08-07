@@ -45,7 +45,7 @@ struct DashboardView: View {
             }
             .searchable(text: $search, prompt: searchPrompt)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         showArchived.toggle()
                     } label: {
@@ -161,7 +161,11 @@ struct DashboardView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            #if os(iOS)
             .listStyle(.insetGrouped)
+            #else
+            .listStyle(.inset)
+            #endif
         }
     }
 
@@ -254,7 +258,11 @@ struct DashboardView: View {
                     }
                 }
                 .scrollContentBackground(.hidden)
-                .listStyle(.insetGrouped)
+                #if os(iOS)
+            .listStyle(.insetGrouped)
+            #else
+            .listStyle(.inset)
+            #endif
             }
         }
     }

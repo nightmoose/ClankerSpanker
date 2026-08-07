@@ -42,5 +42,7 @@ struct HostConfig: Codable, Equatable, Sendable {
 enum AppTab: Hashable {
     case sessions
     case compose
+    /// macOS command center — local host process + config.
+    case host
     case settings
 }

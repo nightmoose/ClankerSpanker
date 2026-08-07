@@ -111,7 +111,9 @@ struct TaskComposerView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 TextField("/Users/…/path/to/repo", text: $vm.customPath)
+                                    #if os(iOS)
                                     .textInputAutocapitalization(.never)
+                                    #endif
                                     .autocorrectionDisabled()
                                     .padding(10)
                                     .background(Color.white.opacity(0.06))
@@ -131,11 +133,17 @@ struct TaskComposerView: View {
                             VStack(spacing: 12) {
                                 let bound = appState.boundProfiles.first { $0.id == vm.selectedBoundProfileId }
                                 if bound?.profile.isClaude != true {
-                                    Toggle("Plan mode first", isOn: $vm.planMode)
+                                    Toggle("Plan mode first (read-only until you approve)", isOn: $vm.planMode)
+                                    if vm.planMode {
+                                        Text("Plan mode blocks file edits until exit is approved. Leave off for normal implement tasks.")
+                                            .font(.caption2)
+                                            .foregroundStyle(DispatchColors.warning)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
                                     Toggle("Allow subagents", isOn: $vm.subagents)
                                     Toggle("Isolated worktree", isOn: $vm.worktree)
                                 } else {
-                                    Text("Claude sessions use the selected account on that host. Plan/worktree toggles apply to Grok profiles.")
+                                    Text("Claude uses the selected account + working directory on that host. Pick a real project folder (not /).")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1,7 +1,12 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { AgentProfile, HostConfigFile, PublicAgentProfile, SessionBackend } from "./types.js";
 
 /** Built-in defaults until the user customizes ~/.grok-dispatch/config.json */
 export function defaultProfiles(): AgentProfile[] {
+  // Defaults for *new* configs only. Real multi-account wiring is per-machine
+  // in ~/.grok-dispatch/config.json (claudeConfigDir / env).
   return [
     {
       id: "nightmoose",
@@ -11,18 +16,21 @@ export function defaultProfiles(): AgentProfile[] {
       model: "grok-build",
     },
     {
+      id: "personal",
+      name: "Personal",
+      backend: "claude",
+      color: "#A78BFA",
+      model: "claude",
+      // Default Claude login under $HOME (~/.claude). Override with claudeConfigDir.
+      env: {},
+    },
+    {
       id: "fullscore",
       name: "FullScore",
       backend: "claude",
       color: "#F97316",
-      // Set ANTHROPIC_API_KEY (or claudeConfigDir) in config.json for this profile
-      env: {},
-    },
-    {
-      id: "astro",
-      name: "Astro",
-      backend: "claude",
-      color: "#FB923C",
+      model: "claude",
+      // Example isolation: set claudeConfigDir to a dedicated dir (e.g. ~/.claude-work).
       env: {},
     },
   ];
@@ -67,8 +75,10 @@ export function profileHasCredentials(p: AgentProfile): boolean {
     const key = p.env?.ANTHROPIC_API_KEY?.trim() || p.env?.ANTHROPIC_AUTH_TOKEN?.trim();
     if (key) return true;
     if (p.claudeConfigDir) return true;
-    // Fall back to ambient machine login
-    return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+    // Ambient API key env
+    if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
+    // Default CLI login often lives as OAuth under ~/.claude.json (no API key env)
+    return existsSync(join(homedir(), ".claude.json"));
   }
   // Grok uses machine-level grok login / XAI_API_KEY
   return Boolean(process.env.XAI_API_KEY || p.env?.XAI_API_KEY);

@@ -28,13 +28,18 @@ the `host/` component and `.git` — that mistake was made once already and led 
 
 ```
 host/     Node + TypeScript gateway, port 8787  ← the testable part
-ios/      SwiftUI client
+desktop/  Electron — Linux laptop command center only
+ios/      SwiftUI — phone + Mac native (Mac is the macOS laptop shell)
 shared/   openapi.yaml
+docs/CLIENTS.md   ← client ownership (read before adding another desktop UI)
 ```
 
 Port `8787` is deliberately distinct from Bricklayer's `8791` so both daemons
 can run on the same Mac. They are **separate products** that happen to share a
 shape: local host, bearer token, phone client.
+
+**Laptop clients:** Mac = native (`ios/`, scheme ClankerSpanker → My Mac).  
+Linux = Electron (`desktop/`). Do not dual-maintain full session UIs on Mac.
 
 ## Rules
 

@@ -2,20 +2,28 @@
 
 ## Components
 
-1. **iOS app** — SwiftUI MVVM, URLSession REST, URLSessionWebSocketTask, Keychain, UserNotifications.
-2. **Host gateway** — Node/TypeScript HTTP + WebSocket server on the Mac Mini.
-3. **Grok Build** — `grok agent stdio` (ACP JSON-RPC) per dispatched task process.
+| Piece | Role |
+|-------|------|
+| **Host gateway** (`host/`) | Single Node HTTP + WebSocket server; spawns Grok ACP / Claude processes |
+| **Browser UI** (`host/web`) | Thin control plane at `/app/` — no host lifecycle |
+| **Mac native app** (`ios/…` → ClankerSpankerMac) | **macOS laptop** command center: sessions + local host manager + menu bar |
+| **Electron app** (`desktop/`) | **Linux laptop** command center: sessions + local host manager + tray |
+| **iOS app** | Phone control plane (same Swift sources; scheme deferred) |
+
+Authoritative client matrix: **[CLIENTS.md](CLIENTS.md)**.
+
+There is **no second gateway**. Laptop shells are clients; they may spawn/install the same `host` process.
 
 ## Data flow
 
 ```
 Compose → POST /dispatch
-  → SessionManager spawns AcpClient (grok agent stdio)
+  → SessionManager spawns AcpClient (grok agent stdio) or Claude runner
   → session/new + session/prompt
-  → session/update events → WS broadcast → phone
+  → session/update events → WS broadcast → clients
   → session/request_permission
        ├─ safe kinds (read/search/…) → auto allow
-       └─ edit/execute/… → pending approval → phone approve/reject
+       └─ edit/execute/… → pending approval → client approve/reject
 ```
 
 ## Persistence
@@ -25,8 +33,11 @@ Compose → POST /dispatch
 | Host config + token | `~/.grok-dispatch/config.json` |
 | Dispatch session snapshots | `~/.grok-dispatch/sessions/*.json` |
 | Native Grok sessions | `~/.grok/sessions/` |
-| iOS secrets | Keychain `com.nightmoose.grokdispatch` |
+| Claude projects | `~/.claude/projects/` |
+| Mac app prefs / keychain | macOS userData + Keychain |
+| Electron prefs | Electron `userData` (shell only — not host token of record) |
+| Installed host package (Mac optional) | `~/Library/Application Support/ClankerSpanker/host` |
 
-## Why a gateway (not raw ACP on the phone)?
+## Why a gateway?
 
-ACP is the right integration surface for Grok, but a small REST/WS facade keeps the iOS client simple, stable, and easy to evolve without shipping a full JSON-RPC agent client on every phone release.
+ACP is the right integration surface for Grok, but a small REST/WS facade keeps phone and laptop clients simple and stable without shipping a full JSON-RPC agent client on every release.

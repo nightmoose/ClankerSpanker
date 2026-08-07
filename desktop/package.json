@@ -1,0 +1,70 @@
+{
+  "name": "clankerspanker-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClankerSpanker Linux desktop (Electron) — sessions, host start/stop/settings, tray. Mac uses native app.",
+  "main": "src/main.js",
+  "author": "nightmoose",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux AppImage deb"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.nightmoose.clankerspanker.desktop",
+    "productName": "ClankerSpanker",
+    "copyright": "Copyright © nightmoose",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "resources/icon.png",
+      "synopsis": "Control plane for Grok Build and Claude Code",
+      "description": "Desktop shell for ClankerSpanker: connect to a local or remote host gateway, manage agent sessions, and get OS notifications for approvals.",
+      "desktop": {
+        "Name": "ClankerSpanker",
+        "Comment": "Dispatch and supervise Grok / Claude sessions",
+        "Categories": "Development;Utility;",
+        "StartupWMClass": "clankerspanker"
+      }
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-linux-${arch}.AppImage"
+    },
+    "deb": {
+      "artifactName": "${productName}-${version}-linux-${arch}.deb"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.png"
+    }
+  },
+  "allowScripts": {
+    "electron@35.7.5": true
+  }
+}

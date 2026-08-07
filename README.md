@@ -1,38 +1,31 @@
 # ClankerSpanker
 
-Local-first control plane for **Grok Build** and **Claude Code**. Run the host next to your code; drive it from a **browser** or the **iOS** app over LAN / Tailscale.
+Local-first control plane for **Grok Build** and **Claude Code**.  
+One **host gateway** next to your code; clients drive it over LAN / Tailscale.
 
 ```
-Browser  ──┐
-           ├── REST + WebSocket ──►  Host gateway (macOS / Linux / Windows*)
-iOS app  ──┘                              ├── grok agent (ACP)
-                                          └── claude -p stream-json + approval hooks
+Mac native app  ──┐
+Linux Electron  ──┼── REST + WebSocket ──►  Host gateway (:8787)
+Browser /app/   ──┤                              ├── grok agent (ACP)
+iOS (phone)     ──┘                              └── claude (+ approval hooks)
 ```
 
-\* Windows: `npm start` is supported; service install helpers are macOS launchd + Linux systemd.
+Client ownership and parity: **[docs/CLIENTS.md](docs/CLIENTS.md)** (read this before adding another laptop UI).
 
 ## Repo layout
 
 ```
-ClankerSpanker/          # GitHub name (folder may still be GrokDispatch locally)
-├── host/                # Node gateway + browser UI (host/web)
+ClankerSpanker/                 # GitHub name (folder may still be GrokDispatch)
+├── host/                       # Node gateway — the only agent runner
 │   ├── src/
-│   ├── web/             # Browser control plane served at /app/
-│   └── scripts/         # install-service (launchd / systemd)
-├── ios/GrokDispatch/    # SwiftUI app → product ClankerSpanker
+│   ├── web/                    # Browser UI at /app/
+│   └── scripts/                # launchd + systemd install
+├── desktop/                    # Electron — Linux laptop command center
+├── ios/GrokDispatch/           # SwiftUI — iOS + Mac native (Mac is the laptop shell)
 ├── docs/
+│   ├── CLIENTS.md              # Who owns which client
+│   └── ARCHITECTURE.md
 └── shared/
-```
-
-## Git
-
-- **Remote (private today):** https://github.com/nightmoose/ClankerSpanker  
-- Host token + session JSON live under `~/.grok-dispatch/` (not in git).
-
-```bash
-cd host   # or repo root
-git status
-git log --oneline
 ```
 
 ## 1. Host (any machine with Node 20+)
@@ -42,7 +35,7 @@ cd host
 npm install
 npm run build
 npm start
-# background service:
+# optional background service (macOS launchd / Linux systemd --user):
 ./scripts/install-service.sh
 ```
 
@@ -52,30 +45,45 @@ npm start
 | Setup / token | `http://<host-ip>:8787/setup` |
 | Config | `~/.grok-dispatch/config.json` |
 
-## 2. Clients
+Port `8787` is intentional (Bricklayer uses `8791`). Same Mac can run both.
 
-### Browser (built-in)
+## 2. Laptop clients
 
-Open `/app/`, paste the host token once (or open `/setup` first). Same APIs as the phone app: sessions, dispatch, approvals, archive, Grok/Claude disk attach.
-
-### iOS app
+### macOS — native app (authoritative Mac UX)
 
 ```bash
 cd ios/GrokDispatch
-xcodegen generate
-open ClankerSpanker.xcodeproj
+./run-mac.sh
+# or Xcode: scheme ClankerSpanker → destination My Mac (not Designed for iPad)
 ```
 
-- Bundle ID: `com.nightmoose.clankerspanker`
-- Deep link: `clankerspanker://configure?url=…&token=…`
+Sessions, host install/LaunchAgent, menu bar service, multi-folder projects.  
+Details: `ios/GrokDispatch/RUN-MAC.md`.
+
+### Linux — Electron (`desktop/`)
+
+```bash
+cd host && npm run build          # once
+cd ../desktop && npm install && npm start
+```
+
+Managed mode auto-starts sibling `host/` and reads `~/.grok-dispatch`.  
+**AppImage / deb:** run `npm run dist:linux` **on Linux** (or Linux CI). See `desktop/README.md`.
+
+### Browser (any OS)
+
+Open `/app/` with the host token. No local process management.
+
+### iPhone
+
+Swift sources live under `ios/`; phone Run scheme is deferred while Mac is the focus.
 
 ## Features
 
 - Dispatch multi-turn tasks to Grok Build (ACP, plan mode, client approvals)
-- Browse + resume **Grok** sessions from `~/.grok/sessions`
-- Browse + resume **Claude Code** sessions from `~/.claude/projects`
+- Browse + resume **Grok** / **Claude Code** sessions from disk
 - Soft-archive Active chats
-- Desktop notifications on macOS / Linux / Windows (best-effort)
+- Optional desktop/OS notifications (host + laptop shells)
 - Cross-platform host PATH / binary discovery (no hardcoded machine IPs)
 
 ## Security
@@ -83,3 +91,9 @@ open ClankerSpanker.xcodeproj
 - Tailscale or LAN only; bearer host token
 - Grok: never yolo — file edits / dangerous tools wait for the client
 - Claude: PreToolUse hook parks Edit/Bash until approved
+- `host/src/auth.ts` is the security boundary (constant-time compare; empty token authorizes nobody)
+
+## Git
+
+- Remote: https://github.com/nightmoose/ClankerSpanker  
+- Tokens and session JSON under `~/.grok-dispatch/` (not in git)

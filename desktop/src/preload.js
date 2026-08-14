@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld("clanker", {
   saveDesktopConfig: (partial) => ipcRenderer.invoke("desktop:save-config", partial),
   getConnection: () => ipcRenderer.invoke("desktop:connection"),
 
+  // Multi-host registry
+  saveHost: (patch) => ipcRenderer.invoke("desktop:host-save", patch),
+  removeHost: (id) => ipcRenderer.invoke("desktop:host-remove", id),
+  setActiveHost: (id) => ipcRenderer.invoke("desktop:host-activate", id),
+
   // Host process
   hostStatus: () => ipcRenderer.invoke("host:process-status"),
   hostStart: () => ipcRenderer.invoke("host:start"),
@@ -54,6 +59,16 @@ contextBridge.exposeInMainWorld("clanker", {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("session:focus", handler);
     return () => ipcRenderer.removeListener("session:focus", handler);
+  },
+  onApprovalAction: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("session:approval-action", handler);
+    return () => ipcRenderer.removeListener("session:approval-action", handler);
+  },
+  onDesktopConfig: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("desktop:config", handler);
+    return () => ipcRenderer.removeListener("desktop:config", handler);
   },
 
   platform: process.platform,

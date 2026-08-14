@@ -45,6 +45,8 @@ class HostProcessManager extends EventEmitter {
     const cwdHost = path.resolve(process.cwd(), "host");
     if (fs.existsSync(path.join(cwdHost, "package.json"))) return cwdHost;
 
+    // Bundled source (no node_modules) — installer must copy + install first.
+    // Returning the sibling path lets the caller surface a helpful error.
     return sibling;
   }
 

@@ -12,7 +12,16 @@ const {
   dialog,
 } = require("electron");
 const path = require("node:path");
-const { loadConfig, saveConfig, isConfigured, configPath } = require("./config-store");
+const {
+  loadConfig,
+  saveConfig,
+  configPath,
+  getActiveHost,
+  upsertHost,
+  removeHost,
+  setActiveHost,
+  updateActiveHostToken,
+} = require("./config-store");
 const { HostWsMonitor } = require("./host-ws");
 const { HostProcessManager } = require("./host-process");
 const {
@@ -61,32 +70,32 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+function pushDesktopConfig() {
+  sendToRenderer("desktop:config", loadConfig());
+}
+
 function syncTokenFromHostFile() {
+  const active = getActiveHost();
+  if (!active || active.mode !== "managed") return loadConfig();
   const { config } = readHostConfig();
   if (!config?.hostToken) return loadConfig();
-  const desktop = loadConfig();
   const port = config.bindPort || 8787;
-  const hostURL =
-    desktop.mode === "managed"
-      ? `http://127.0.0.1:${port}`
-      : desktop.hostURL;
-  return saveConfig({
-    token: config.hostToken,
-    hostURL,
-  });
+  updateActiveHostToken(config.hostToken);
+  return upsertHost({ id: active.id, hostURL: `http://127.0.0.1:${port}` });
 }
 
 function effectiveConnection() {
-  const c = loadConfig();
-  if (c.mode === "managed") {
+  const active = getActiveHost();
+  if (!active) return { hostURL: "", token: "" };
+  if (active.mode === "managed") {
     const { config } = readHostConfig();
     const port = config?.bindPort || 8787;
     return {
       hostURL: `http://127.0.0.1:${port}`,
-      token: c.token || config?.hostToken || "",
+      token: active.token || config?.hostToken || "",
     };
   }
-  return { hostURL: c.hostURL, token: c.token };
+  return { hostURL: active.hostURL, token: active.token };
 }
 
 function createMainWindow() {
@@ -146,14 +155,33 @@ function setConnStatus(status) {
   sendToRenderer("host:ws-status", { status });
 }
 
-function notify(title, body, sessionId) {
+function notify(title, body, sessionId, meta) {
   if (!Notification.isSupported()) return;
-  const n = new Notification({
+  // macOS Notification supports inline "actions"; Linux libnotify does not
+  // via Electron's built-in API. On both platforms the click still routes
+  // to the session, and the (enriched) body carries the "what" so the user
+  // can decide without opening.
+  const opts = {
     title: `ClankerSpanker — ${title}`,
     body,
     icon: iconPath(),
-  });
+    silent: false,
+  };
+  if (isMac && meta?.kind === "approval") {
+    opts.actions = [{ type: "button", text: "Approve" }, { type: "button", text: "Reject" }];
+  }
+  const n = new Notification(opts);
   n.on("click", () => focusSession(sessionId));
+  if (isMac && meta?.kind === "approval" && meta.approvalId && sessionId) {
+    n.on("action", (_e, idx) => {
+      showMain();
+      sendToRenderer("session:approval-action", {
+        sessionId,
+        approvalId: meta.approvalId,
+        action: idx === 0 ? "approve" : "reject",
+      });
+    });
+  }
   n.show();
 }
 
@@ -161,10 +189,21 @@ function updateTrayMenu() {
   if (!tray) return;
   const conn = effectiveConnection();
   const proc = hostProc.snapshot();
+  const active = getActiveHost();
   const statusLabel =
     connStatus === "live" ? "Live" : connStatus === "connecting" ? "Connecting…" : "Offline";
 
   tray.setToolTip(`ClankerSpanker (${statusLabel})`);
+  const hostSubmenu = loadConfig().hosts.map((h) => ({
+    label: `${h.name}${h.id === active?.id ? "  ●" : ""}`,
+    click: () => {
+      setActiveHost(h.id);
+      pushDesktopConfig();
+      startMonitor();
+      updateTrayMenu();
+    },
+  }));
+
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `ClankerSpanker — ${statusLabel}`, enabled: false },
@@ -175,9 +214,10 @@ function updateTrayMenu() {
       },
       { type: "separator" },
       { label: "Open command center", click: () => showMain() },
+      { label: "Switch host", submenu: hostSubmenu.length ? hostSubmenu : [{ label: "(no hosts)", enabled: false }] },
       {
         label: "Start host",
-        enabled: loadConfig().mode === "managed" && !proc.running,
+        enabled: active?.mode === "managed" && !proc.running,
         click: () => void ipcStartHost(),
       },
       {
@@ -228,9 +268,12 @@ function startMonitor() {
 async function ipcStartHost() {
   ensureHostConfig();
   syncTokenFromHostFile();
+  const active = getActiveHost();
+  if (active?.mode !== "managed") {
+    return { ok: false, error: "Active host is remote — start it on that machine" };
+  }
   const result = await hostProc.start(loadConfig());
   if (result.ok) {
-    // Wait for health
     const conn = effectiveConnection();
     for (let i = 0; i < 20; i++) {
       const probe = await hostProc.probe(conn.hostURL);
@@ -257,15 +300,42 @@ function registerIpc() {
   ipcMain.handle("desktop:get-config", () => loadConfig());
   ipcMain.handle("desktop:save-config", (_e, partial) => {
     const next = saveConfig(partial || {});
-    if (next.mode === "managed") syncTokenFromHostFile();
     startMonitor();
     updateTrayMenu();
-    return loadConfig();
+    pushDesktopConfig();
+    return next;
   });
   ipcMain.handle("desktop:connection", () => effectiveConnection());
 
+  ipcMain.handle("desktop:host-save", (_e, patch) => {
+    const next = upsertHost(patch || {});
+    const active = getActiveHost();
+    if (active?.mode === "managed") syncTokenFromHostFile();
+    startMonitor();
+    updateTrayMenu();
+    pushDesktopConfig();
+    return next;
+  });
+  ipcMain.handle("desktop:host-remove", (_e, id) => {
+    const next = removeHost(id);
+    startMonitor();
+    updateTrayMenu();
+    pushDesktopConfig();
+    return next;
+  });
+  ipcMain.handle("desktop:host-activate", (_e, id) => {
+    const next = setActiveHost(id);
+    const active = getActiveHost();
+    if (active?.mode === "managed") syncTokenFromHostFile();
+    startMonitor();
+    updateTrayMenu();
+    pushDesktopConfig();
+    return next;
+  });
+
   ipcMain.handle("host:process-status", async () => {
     const desktop = loadConfig();
+    const active = getActiveHost(desktop);
     const conn = effectiveConnection();
     const proc = hostProc.snapshot();
     const probe = await hostProc.probe(conn.hostURL);
@@ -277,7 +347,7 @@ function registerIpc() {
     }
     return {
       ...proc,
-      mode: desktop.mode,
+      mode: active?.mode || "managed",
       hostRoot: hostProc.resolveHostRoot(desktop),
       hostConfigPath: hostConfigPath(),
       probe,
@@ -300,9 +370,10 @@ function registerIpc() {
           sendToRenderer("host:log", { line: String(line).replace(/\n$/, "") });
         },
       });
-      saveConfig({ hostPackagePath: result.installRoot, mode: "managed" });
+      saveConfig({ hostPackagePath: result.installRoot });
+      const active = getActiveHost();
+      if (active) upsertHost({ id: active.id, mode: "managed" });
       syncTokenFromHostFile();
-      // Prefer user service; if it did not come up, try direct start
       const conn = effectiveConnection();
       for (let i = 0; i < 25; i++) {
         const probe = await hostProc.probe(conn.hostURL);
@@ -315,6 +386,7 @@ function registerIpc() {
         probe = await hostProc.probe(conn.hostURL);
       }
       startMonitor();
+      pushDesktopConfig();
       return { ok: true, ...result, logs, probe };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e), logs };
@@ -496,17 +568,16 @@ app.whenReady().then(async () => {
   buildAppMenu();
   createTray();
 
-  // Ensure host config exists in managed mode; sync token into desktop prefs
-  if (loadConfig().mode === "managed") {
+  const active = getActiveHost();
+  if (active?.mode === "managed") {
     ensureHostConfig();
     syncTokenFromHostFile();
   }
 
   createMainWindow();
 
-  // Auto-start local host when managed
   const desktop = loadConfig();
-  if (desktop.mode === "managed" && desktop.autoStartHost !== false) {
+  if (active?.mode === "managed" && desktop.autoStartHost !== false) {
     const conn = effectiveConnection();
     const probe = await hostProc.probe(conn.hostURL);
     if (!probe.ok) {
@@ -520,7 +591,6 @@ app.whenReady().then(async () => {
         syncTokenFromHostFile();
       }
     } else {
-      // Already running externally — don't claim ownership
       hostProc.appendLog("[desktop] host already reachable; not spawning a second process");
     }
   }

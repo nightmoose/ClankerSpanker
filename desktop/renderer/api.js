@@ -52,6 +52,9 @@ const Api = (() => {
     },
     sessions: () => request("/sessions"),
     session: (id) => request(`/sessions/${encodeURIComponent(id)}`),
+    events: (id, since = 0) =>
+      request(`/sessions/${encodeURIComponent(id)}/events?since=${encodeURIComponent(since)}`),
+    diff: (id) => request(`/sessions/${encodeURIComponent(id)}/diff`),
     projects: () => request("/projects"),
     profiles: () => request("/profiles"),
     dispatch: (body) => request("/dispatch", { method: "POST", body: JSON.stringify(body) }),

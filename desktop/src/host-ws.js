@@ -10,7 +10,7 @@ class HostWsMonitor {
    * @param {{
    *   getConfig: () => { hostURL: string, token: string, notifications?: boolean },
    *   onStatus: (status: 'offline' | 'connecting' | 'live') => void,
-   *   onNotify: (title: string, body: string, sessionId?: string) => void,
+   *   onNotify: (title: string, body: string, sessionId?: string, meta?: object) => void,
    *   onEvent?: (event: object) => void,
    * }} opts
    */
@@ -152,20 +152,35 @@ class HostWsMonitor {
     switch (event.type) {
       case "approval.needed": {
         const title = payload.title || "Approval needed";
-        const kind = payload.kind ? ` (${payload.kind})` : "";
-        this.onNotify("Approval needed", `${title}${kind}`, sessionId);
+        const kind = payload.kind ? ` · ${payload.kind}` : "";
+        const path = payload.locations && payload.locations[0]?.path ? ` · ${payload.locations[0].path}` : "";
+        const detail = payload.detail ? ` · ${payload.detail}` : "";
+        this.onNotify(
+          "Approval needed",
+          `${title}${kind}${path || detail}`,
+          sessionId,
+          { kind: "approval", approvalId: payload.id },
+        );
         break;
       }
       case "question.needed": {
-        this.onNotify("Agent questions", payload.title || "Answer needed", sessionId);
+        this.onNotify("Agent question", payload.title || "Answer needed", sessionId, {
+          kind: "question",
+          questionId: payload.id,
+        });
         break;
       }
       case "session.completed": {
-        this.onNotify("Session completed", payload.title || "Done", sessionId);
+        this.onNotify("Session completed", payload.title || "Done", sessionId, { kind: "completed" });
         break;
       }
       case "session.failed": {
-        this.onNotify("Session failed", String(payload.error || payload.message || "Failed"), sessionId);
+        this.onNotify(
+          "Session failed",
+          String(payload.error || payload.message || "Failed"),
+          sessionId,
+          { kind: "failed" },
+        );
         break;
       }
       default:

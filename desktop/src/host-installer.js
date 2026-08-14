@@ -96,10 +96,16 @@ function resolveSource(sourcePath) {
   if (sourcePath && fs.existsSync(path.join(sourcePath, "package.json"))) {
     return path.resolve(sourcePath);
   }
+  // Packaged app: host/ is bundled under process.resourcesPath/host.
+  const bundled = process.resourcesPath
+    ? path.join(process.resourcesPath, "host")
+    : null;
+  if (bundled && fs.existsSync(path.join(bundled, "package.json"))) return bundled;
+  // Dev checkout: sibling ../host (monorepo layout).
   const sibling = path.resolve(__dirname, "..", "..", "host");
   if (fs.existsSync(path.join(sibling, "package.json"))) return sibling;
   throw new Error(
-    "No host source found. Point Host package path at a host/ folder with package.json (e.g. your monorepo host/).",
+    "No host source found. Install the app package (which bundles host/) or set Host package path to a host/ folder with package.json.",
   );
 }
 

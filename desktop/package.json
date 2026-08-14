@@ -9,6 +9,10 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "prebuild-host": "cd ../host && npm install && npm run build",
+    "prepack": "npm run prebuild-host",
+    "predist": "npm run prebuild-host",
+    "predist:linux": "npm run prebuild-host",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux AppImage deb"
@@ -33,6 +37,20 @@
       "renderer/**/*",
       "resources/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../host/dist",
+        "to": "host/dist"
+      },
+      {
+        "from": "../host/package.json",
+        "to": "host/package.json"
+      },
+      {
+        "from": "../host/package-lock.json",
+        "to": "host/package-lock.json"
+      }
     ],
     "linux": {
       "target": [

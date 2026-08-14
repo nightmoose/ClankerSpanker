@@ -1,9 +1,34 @@
 import SwiftUI
 
+/// Module-scoped once-per-process flag so the splash shows on cold launch
+/// only — not on every scenePhase change / re-render of ContentView.
+private enum SplashGate {
+    static var shownThisSession: Bool = false
+}
+
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showSplash: Bool = !SplashGate.shownThisSession
 
     var body: some View {
+        ZStack {
+            rootContent
+
+            if showSplash {
+                SplashView {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showSplash = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(10)
+                .onAppear { SplashGate.shownThisSession = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
         #if os(macOS)
         // Mac never uses phone TabView — even before "configured".
         // Bootstrap wires localhost; empty state still shows the command center.
@@ -25,26 +50,39 @@ struct ContentView: View {
 
 // MARK: - iOS only
 
+#if os(iOS)
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        TabView(selection: $appState.selectedTab) {
-            DashboardView()
-                .tabItem { Label("Sessions", systemImage: "rectangle.stack.fill") }
-                .tag(AppTab.sessions)
+        // Top tab strip on every page (Sessions → Settings), including when a
+        // session is open. No system bottom tab bar — frees the thumb zone.
+        VStack(spacing: 0) {
+            PhoneMainTabStrip()
 
-            TaskComposerView()
-                .tabItem { Label("Dispatch", systemImage: "paperplane.fill") }
-                .tag(AppTab.compose)
-
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(AppTab.settings)
+            Group {
+                switch appState.selectedTab {
+                case .sessions:
+                    DashboardView()
+                case .projects:
+                    ProjectsView()
+                case .tasks:
+                    TasksView()
+                case .compose:
+                    TaskComposerView()
+                case .settings:
+                    SettingsView()
+                case .host:
+                    // Mac-only tab; should never be selected on phone.
+                    DashboardView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .tint(DispatchColors.accent)
     }
 }
+#endif
 
 #Preview {
     ContentView()

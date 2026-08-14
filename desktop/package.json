@@ -4,7 +4,11 @@
   "private": true,
   "description": "ClankerSpanker Linux desktop (Electron) — sessions, host start/stop/settings, tray. Mac uses native app.",
   "main": "src/main.js",
-  "author": "nightmoose",
+  "homepage": "https://github.com/nightmoose/ClankerSpanker",
+  "author": {
+    "name": "nightmoose",
+    "email": "alex.suarez@nightmoose.com"
+  },
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
@@ -61,6 +65,9 @@
       "icon": "resources/icon.png",
       "synopsis": "Control plane for Grok Build and Claude Code",
       "description": "Desktop shell for ClankerSpanker: connect to a local or remote host gateway, manage agent sessions, and get OS notifications for approvals.",
+      "maintainer": "nightmoose <alex.suarez@nightmoose.com>",
+      "desktopName": "clankerspanker.desktop",
+      "syncDesktopName": true,
       "desktop": {
         "entry": {
           "Name": "ClankerSpanker",

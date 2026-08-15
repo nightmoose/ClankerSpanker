@@ -63,7 +63,7 @@
         "deb"
       ],
       "category": "Development",
-      "icon": "resources/icon.png",
+      "icon": "resources/icons",
       "synopsis": "Control plane for Grok Build and Claude Code",
       "description": "Desktop shell for ClankerSpanker: connect to a local or remote host gateway, manage agent sessions, and get OS notifications for approvals.",
       "maintainer": "nightmoose <alex.suarez@nightmoose.com>",
@@ -73,7 +73,8 @@
           "Name": "ClankerSpanker",
           "Comment": "Dispatch and supervise Grok / Claude sessions",
           "Categories": "Development;Utility;",
-          "StartupWMClass": "clankerspanker"
+          "StartupWMClass": "clankerspanker",
+          "Icon": "clankerspanker"
         }
       }
     },

@@ -13,15 +13,20 @@ Electron (Linux)  ──REST + WS──►  host/ gateway (:8787)
 
 ## Feature parity with the Mac app
 
-- Full transcript rendering: user/assistant/thought/system bubbles + inline tool-call rows (read, edit, bash, grep, etc.) merged by timestamp.
-- Streaming `thought` chunks flow in at the bottom as they arrive; "Still working…" pulse when running with no text yet.
-- Incremental WS event application (no more full refetch per event).
-- Event replay via `/sessions/:id/events?since=N` on WS reconnect — no lost turns after a network blip.
-- Session detail tabs: **Transcript · Tools · Plan · Diff · Notes**.
-- Session list: 3-way filter (Recent · Active · Archived), text search, profile chips.
-- Rich approvals: comment field, "Approve always this session", keyboard shortcuts (Enter = approve, Esc = reject).
-- Notifications carry approval kind + path in the body so you can decide before opening.
-- Multi-host registry: register N hosts (LAN, Tailscale, work box), switch from the toolbar chip or tray "Switch host" submenu.
+Functional parity with the Mac command center (not a SwiftUI clone):
+
+- Full transcript rendering: user/assistant/thought/system bubbles + inline tool-call rows merged by timestamp.
+- Streaming `thought` chunks; "Still working…" pulse when running with no text yet.
+- Incremental WS events + `/sessions/:id/events?since=N` replay on reconnect.
+- Session tabs: **Transcript · Tools · Plan · Diff · Notes** (notes/tasks are CRUD, with right-click capture from a bubble).
+- Session ⋯ menu: rename, close as done, cancel, delete, transfer, reincarnate, review, assign project, archive.
+- Session list: Recent (last 5) / Active / Archived, host content search (`?q=`), multi-select profile chips with usage %.
+- Sidebar: **Projects** (CRUD, discover, multi-path) and **Tasks** (global list).
+- Compose: project + custom cwd, subagents toggle, Grok plan/worktree hidden for Claude/Antigravity.
+- Follow-up images; local file viewer pane (managed/local disk only).
+- Re-login banner → `POST /profiles/:id/login` (browser opens **on the host**).
+- Rich approvals: comment, "Approve always this session", Enter / Esc.
+- Multi-host registry, tray, host install + systemd user service.
 
 ## Modes
 
@@ -110,3 +115,6 @@ desktop/
 
 - **Notification action buttons**: macOS notifications carry inline Approve/Reject buttons. On Linux, Electron's `Notification` API doesn't surface libnotify actions, so notifications click through to the session detail (which has keyboard shortcuts + rich approval bar). The body carries the approval kind + path so you can decide before opening.
 - **Deep linking** (`clankerspanker://` URLs): not wired. Tray + notification click covers focus.
+- **File viewer** only reads this machine's disk (same as Mac). Remote hosts: path must exist locally.
+
+Keyboard (when focus is not in an input): **Ctrl+N** compose, **Ctrl+Shift+P** projects, **Ctrl+Shift+T** tasks, **Ctrl+Alt+I** file viewer.

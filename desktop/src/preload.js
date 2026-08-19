@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("clanker", {
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
   showPath: (p) => ipcRenderer.invoke("shell:show-path", p),
   pickDirectory: () => ipcRenderer.invoke("dialog:pick-directory"),
+  pickFiles: (opts) => ipcRenderer.invoke("dialog:pick-files", opts),
+  readLocalFile: (target) => ipcRenderer.invoke("fs:read-file", target),
 
   // Events from main
   onHostEvent: (cb) => {

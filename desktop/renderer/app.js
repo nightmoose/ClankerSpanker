@@ -1,10 +1,22 @@
 "use strict";
 
+const RECENT_LIMIT = 5;
+const AUTH_MARKERS = [
+  "please run /login",
+  "oauth",
+  "not authenticated",
+  "unauthorized",
+  "login required",
+  "auth login",
+];
+
 const state = {
   nav: "sessions",
   filter: "recent",
   search: "",
   searchDebounce: null,
+  hostSearchHits: null,
+  searchingHost: false,
   sessions: [],
   archived: [],
   disk: [],
@@ -12,21 +24,43 @@ const state = {
   projects: [],
   profiles: [],
   profileId: null,
+  enabledProfileIds: [],
   detail: null,
   selectedId: null,
   tab: "transcript",
   diff: null,
   diffLoading: false,
   approvalDraftComment: "",
+  followupDraft: "",
+  pendingImages: [],
+  composeDraft: {
+    title: "",
+    prompt: "",
+    projectId: "",
+    cwd: "",
+    planMode: true,
+    worktree: true,
+    subagents: true,
+  },
   wsStatus: "offline",
   hostStatus: null,
   desktopConfig: null,
   hostConfig: null,
   hostConfigPath: "",
   refreshTimer: null,
+  usageTimer: null,
   lastSeqBySession: {},
   streamingText: "",
   streamingTimer: null,
+  showViewer: false,
+  viewerPath: "",
+  tasks: [],
+  tasksShowDone: false,
+  tasksSearch: "",
+  projectSearch: "",
+  loginAckedFor: "",
+  noteDraft: "",
+  taskDraft: "",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -47,6 +81,72 @@ function shortPath(p) {
   const parts = String(p).replace(/\\/g, "/").split("/");
   return parts.slice(-2).join("/") || p;
 }
+
+function projectPrimaryPath(p) {
+  if (!p) return "";
+  if (Array.isArray(p.paths) && p.paths[0]) return p.paths[0];
+  return p.path || "";
+}
+function isGrokBackend(b) {
+  return !b || b === "grok";
+}
+function showsAllProfiles() {
+  const ids = (state.profiles || []).map((p) => p.id);
+  if (!ids.length) return true;
+  const enabled = state.enabledProfileIds || [];
+  if (!enabled.length) return true;
+  return ids.every((id) => enabled.includes(id));
+}
+function usagePeak(u) {
+  if (!u) return null;
+  const vals = [u.fiveHourPercent, u.sevenDayPercent, u.sevenDayOpusPercent].filter(
+    (n) => typeof n === "number",
+  );
+  return vals.length ? Math.max(...vals) : null;
+}
+function usageSubtitle(u) {
+  if (!u) return null;
+  const peak = usagePeak(u);
+  if (peak != null) return `${Math.round(peak)}%`;
+  if (u.label) return u.label;
+  if (u.status === "limited") return "100%";
+  if (u.status === "unknown") return "?";
+  if (u.status === "error") return "…";
+  if (u.canWork === false) return "!";
+  return null;
+}
+function usageTraffic(u) {
+  const peak = usagePeak(u);
+  if (peak == null) {
+    if (u?.status === "limited") return "err";
+    if (u?.status === "error") return "warn";
+    return "";
+  }
+  if (peak >= 95) return "err";
+  if (peak >= 75) return "warn";
+  return "ok";
+}
+function resolveFsPath(p, cwd) {
+  if (!p) return "";
+  if (p.startsWith("/") || p.startsWith("~")) return p;
+  if (cwd) return String(cwd).replace(/\/$/, "") + "/" + String(p).replace(/^\.\//, "");
+  return p;
+}
+function projectNameFor(session) {
+  if (!session?.projectId) return "";
+  const p = (state.projects || []).find((x) => x.id === session.projectId);
+  return p?.name || "";
+}
+function needsReLogin(detail) {
+  if (!detail) return false;
+  if (state.loginAckedFor === `${detail.id}:${detail.updatedAt || ""}`) return false;
+  const blob = [detail.error, ...(detail.transcript || []).map((e) => e.text)]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  return AUTH_MARKERS.some((m) => blob.includes(m));
+}
+
 function statusClass(s) {
   return `status ${String(s || "").replace(/[^a-z_]/g, "")}`;
 }
@@ -196,6 +296,8 @@ function setNav(nav) {
 
   const titles = {
     sessions: "Sessions",
+    projects: "Projects",
+    tasks: "Tasks",
     compose: "Compose",
     grok: "Grok disk",
     claude: "Claude disk",
@@ -206,18 +308,30 @@ function setNav(nav) {
   $("#toolbar").classList.toggle("hidden", nav === "host" || nav === "settings");
   $(".toolbar-right").classList.toggle("hidden", nav !== "sessions");
   $("#profile-bar").classList.toggle("hidden", nav !== "sessions" && nav !== "compose");
+  $("#session-count")?.classList.toggle("hidden", nav !== "sessions");
+  const viewerBtn = $("#btn-viewer");
+  if (viewerBtn) {
+    viewerBtn.classList.toggle("hidden", nav !== "sessions");
+    viewerBtn.classList.toggle("active-tool", state.showViewer);
+  }
 
   $("#view-sessions").classList.toggle("active", nav === "sessions");
   $("#view-sessions").classList.toggle("hidden", nav !== "sessions");
+  $("#view-projects")?.classList.toggle("hidden", nav !== "projects");
+  $("#view-tasks")?.classList.toggle("hidden", nav !== "tasks");
   $("#view-compose").classList.toggle("hidden", nav !== "compose");
   $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude");
   $("#view-host").classList.toggle("hidden", nav !== "host");
   $("#view-settings").classList.toggle("hidden", nav !== "settings");
 
+  syncViewerPane();
+
   if (nav === "sessions") {
     renderSessionList();
     if (state.detail) renderDetail();
-  } else if (nav === "compose") renderCompose();
+  } else if (nav === "projects") renderProjects();
+  else if (nav === "tasks") renderTasks();
+  else if (nav === "compose") renderCompose();
   else if (nav === "grok" || nav === "claude") renderDisk(nav);
   else if (nav === "host") renderHost();
   else if (nav === "settings") renderDesktopSettings();
@@ -227,59 +341,134 @@ function setNav(nav) {
 
 function renderProfiles() {
   const bar = $("#profile-bar");
+  if (!bar) return;
   if (!state.profiles.length) {
     bar.innerHTML = "";
     return;
   }
+  const radio = state.nav === "compose";
+  const allOn = showsAllProfiles();
   bar.innerHTML = state.profiles
     .map((p) => {
-      const active = p.id === state.profileId;
-      return `<button type="button" class="profile-chip ${active ? "active" : ""}" data-profile="${escapeAttr(p.id)}" style="--chip:${escapeAttr(p.color || "#73b8ff")}">
+      const selected = radio
+        ? p.id === state.profileId
+        : allOn || (state.enabledProfileIds || []).includes(p.id);
+      const sub = usageSubtitle(p.usage);
+      const traffic = usageTraffic(p.usage);
+      return `<button type="button" class="profile-chip ${selected ? "active" : ""}" data-profile="${escapeAttr(p.id)}" style="--chip:${escapeAttr(p.color || "#73b8ff")}">
         <span class="dot" style="background:${escapeAttr(p.color || "#73b8ff")}"></span>
-        ${escapeHtml(p.name)}
+        <span class="chip-col">
+          <span class="chip-name">${escapeHtml(p.name)}</span>
+          <span class="chip-usage ${traffic}">${escapeHtml(sub || "Usage")}</span>
+        </span>
+        ${traffic && sub ? `<span class="traffic ${traffic}"></span>` : ""}
       </button>`;
     })
     .join("");
   bar.querySelectorAll("[data-profile]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state.profileId = btn.getAttribute("data-profile");
+      const id = btn.getAttribute("data-profile");
+      if (radio) {
+        state.profileId = id;
+      } else {
+        let enabled = [...(state.enabledProfileIds || [])];
+        const ids = state.profiles.map((p) => p.id);
+        if (!enabled.length || showsAllProfiles()) {
+          enabled = ids.filter((x) => x !== id);
+        } else if (enabled.includes(id)) {
+          enabled = enabled.filter((x) => x !== id);
+        } else {
+          enabled.push(id);
+        }
+        state.enabledProfileIds = enabled;
+        if (enabled.includes(id) || !enabled.length) state.profileId = id;
+      }
       renderProfiles();
       if (state.nav === "sessions") renderSessionList();
       if (state.nav === "compose") renderCompose();
     });
   });
+  updateSessionCount();
 }
 
 // ——— Sessions (command center) ———
 
 function sessionPoolForFilter() {
   if (state.filter === "archived") return state.archived;
-  const active = new Set(["running", "queued", "awaiting_approval", "awaiting_question"]);
-  if (state.filter === "active") return state.sessions.filter((s) => active.has(s.status));
-  return state.sessions;
+  const rows = [...(state.sessions || [])].sort((a, b) =>
+    String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
+  );
+  if (state.filter === "recent") return rows.slice(0, RECENT_LIMIT);
+  return rows;
+}
+
+function matchesProfileFilter(s) {
+  if (showsAllProfiles()) return true;
+  const enabled = state.enabledProfileIds || [];
+  if (!enabled.length) return true;
+  if (s.profileId) return enabled.includes(s.profileId);
+  const backends = new Set(
+    state.profiles.filter((p) => enabled.includes(p.id)).map((p) => p.backend || "grok"),
+  );
+  return backends.has(s.backend || "grok");
+}
+
+function localHaystack(s) {
+  return [
+    s.title,
+    s.prompt,
+    s.cwd,
+    s.transcriptPreview,
+    s.profileName,
+    s.profileId,
+    s.model,
+    s.error,
+    s.status,
+    s.backend,
+    s.projectId,
+    projectNameFor(s),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+}
+
+function mergeSearchHits() {
+  const q = state.search.trim();
+  if (!q) return null;
+  const byId = {};
+  for (const s of [...(state.sessions || []), ...(state.archived || [])]) {
+    if (localHaystack(s).includes(q.toLowerCase())) byId[s.id] = s;
+  }
+  for (const s of state.hostSearchHits || []) byId[s.id] = s;
+  return Object.values(byId).sort((a, b) =>
+    String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
+  );
 }
 
 function filteredSessions() {
-  let rows = sessionPoolForFilter();
-  if (state.profileId) {
-    rows = rows.filter((s) => {
-      if (s.profileId) return s.profileId === state.profileId;
-      const p = state.profiles.find((x) => x.id === state.profileId);
-      if (!p) return true;
-      return (s.backend || "grok") === p.backend;
-    });
-  }
-  const q = state.search.trim().toLowerCase();
-  if (q) {
-    rows = rows.filter((s) => {
-      const hay = [s.title, s.transcriptPreview, s.prompt, s.cwd, s.profileName, s.backend]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }
+  const q = state.search.trim();
+  let rows = q ? mergeSearchHits() || [] : sessionPoolForFilter();
+  rows = rows.filter(matchesProfileFilter);
   return rows;
+}
+
+function updateSessionCount() {
+  const el = $("#session-count");
+  if (!el) return;
+  if (state.nav !== "sessions") {
+    el.classList.add("hidden");
+    return;
+  }
+  el.classList.remove("hidden");
+  const shown = filteredSessions().length;
+  const pool = state.filter === "archived" ? state.archived.length : state.sessions.length;
+  el.textContent = showsAllProfiles() || state.filter === "archived" ? String(shown) : `${shown}/${pool}`;
+  el.title = state.search.trim()
+    ? `${shown} match(es) (titles + message content)`
+    : showsAllProfiles()
+      ? `${shown} sessions`
+      : `${shown} for selected profiles · ${pool} total on host`;
 }
 
 function renderSessionList() {
@@ -295,7 +484,7 @@ function renderSessionList() {
         <button type="button" data-filter="active" class="${state.filter === "active" ? "active" : ""}">Active</button>
         <button type="button" data-filter="archived" class="${state.filter === "archived" ? "active" : ""}">Archived</button>
       </div>
-      <input id="session-search" class="search-input" placeholder="Search sessions…" value="${searchVal}" />
+      <input id="session-search" class="search-input" placeholder="Search titles, paths &amp; message content" value="${searchVal}" />
     </div>`;
 
   let body;
@@ -312,11 +501,12 @@ function renderSessionList() {
         const attention =
           s.status === "awaiting_approval" || s.status === "awaiting_question" ? "⚠ " : "";
         return `
-        <button type="button" class="session-card ${selected}" data-open="${escapeAttr(s.id)}">
+        <button type="button" class="session-card ${selected}" data-open="${escapeAttr(s.id)}" style="${s.profileColor ? `--stripe:${escapeAttr(s.profileColor)}` : ""}">
           <h3>${attention}${escapeHtml(s.title || "Session")}</h3>
           <div class="meta">
             <span class="${statusClass(s.status)}">${escapeHtml(s.status)}</span>
             <span>${escapeHtml(s.profileName || s.backend || "")}</span>
+            ${projectNameFor(s) ? `<span>${escapeHtml(projectNameFor(s))}</span>` : ""}
             <span>${escapeHtml(shortPath(s.cwd))}</span>
             ${s.isLive ? "<span>live</span>" : ""}
           </div>
@@ -343,10 +533,36 @@ function renderSessionList() {
       clearTimeout(state.searchDebounce);
       state.searchDebounce = setTimeout(() => {
         state.search = e.target.value;
+        scheduleHostSearch(state.search);
         renderSessionList();
-      }, 140);
+      }, 250);
     });
   }
+  updateSessionCount();
+}
+
+function scheduleHostSearch(query) {
+  const q = String(query || "").trim();
+  if (!q) {
+    state.hostSearchHits = null;
+    state.searchingHost = false;
+    return;
+  }
+  state.searchingHost = true;
+  if (!state._searchGen) state._searchGen = 0;
+  const token = ++state._searchGen;
+  Api.sessions(q)
+    .then((res) => {
+      if (token !== state._searchGen) return;
+      const hits = [...(res.sessions || []), ...(res.archivedSessions || [])];
+      state.hostSearchHits = hits;
+      state.searchingHost = false;
+      if (state.nav === "sessions") renderSessionList();
+    })
+    .catch(() => {
+      if (token !== state._searchGen) return;
+      state.searchingHost = false;
+    });
 }
 
 async function openSession(id) {
@@ -357,6 +573,9 @@ async function openSession(id) {
     state.diff = null;
     state.approvalDraftComment = "";
     state.streamingText = "";
+    state.pendingImages = [];
+    state.noteDraft = "";
+    state.taskDraft = "";
   }
   try {
     state.detail = await Api.session(id);
@@ -381,6 +600,16 @@ function renderDetail() {
   }
   root.className = "panel detail-panel";
 
+  // Preserve typed followup text + focus/selection across re-renders.
+  // WS events trigger renderDetail() frequently — without this, any keystroke
+  // between events is wiped when innerHTML is reassigned below.
+  const followupEl = document.getElementById("followup-input");
+  if (followupEl) state.followupDraft = followupEl.value;
+  const activeEl = document.activeElement;
+  const focusedId = activeEl && activeEl.id ? activeEl.id : null;
+  const focusedSelStart = activeEl && typeof activeEl.selectionStart === "number" ? activeEl.selectionStart : null;
+  const focusedSelEnd = activeEl && typeof activeEl.selectionEnd === "number" ? activeEl.selectionEnd : null;
+
   const pendingA = d.pendingApproval;
   const pendingQ = d.pendingQuestion;
   const running = ["running", "queued"].includes(d.status);
@@ -402,14 +631,13 @@ function renderDetail() {
         ${d.error ? `<p class="preview" style="color:var(--danger)">${escapeHtml(d.error)}</p>` : ""}
       </div>
       <div class="row-actions">
-        ${
-          d.archived
-            ? `<button type="button" class="secondary" id="btn-unarch">Unarchive</button>`
-            : `<button type="button" class="secondary" id="btn-arch">Archive</button>`
-        }
-        <button type="button" class="danger" id="btn-cancel">Cancel</button>
+        <button type="button" class="secondary" id="btn-session-menu">⋯</button>
       </div>
     </div>
+    ${needsReLogin(d) ? `<div class="login-banner" id="login-banner">
+      <span>This profile needs to sign in again. Login opens a browser on the <strong>host</strong> machine.</span>
+      <button type="button" class="primary" id="btn-relogin">Sign in on host</button>
+    </div>` : ""}
 
     <div class="detail-tabs" role="tablist">
       <button type="button" data-tab="transcript" class="${state.tab === "transcript" ? "active" : ""}">Transcript</button>
@@ -433,9 +661,15 @@ function renderDetail() {
     }
     ${
       !pendingA && !pendingQ && d.status !== "cancelled" && d.status !== "failed"
-        ? `<div class="followup">
-            <input id="followup-input" placeholder="Message agent… (Enter to send)" />
-            <button type="button" class="primary" id="btn-send">Send</button>
+        ? `<div class="followup-wrap">
+            ${state.pendingImages.length ? `<div class="img-row">${state.pendingImages.map((im, i) =>
+              `<span class="img-thumb"><img src="data:${escapeAttr(im.mimeType)};base64,${escapeAttr(im.data)}" alt=""/><button type="button" class="img-x" data-rm-img="${i}">×</button></span>`
+            ).join("")}</div>` : ""}
+            <div class="followup">
+              <button type="button" class="ghost" id="btn-attach-img" title="Attach images">🖼</button>
+              <input id="followup-input" placeholder="Message agent… (Enter to send)" value="${escapeAttr(state.followupDraft || "")}" />
+              <button type="button" class="primary" id="btn-send">Send</button>
+            </div>
           </div>`
         : ""
     }
@@ -463,56 +697,51 @@ function renderDetail() {
     });
   });
 
-  $("#btn-arch")?.addEventListener("click", async () => {
-    try {
-      await Api.archive(d.id);
-      banner("Archived");
-      state.detail = null;
-      state.selectedId = null;
-      await refreshSessions();
-      renderDetail();
-    } catch (e) {
-      banner(e.message, true);
-    }
-  });
-  $("#btn-unarch")?.addEventListener("click", async () => {
-    try {
-      state.detail = await Api.unarchive(d.id);
-      trackHighestSeq(state.detail);
-      banner("Restored");
-      await refreshSessions();
-      renderDetail();
-    } catch (e) {
-      banner(e.message, true);
-    }
-  });
-  $("#btn-cancel")?.addEventListener("click", async () => {
-    try {
-      state.detail = await Api.cancel(d.id);
-      trackHighestSeq(state.detail);
-      await refreshSessions();
-      renderDetail();
-    } catch (e) {
-      banner(e.message, true);
-    }
-  });
+  wireSessionMenu(d);
+  $("#btn-relogin")?.addEventListener("click", () => startProfileLogin(d));
 
   wireApprovalControls(d, pendingA);
   wireQuestionControls(d, pendingQ);
 
   const send = async () => {
     const input = $("#followup-input");
-    const text = input?.value?.trim();
-    if (!text) return;
+    const text = input?.value?.trim() || "";
+    if (!text && !state.pendingImages.length) return;
     try {
-      state.detail = await Api.prompt(d.id, { prompt: text });
+      const body = { prompt: text };
+      if (state.pendingImages.length) {
+        body.images = state.pendingImages.map((im) => ({
+          mimeType: im.mimeType,
+          data: im.data,
+          name: im.name,
+        }));
+      }
+      state.detail = await Api.prompt(d.id, body);
       trackHighestSeq(state.detail);
+      state.followupDraft = "";
+      state.pendingImages = [];
       renderDetail();
     } catch (e) {
       banner(e.message, true);
     }
   };
+  $("#btn-attach-img")?.addEventListener("click", async () => {
+    const files = await window.clanker.pickFiles({ images: true });
+    if (!files?.length) return;
+    state.pendingImages = [...state.pendingImages, ...files];
+    renderDetail();
+  });
+  root.querySelectorAll("[data-rm-img]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.getAttribute("data-rm-img"));
+      state.pendingImages.splice(i, 1);
+      renderDetail();
+    });
+  });
   $("#btn-send")?.addEventListener("click", send);
+  $("#followup-input")?.addEventListener("input", (e) => {
+    state.followupDraft = e.target.value;
+  });
   $("#followup-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -520,7 +749,24 @@ function renderDetail() {
     }
   });
 
+  // Restore focus + caret so re-renders don't interrupt typing.
+  if (focusedId) {
+    const el = document.getElementById(focusedId);
+    if (el) {
+      try {
+        el.focus({ preventScroll: true });
+        if (focusedSelStart !== null && typeof el.setSelectionRange === "function") {
+          el.setSelectionRange(focusedSelStart, focusedSelEnd ?? focusedSelStart);
+        }
+      } catch {
+        /* focus may fail if element type doesn't support it — safe to ignore */
+      }
+    }
+  }
+
   scrollTranscriptToEnd();
+  wireTranscriptCapture(d);
+  wireOpenPaths(d);
 }
 
 function renderTabBody(d, running) {
@@ -545,6 +791,7 @@ function renderTabBody(d, running) {
   }
   if (state.tab === "notes") {
     el.innerHTML = renderNotesTab(d);
+    wireNotesTab(d);
     return;
   }
 }
@@ -595,7 +842,8 @@ function renderBubble(entry, isStreaming) {
         : entry.role === "system"
           ? "bubble system"
           : "bubble";
-  return `<div class="${cls}${isStreaming ? " streaming" : ""}">
+  const mid = entry.id ? ` id="msg-${escapeAttr(entry.id)}"` : "";
+  return `<div class="${cls}${isStreaming ? " streaming" : ""}"${mid} data-msg="${escapeAttr(entry.id || "")}">
     <div class="role">${escapeHtml(roleLabel)}</div>
     <div class="text">${escapeHtml(entry.text || "")}</div>
   </div>`;
@@ -651,7 +899,7 @@ function renderToolRow(t) {
   return `<div class="tool-row ${statusCls}">
     <span class="tool-ico">${toolIconSvg(t.kind, t.title)}</span>
     <span class="tool-title">${escapeHtml(t.title || t.kind || "tool")}</span>
-    ${path ? `<span class="tool-path">${escapeHtml(path)}</span>` : ""}
+    ${path ? `<button type="button" class="tool-path" data-open-path="${escapeAttr(path)}">${escapeHtml(path)}</button>` : ""}
     <span class="tool-status ${statusCls}">${escapeHtml(statusLabel)}</span>
   </div>`;
 }
@@ -690,7 +938,7 @@ function renderDiffTab(d) {
     ? files
         .map(
           (f) => `<details class="diff-file" open>
-      <summary>${escapeHtml(f.path || "file")} <span class="diff-stat">${f.additions ?? "?"}+/${f.deletions ?? "?"}−</span></summary>
+      <summary><button type="button" class="ghost" data-open-path="${escapeAttr(f.path || "")}">${escapeHtml(f.path || "file")}</button> <span class="diff-stat">${f.additions ?? "?"}+/${f.deletions ?? "?"}−</span></summary>
       <pre class="diff-body">${escapeHtml(f.patch || f.raw || "")}</pre>
     </details>`,
         )
@@ -721,23 +969,115 @@ async function loadDiff() {
 function renderNotesTab(d) {
   const tasks = d.tasks || [];
   const notes = d.notes || [];
-  if (!tasks.length && !notes.length) return `<div class="list-empty">No notes or tasks.</div>`;
-  const tasksHtml = tasks.length
-    ? `<h4 class="section-h">Tasks</h4><ul class="notes-list">${tasks
-        .map(
-          (t) => `<li class="note-item ${escapeAttr(t.status || "open")}">
-        <span class="dot"></span>
+  const open = tasks.filter((t) => t.status !== "done");
+  const done = tasks.filter((t) => t.status === "done");
+  const taskRow = (t) => `<li class="note-item ${escapeAttr(t.status || "open")}" data-task="${escapeAttr(t.id)}">
+        <button type="button" class="ghost note-check" data-toggle-task="${escapeAttr(t.id)}" title="Toggle">${t.status === "done" ? "☑" : "☐"}</button>
         <span>${escapeHtml(t.text)}</span>
-      </li>`,
-        )
-        .join("")}</ul>`
-    : "";
-  const notesHtml = notes.length
-    ? `<h4 class="section-h">Notes</h4><ul class="notes-list">${notes
-        .map((n) => `<li class="note-item"><span class="dot"></span><span>${escapeHtml(n.text)}</span></li>`)
-        .join("")}</ul>`
-    : "";
-  return `<div class="notes-wrap">${tasksHtml}${notesHtml}</div>`;
+        ${t.sourceMessageId ? `<button type="button" class="ghost" data-jump="${escapeAttr(t.sourceMessageId)}">Jump</button>` : ""}
+        <button type="button" class="ghost" data-del-task="${escapeAttr(t.id)}" title="Delete">✕</button>
+      </li>`;
+  const noteRow = (n) => `<li class="note-item" data-note="${escapeAttr(n.id)}">
+        <span class="dot"></span>
+        <span>${escapeHtml(n.text)}</span>
+        ${n.sourceMessageId ? `<button type="button" class="ghost" data-jump="${escapeAttr(n.sourceMessageId)}">Jump</button>` : ""}
+        <button type="button" class="ghost" data-del-note="${escapeAttr(n.id)}" title="Delete">✕</button>
+      </li>`;
+  return `<div class="notes-wrap">
+    <h4 class="section-h">Open (${open.length})</h4>
+    ${open.length ? `<ul class="notes-list">${open.map(taskRow).join("")}</ul>` : `<p class="hint">No open todos. Right-click a message to capture one.</p>`}
+    ${done.length ? `<h4 class="section-h">Done (${done.length})</h4><ul class="notes-list">${done.map(taskRow).join("")}</ul>` : ""}
+    <h4 class="section-h">Notes (${notes.length})</h4>
+    ${notes.length ? `<ul class="notes-list">${notes.map(noteRow).join("")}</ul>` : `<p class="hint">No notes yet.</p>`}
+    <div class="note-add">
+      <input id="task-draft" placeholder="Add a todo…" value="${escapeAttr(state.taskDraft || "")}" />
+      <button type="button" class="secondary" id="btn-add-task">Add todo</button>
+    </div>
+    <div class="note-add">
+      <input id="note-draft" placeholder="Add a note…" value="${escapeAttr(state.noteDraft || "")}" />
+      <button type="button" class="secondary" id="btn-add-note">Add note</button>
+    </div>
+  </div>`;
+}
+
+function wireNotesTab(d) {
+  const body = $("#tab-body");
+  if (!body) return;
+  body.querySelectorAll("[data-toggle-task]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-toggle-task");
+      const task = (d.tasks || []).find((x) => x.id === id);
+      if (!task) return;
+      try {
+        const next = await Api.updateTask(d.id, id, { status: task.status === "done" ? "open" : "done" });
+        const i = d.tasks.findIndex((x) => x.id === id);
+        if (i >= 0) d.tasks[i] = next.task || next;
+        renderDetail();
+      } catch (e) {
+        banner(e.message, true);
+      }
+    });
+  });
+  body.querySelectorAll("[data-del-task]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await Api.deleteTask(d.id, btn.getAttribute("data-del-task"));
+        d.tasks = (d.tasks || []).filter((x) => x.id !== btn.getAttribute("data-del-task"));
+        renderDetail();
+      } catch (e) {
+        banner(e.message, true);
+      }
+    });
+  });
+  body.querySelectorAll("[data-del-note]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await Api.deleteNote(d.id, btn.getAttribute("data-del-note"));
+        d.notes = (d.notes || []).filter((x) => x.id !== btn.getAttribute("data-del-note"));
+        renderDetail();
+      } catch (e) {
+        banner(e.message, true);
+      }
+    });
+  });
+  body.querySelectorAll("[data-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tab = "transcript";
+      renderDetail();
+      const el = document.getElementById(`msg-${btn.getAttribute("data-jump")}`);
+      el?.scrollIntoView({ block: "center" });
+    });
+  });
+  const addTask = async () => {
+    const text = ($("#task-draft")?.value || "").trim();
+    if (!text) return;
+    try {
+      const res = await Api.createTask(d.id, { text });
+      d.tasks = [...(d.tasks || []), res.task || res];
+      state.taskDraft = "";
+      renderDetail();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  };
+  const addNote = async () => {
+    const text = ($("#note-draft")?.value || "").trim();
+    if (!text) return;
+    try {
+      const res = await Api.createNote(d.id, { text });
+      d.notes = [...(d.notes || []), res.note || res];
+      state.noteDraft = "";
+      renderDetail();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  };
+  $("#btn-add-task")?.addEventListener("click", addTask);
+  $("#btn-add-note")?.addEventListener("click", addNote);
+  $("#task-draft")?.addEventListener("input", (e) => { state.taskDraft = e.target.value; });
+  $("#note-draft")?.addEventListener("input", (e) => { state.noteDraft = e.target.value; });
+  $("#task-draft")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
+  $("#note-draft")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addNote(); } });
 }
 
 // ——— Approval ———
@@ -856,7 +1196,7 @@ async function refreshSessions() {
     const [sessions, projects, profiles] = await Promise.all([
       Api.sessions(),
       Api.projects().catch(() => ({ projects: [] })),
-      Api.profiles().catch(() => ({ profiles: [] })),
+      Api.profiles({ usage: true }).catch(() => ({ profiles: [] })),
     ]);
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
@@ -865,6 +1205,16 @@ async function refreshSessions() {
     state.projects = projects.projects || [];
     state.profiles = profiles.profiles || [];
     if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
+    if (!state.enabledProfileIds.length) {
+      state.enabledProfileIds = state.profiles.map((p) => p.id);
+    } else {
+      const known = new Set(state.profiles.map((p) => p.id));
+      const kept = state.enabledProfileIds.filter((id) => known.has(id));
+      const added = state.profiles.map((p) => p.id).filter((id) => !state.enabledProfileIds.includes(id) && !known.has(id));
+      // Newly appeared profiles join the all-on set only when we were already showing all.
+      if (showsAllProfiles()) state.enabledProfileIds = state.profiles.map((p) => p.id);
+      else state.enabledProfileIds = kept;
+    }
     renderProfiles();
     renderActiveHostChip();
     if (state.nav === "sessions") {
@@ -882,6 +1232,10 @@ async function refreshSessions() {
       renderDisk(state.nav);
     } else if (state.nav === "compose") {
       renderCompose();
+    } else if (state.nav === "projects") {
+      renderProjects();
+    } else if (state.nav === "tasks") {
+      renderTasks();
     }
   } catch (e) {
     if (state.nav === "sessions") {
@@ -940,6 +1294,7 @@ function applyEvent(ev, { fromReplay = false } = {}) {
       renderSessionList();
     }
   }
+  if (String(ev.type || "").startsWith("task.") && state.nav === "tasks") renderTasks();
 }
 
 function patchSessionListMeta(sid, ev) {
@@ -1092,70 +1447,327 @@ function patchOpenDetail(ev) {
   }
 }
 
+
+function closeMenuPops() {
+  document.querySelectorAll(".menu-pop").forEach((el) => el.remove());
+}
+
+function placeMenu(anchor, html) {
+  closeMenuPops();
+  const menu = document.createElement("div");
+  menu.className = "menu-pop";
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const rect = anchor.getBoundingClientRect();
+  const left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  const close = () => {
+    menu.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    document.removeEventListener("keydown", onEsc, true);
+  };
+  const onDoc = (e) => {
+    if (!menu.contains(e.target)) close();
+  };
+  const onEsc = (e) => {
+    if (e.key === "Escape") close();
+  };
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDoc, true);
+    document.addEventListener("keydown", onEsc, true);
+  }, 0);
+  return { menu, close };
+}
+
+function wireSessionMenu(d) {
+  const btn = $("#btn-session-menu");
+  if (!btn) return;
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const others = state.profiles.filter((p) => p.id && p.id !== d.profileId);
+    const projects = (state.projects || []).filter((p) => !p.archived);
+    const transferItems = others
+      .map(
+        (p) =>
+          `<button type="button" class="menu-item" data-act="transfer" data-pid="${escapeAttr(p.id)}"><span class="menu-name">Transfer to ${escapeHtml(p.name)}</span></button>`,
+      )
+      .join("");
+    const reviewItems = state.profiles
+      .map(
+        (p) =>
+          `<button type="button" class="menu-item" data-act="review" data-pid="${escapeAttr(p.id)}"><span class="menu-name">Review as ${escapeHtml(p.name)}</span></button>`,
+      )
+      .join("");
+    const projectItems =
+      projects
+        .map(
+          (p) =>
+            `<button type="button" class="menu-item ${p.id === d.projectId ? "active" : ""}" data-act="project" data-pid="${escapeAttr(p.id)}"><span class="menu-name">${escapeHtml(p.name)}</span></button>`,
+        )
+        .join("") +
+      (d.projectId
+        ? `<button type="button" class="menu-item" data-act="project" data-pid=""><span class="menu-name">Detach project</span></button>`
+        : "");
+    const { menu, close } = placeMenu(
+      btn,
+      `
+      <button type="button" class="menu-item" data-act="rename"><span class="menu-name">Rename…</span></button>
+      <button type="button" class="menu-item" data-act="close"><span class="menu-name">Close as done</span></button>
+      <button type="button" class="menu-item" data-act="cancel"><span class="menu-name">Cancel session</span></button>
+      <div class="menu-sep"></div>
+      ${transferItems ? transferItems + `<div class="menu-sep"></div>` : ""}
+      <button type="button" class="menu-item" data-act="reincarnate"><span class="menu-name">Reincarnate…</span></button>
+      ${reviewItems ? reviewItems + `<div class="menu-sep"></div>` : ""}
+      ${projectItems ? projectItems + `<div class="menu-sep"></div>` : ""}
+      ${
+        d.archived
+          ? `<button type="button" class="menu-item" data-act="unarchive"><span class="menu-name">Unarchive</span></button>`
+          : `<button type="button" class="menu-item" data-act="archive"><span class="menu-name">Archive</span></button>`
+      }
+      <button type="button" class="menu-item" data-act="delete"><span class="menu-name" style="color:var(--danger)">Delete permanently…</span></button>
+    `,
+    );
+    menu.querySelectorAll("[data-act]").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const act = el.getAttribute("data-act");
+        const pid = el.getAttribute("data-pid");
+        close();
+        try {
+          if (act === "rename") {
+            const title = prompt("Session title", d.title || "");
+            if (!title) return;
+            state.detail = await Api.renameSession(d.id, title);
+          } else if (act === "close") {
+            state.detail = await Api.close(d.id);
+            banner("Closed as done");
+          } else if (act === "cancel") {
+            state.detail = await Api.cancel(d.id);
+          } else if (act === "transfer") {
+            if (!confirm(`Transfer this session to another profile?`)) return;
+            state.detail = await Api.transferSession(d.id, pid);
+            banner("Transferred");
+          } else if (act === "reincarnate") {
+            if (!confirm("Archive this chat and start a fresh session with a transcript summary?")) return;
+            const next = await Api.reincarnateSession(d.id, { profileId: state.profileId || undefined });
+            banner("Reincarnated");
+            await refreshSessions();
+            openSession(next.id);
+            return;
+          } else if (act === "review") {
+            const next = await Api.reviewSession(d.id, { profileId: pid, includeDiff: true });
+            banner("Review session started");
+            await refreshSessions();
+            openSession(next.id);
+            return;
+          } else if (act === "project") {
+            state.detail = await Api.setSessionProject(d.id, pid || null);
+          } else if (act === "archive") {
+            await Api.archive(d.id);
+            banner("Archived");
+            state.detail = null;
+            state.selectedId = null;
+            await refreshSessions();
+            renderDetail();
+            return;
+          } else if (act === "unarchive") {
+            state.detail = await Api.unarchive(d.id);
+            banner("Restored");
+          } else if (act === "delete") {
+            if (!confirm("Permanently delete this session and its attachments?")) return;
+            await Api.deleteSession(d.id);
+            banner("Deleted");
+            state.detail = null;
+            state.selectedId = null;
+            await refreshSessions();
+            renderDetail();
+            return;
+          }
+          trackHighestSeq(state.detail);
+          await refreshSessions();
+          renderDetail();
+        } catch (e) {
+          banner(e.message, true);
+        }
+      });
+    });
+  });
+}
+
+async function startProfileLogin(d) {
+  const profileId = d.profileId || state.profileId;
+  if (!profileId) {
+    banner("No profile id on this session", true);
+    return;
+  }
+  try {
+    const res = await Api.loginProfile(profileId);
+    if (res.ok === false) {
+      banner(res.error || "Login failed", true);
+      return;
+    }
+    state.loginAckedFor = `${d.id}:${d.updatedAt || ""}`;
+    banner(res.message || "Browser opened on host — finish sign-in there.");
+    renderDetail();
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+
+function wireTranscriptCapture(d) {
+  if (!d) return;
+  document.querySelectorAll("#transcript [data-msg]").forEach((el) => {
+    el.addEventListener("contextmenu", (e) => {
+      const mid = el.getAttribute("data-msg");
+      if (!mid) return;
+      e.preventDefault();
+      const text = el.querySelector(".text")?.textContent || "";
+      const { menu, close } = placeMenu(el, `
+        <button type="button" class="menu-item" data-cap="todo"><span class="menu-name">Save as todo</span></button>
+        <button type="button" class="menu-item" data-cap="note"><span class="menu-name">Save as note</span></button>
+      `);
+      menu.style.left = `${e.clientX}px`;
+      menu.style.top = `${e.clientY}px`;
+      menu.querySelectorAll("[data-cap]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const kind = btn.getAttribute("data-cap");
+          close();
+          const edited = prompt(kind === "todo" ? "Todo text" : "Note text", text);
+          if (!edited) return;
+          try {
+            if (kind === "todo") {
+              const res = await Api.createTask(d.id, { text: edited, sourceMessageId: mid });
+              d.tasks = [...(d.tasks || []), res.task || res];
+              banner("Saved todo");
+            } else {
+              const res = await Api.createNote(d.id, { text: edited, sourceMessageId: mid });
+              d.notes = [...(d.notes || []), res.note || res];
+              banner("Saved note");
+            }
+            if (state.tab === "notes") renderDetail();
+          } catch (err) {
+            banner(err.message, true);
+          }
+        });
+      });
+    });
+  });
+}
+
 // ——— Compose ———
 
 function renderCompose() {
   const root = $("#view-compose");
-  const opts = state.projects
-    .map(
-      (p) =>
-        `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} — ${escapeHtml(p.path)}</option>`,
-    )
-    .join("");
+  const draft = state.composeDraft;
+  const live = [...(root.querySelectorAll("input, textarea, select") || [])];
+  if (live.length) {
+    draft.title = $("#c-title")?.value ?? draft.title;
+    draft.prompt = $("#c-prompt")?.value ?? draft.prompt;
+    draft.projectId = $("#c-project")?.value ?? draft.projectId;
+    draft.cwd = $("#c-cwd")?.value ?? draft.cwd;
+    draft.planMode = $("#c-plan")?.checked ?? draft.planMode;
+    draft.worktree = $("#c-wt")?.checked ?? draft.worktree;
+    draft.subagents = $("#c-sub")?.checked ?? draft.subagents;
+  }
   const profile = state.profiles.find((p) => p.id === state.profileId);
+  const grok = isGrokBackend(profile?.backend);
+  const opts = (state.projects || [])
+    .filter((p) => !p.archived)
+    .map((p) => {
+      const path = projectPrimaryPath(p);
+      const sel = (draft.projectId || "") === p.id ? "selected" : "";
+      return `<option value="${escapeAttr(p.id)}" ${sel}>${escapeHtml(p.name)} — ${escapeHtml(path)}</option>`;
+    })
+    .join("");
   root.innerHTML = `
     <div class="compose-grid">
       <div class="card">
         <h3>Dispatch a task</h3>
-        <p class="hint">Runs on the host machine under ${escapeHtml(profile?.name || "default profile")}.</p>
+        <p class="hint">Runs on the host machine under ${escapeHtml(profile?.name || "default profile")}${profile?.backend ? ` · ${escapeHtml(profile.backend)}` : ""}.</p>
         <label class="field">Project</label>
         <div class="row-inline">
-          <select id="c-project">${opts || `<option value="">(add projects in Host settings)</option>`}</select>
+          <select id="c-project"><option value="">—</option>${opts}</select>
           <button type="button" class="secondary" id="c-add-folder">Add folder…</button>
         </div>
+        <label class="field">Custom cwd (optional)</label>
+        <input id="c-cwd" placeholder="/absolute/path when host allows custom paths" value="${escapeAttr(draft.cwd || "")}" />
         <label class="field">Title (optional)</label>
-        <input id="c-title" placeholder="Short name" />
+        <input id="c-title" placeholder="Short name" value="${escapeAttr(draft.title || "")}" />
         <label class="field">Prompt</label>
-        <textarea id="c-prompt" placeholder="What should the agent do?"></textarea>
-        <label class="check"><input type="checkbox" id="c-plan" checked /> Plan mode</label>
-        <label class="check"><input type="checkbox" id="c-wt" checked /> Worktree</label>
+        <textarea id="c-prompt" placeholder="What should the agent do?">${escapeHtml(draft.prompt || "")}</textarea>
+        ${grok ? `<label class="check"><input type="checkbox" id="c-plan" ${draft.planMode !== false ? "checked" : ""}/> Plan mode</label>
+        <label class="check"><input type="checkbox" id="c-wt" ${draft.worktree !== false ? "checked" : ""}/> Worktree</label>` : `<p class="hint">Plan mode / worktree are Grok ACP flags — hidden for ${escapeHtml(profile?.backend || "this backend")}.</p>`}
+        <label class="check"><input type="checkbox" id="c-sub" ${draft.subagents !== false ? "checked" : ""}/> Subagents</label>
         <div class="inline-actions">
           <button type="button" class="primary" id="c-go">Spank a clanker</button>
         </div>
       </div>
     </div>`;
+  const persist = () => {
+    state.composeDraft = {
+      title: $("#c-title")?.value || "",
+      prompt: $("#c-prompt")?.value || "",
+      projectId: $("#c-project")?.value || "",
+      cwd: $("#c-cwd")?.value || "",
+      planMode: $("#c-plan") ? $("#c-plan").checked : state.composeDraft.planMode,
+      worktree: $("#c-wt") ? $("#c-wt").checked : state.composeDraft.worktree,
+      subagents: $("#c-sub")?.checked !== false,
+    };
+  };
+  root.querySelectorAll("input, textarea, select").forEach((el) => {
+    el.addEventListener("input", persist);
+    el.addEventListener("change", persist);
+  });
+  $("#c-project")?.addEventListener("change", () => {
+    const p = state.projects.find((x) => x.id === $("#c-project").value);
+    if (p?.defaultProfileId) {
+      state.profileId = p.defaultProfileId;
+      renderProfiles();
+    }
+  });
   $("#c-add-folder")?.addEventListener("click", async () => {
     const dir = await window.clanker.pickDirectory();
     if (!dir) return;
-    const cfgRes = await window.clanker.getHostConfig();
-    const cfg = cfgRes.config || {};
-    const projects = [...(cfg.projects || [])];
-    const id = `project-${projects.length + 1}`;
-    projects.push({ id, name: dir.split("/").pop() || id, path: dir });
-    await window.clanker.saveHostConfig({ ...cfg, projects });
-    banner(`Added ${dir}`);
-    await refreshSessions();
-    renderCompose();
-    const sel = $("#c-project");
-    if (sel) sel.value = id;
+    try {
+      const created = await Api.createProject({
+        name: dir.split("/").pop() || "Project",
+        paths: [dir],
+      });
+      const proj = created.project || created;
+      banner(`Added ${dir}`);
+      await refreshSessions();
+      state.composeDraft.projectId = proj.id;
+      state.composeDraft.cwd = dir;
+      renderCompose();
+    } catch (e) {
+      banner(e.message, true);
+    }
   });
   $("#c-go")?.addEventListener("click", async () => {
-    const prompt = $("#c-prompt").value.trim();
+    persist();
+    const prompt = state.composeDraft.prompt.trim();
     if (!prompt) {
       banner("Write a prompt first", true);
       return;
     }
     try {
-      const detail = await Api.dispatch({
+      const body = {
         prompt,
-        projectId: $("#c-project").value || undefined,
-        title: $("#c-title").value.trim() || undefined,
-        planMode: $("#c-plan").checked,
-        worktree: $("#c-wt").checked,
-        subagents: true,
+        projectId: state.composeDraft.projectId || undefined,
+        cwd: state.composeDraft.cwd.trim() || undefined,
+        title: state.composeDraft.title.trim() || undefined,
+        subagents: state.composeDraft.subagents,
         profileId: state.profileId || undefined,
-      });
+      };
+      if (grok) {
+        body.planMode = state.composeDraft.planMode;
+        body.worktree = state.composeDraft.worktree;
+      }
+      const detail = await Api.dispatch(body);
       banner("Dispatched");
+      state.composeDraft.prompt = "";
+      state.composeDraft.title = "";
       await refreshSessions();
       setNav("sessions");
       openSession(detail.id);
@@ -1251,6 +1863,296 @@ function renderDisk(kind) {
       } catch (e) {
         banner(e.message, true);
       }
+    });
+  });
+}
+
+
+function wireOpenPaths(d) {
+  document.querySelectorAll("[data-open-path]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const raw = el.getAttribute("data-open-path");
+      if (!raw) return;
+      openInViewer(resolveFsPath(raw, d?.cwd || ""));
+    });
+  });
+}
+
+async function openInViewer(path) {
+  state.showViewer = true;
+  state.viewerPath = path;
+  syncViewerPane();
+  await loadViewer(path);
+}
+
+function syncViewerPane() {
+  const pane = $("#file-viewer");
+  if (!pane) return;
+  const show = state.nav === "sessions" && state.showViewer;
+  pane.classList.toggle("hidden", !show);
+  $("#view-sessions")?.classList.toggle("with-viewer", show);
+  const btn = $("#btn-viewer");
+  if (btn) btn.classList.toggle("active-tool", state.showViewer);
+}
+
+async function loadViewer(path) {
+  const pane = $("#file-viewer");
+  if (!pane) return;
+  const current = path || state.viewerPath || "";
+  pane.innerHTML = `
+    <div class="viewer-head">
+      <input id="viewer-path" class="search-input" placeholder="Path (e.g. ~/Projects/foo/README.md)" value="${escapeAttr(current)}" />
+      <button type="button" class="ghost" id="viewer-go">Open</button>
+      <button type="button" class="ghost" id="viewer-browse">Browse</button>
+      <button type="button" class="ghost" id="viewer-reveal">Reveal</button>
+      <button type="button" class="ghost" id="viewer-hide">Hide</button>
+    </div>
+    <iframe id="viewer-frame" class="viewer-frame" sandbox="" title="File preview"></iframe>`;
+  const frame = $("#viewer-frame");
+  const run = async (p) => {
+    state.viewerPath = p;
+    const res = await window.clanker.readLocalFile(p);
+    const html = res?.ok ? FileViewer.render(res) : FileViewer.error(res?.error || "Unreadable");
+    frame.srcdoc = html;
+  };
+  $("#viewer-go")?.addEventListener("click", () => run($("#viewer-path").value.trim()));
+  $("#viewer-path")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      run($("#viewer-path").value.trim());
+    }
+  });
+  $("#viewer-browse")?.addEventListener("click", async () => {
+    const files = await window.clanker.pickFiles({});
+    if (files?.[0]?.path) {
+      $("#viewer-path").value = files[0].path;
+      await run(files[0].path);
+    }
+  });
+  $("#viewer-reveal")?.addEventListener("click", () => {
+    const p = $("#viewer-path")?.value.trim();
+    if (p) window.clanker.showPath(p);
+  });
+  $("#viewer-hide")?.addEventListener("click", () => {
+    state.showViewer = false;
+    syncViewerPane();
+  });
+  if (current) await run(current);
+  else if (frame) frame.srcdoc = FileViewer.welcome();
+}
+
+async function renderProjects() {
+  const root = $("#view-projects");
+  if (!root) return;
+  const q = state.projectSearch.trim().toLowerCase();
+  const rows = (state.projects || []).filter((p) => !p.archived);
+  const filtered = q
+    ? rows.filter((p) => [p.name, projectPrimaryPath(p), ...(p.paths || [])].join(" ").toLowerCase().includes(q))
+    : rows;
+  root.innerHTML = `
+    <div class="list-chrome">
+      <div class="row-inline">
+        <input id="project-search" class="search-input" placeholder="Search projects" value="${escapeAttr(state.projectSearch)}" />
+        <button type="button" class="primary" id="p-new">New project</button>
+        <button type="button" class="secondary" id="p-discover">Discover</button>
+      </div>
+    </div>
+    <div class="stack-gap" style="max-width:820px">${
+      filtered.length
+        ? filtered
+            .map((p) => {
+              const paths = (p.paths && p.paths.length ? p.paths : [p.path]).filter(Boolean);
+              const atts = p.attachments || [];
+              return `<article class="card project-card" data-open-project="${escapeAttr(p.id)}">
+                <h3><span class="dot" style="background:${escapeAttr(p.color || "#73b8ff")}"></span> ${escapeHtml(p.name)}</h3>
+                <div class="meta">${paths.map((x) => `<span>${escapeHtml(shortPath(x))}</span>`).join("")}${p.defaultProfileId ? `<span>default ${escapeHtml(p.defaultProfileId)}</span>` : ""}</div>
+                ${atts.length ? `<div class="meta">${atts.map((a) => `<span>${escapeHtml(a.originalName || a.filename || a.id)} <button type="button" class="ghost" data-del-att="${escapeAttr(p.id)}" data-att="${escapeAttr(a.id)}">✕</button></span>`).join("")}</div>` : ""}
+                <div class="inline-actions">
+                  <button type="button" class="secondary" data-compose-project="${escapeAttr(p.id)}">Compose</button>
+                  <button type="button" class="ghost" data-edit-project="${escapeAttr(p.id)}">Edit</button>
+                  <button type="button" class="ghost" data-attach-project="${escapeAttr(p.id)}">Attach file</button>
+                  <button type="button" class="danger" data-del-project="${escapeAttr(p.id)}">Archive</button>
+                </div>
+              </article>`;
+            })
+            .join("")
+        : `<div class="list-empty">No projects yet. Create one or run Discover.</div>`
+    }</div>`;
+  $("#project-search")?.addEventListener("input", (e) => {
+    state.projectSearch = e.target.value;
+    renderProjects();
+  });
+  $("#p-new")?.addEventListener("click", () => editProject(null));
+  $("#p-discover")?.addEventListener("click", async () => {
+    try {
+      const res = await Api.discoverProjects();
+      const cands = res.projects || [];
+      if (!cands.length) {
+        banner("No new folders discovered");
+        return;
+      }
+      const pick = cands
+        .map((c, i) => `${i + 1}. ${c.name} — ${projectPrimaryPath(c)}`)
+        .join("\n");
+      const raw = prompt(`Import which? Enter numbers comma-separated:\n${pick}`);
+      if (!raw) return;
+      const idxs = raw.split(",").map((s) => Number(s.trim()) - 1).filter((n) => n >= 0 && n < cands.length);
+      for (const i of idxs) {
+        const c = cands[i];
+        await Api.createProject({
+          name: c.name,
+          paths: c.paths || [c.path],
+          color: c.color,
+        });
+      }
+      banner(`Imported ${idxs.length}`);
+      await refreshSessions();
+      renderProjects();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  });
+  root.querySelectorAll("[data-compose-project]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.composeDraft.projectId = btn.getAttribute("data-compose-project");
+      setNav("compose");
+    });
+  });
+  root.querySelectorAll("[data-edit-project]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const proj = state.projects.find((x) => x.id === btn.getAttribute("data-edit-project"));
+      editProject(proj || null);
+    });
+  });
+  root.querySelectorAll("[data-del-project]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Archive this project?")) return;
+      try {
+        await Api.deleteProject(btn.getAttribute("data-del-project"), false);
+        await refreshSessions();
+        renderProjects();
+      } catch (err) {
+        banner(err.message, true);
+      }
+    });
+  });
+  root.querySelectorAll("[data-attach-project]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const pid = btn.getAttribute("data-attach-project");
+      const files = await window.clanker.pickFiles({});
+      if (!files?.length) return;
+      try {
+        for (const f of files) {
+          await Api.uploadProjectAttachment(pid, {
+            data: f.data,
+            mimeType: f.mimeType,
+            filename: f.name,
+            originalName: f.name,
+          });
+        }
+        banner("Uploaded");
+        await refreshSessions();
+        renderProjects();
+      } catch (err) {
+        banner(err.message, true);
+      }
+    });
+  });
+  root.querySelectorAll("[data-del-att]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await Api.deleteProjectAttachment(btn.getAttribute("data-del-att"), btn.getAttribute("data-att"));
+        await refreshSessions();
+        renderProjects();
+      } catch (err) {
+        banner(err.message, true);
+      }
+    });
+  });
+}
+
+async function editProject(existing) {
+  const name = prompt("Project name", existing?.name || "");
+  if (!name) return;
+  const currentPaths = existing ? (existing.paths?.length ? existing.paths : [existing.path]) : [];
+  const pathsRaw = prompt("Paths (one per line)", currentPaths.join("\n") || "");
+  if (pathsRaw == null) return;
+  const paths = pathsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (!paths.length) {
+    banner("Need at least one path", true);
+    return;
+  }
+  const color = prompt("Color (hex, optional)", existing?.color || "#73B8FF") || undefined;
+  try {
+    if (existing) {
+      await Api.updateProject(existing.id, { name, paths, color });
+    } else {
+      await Api.createProject({ name, paths, color });
+    }
+    await refreshSessions();
+    renderProjects();
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+async function renderTasks() {
+  const root = $("#view-tasks");
+  if (!root) return;
+  try {
+    const res = await Api.listTasks();
+    state.tasks = res.tasks || [];
+  } catch (e) {
+    root.innerHTML = `<div class="list-empty">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const q = state.tasksSearch.trim().toLowerCase();
+  let rows = state.tasksShowDone ? state.tasks : state.tasks.filter((t) => t.status !== "done");
+  if (q) {
+    rows = rows.filter((t) => {
+      const sess = [...state.sessions, ...state.archived].find((s) => s.id === t.sessionId);
+      return (t.text || "").toLowerCase().includes(q) || (sess?.title || "").toLowerCase().includes(q);
+    });
+  }
+  root.innerHTML = `
+    <div class="list-chrome">
+      <div class="row-inline">
+        <label class="check" style="margin:0"><input type="checkbox" id="t-done" ${state.tasksShowDone ? "checked" : ""}/> Showing done</label>
+        <input id="task-search" class="search-input" placeholder="Search tasks &amp; sessions" value="${escapeAttr(state.tasksSearch)}" />
+      </div>
+    </div>
+    <div class="stack-gap" style="max-width:820px">${
+      rows.length
+        ? rows
+            .map((t) => {
+              const sess = [...state.sessions, ...state.archived].find((s) => s.id === t.sessionId);
+              return `<button type="button" class="session-card" data-open-task="${escapeAttr(t.sessionId)}">
+                <h3>${t.status === "done" ? "☑ " : "☐ "}${escapeHtml(t.text)}</h3>
+                <div class="meta"><span>${escapeHtml(sess?.title || t.sessionId)}</span><span class="${statusClass(t.status)}">${escapeHtml(t.status)}</span></div>
+              </button>`;
+            })
+            .join("")
+        : `<div class="list-empty">No tasks.</div>`
+    }</div>`;
+  $("#t-done")?.addEventListener("change", (e) => {
+    state.tasksShowDone = e.target.checked;
+    renderTasks();
+  });
+  $("#task-search")?.addEventListener("input", (e) => {
+    state.tasksSearch = e.target.value;
+    renderTasks();
+  });
+  root.querySelectorAll("[data-open-task]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setNav("sessions");
+      openSession(btn.getAttribute("data-open-task"));
     });
   });
 }
@@ -1372,7 +2274,7 @@ function renderHost() {
         <div class="project-row" data-i="${i}">
           <input data-k="id" placeholder="id" value="${escapeAttr(p.id)}" />
           <input data-k="name" placeholder="name" value="${escapeAttr(p.name)}" />
-          <input data-k="path" placeholder="/path/to/repo" value="${escapeAttr(p.path)}" />
+          <input data-k="paths" placeholder="/path/one, /path/two" value="${escapeAttr((p.paths && p.paths.length ? p.paths : [p.path]).filter(Boolean).join(", "))}" />
           <button type="button" class="ghost" data-browse="${i}">…</button>
         </div>`,
           )
@@ -1381,7 +2283,14 @@ function renderHost() {
         const i = Number(row.dataset.i);
         row.querySelectorAll("input").forEach((inp) => {
           inp.addEventListener("change", () => {
-            projects[i][inp.dataset.k] = inp.value;
+            const k = inp.dataset.k;
+            if (k === "paths") {
+              const paths = inp.value.split(",").map((s) => s.trim()).filter(Boolean);
+              projects[i].paths = paths;
+              projects[i].path = paths[0] || "";
+            } else {
+              projects[i][k] = inp.value;
+            }
           });
         });
       });
@@ -1390,7 +2299,10 @@ function renderHost() {
           const i = Number(btn.getAttribute("data-browse"));
           const dir = await window.clanker.pickDirectory();
           if (dir) {
-            projects[i].path = dir;
+            const paths = [...(projects[i].paths || (projects[i].path ? [projects[i].path] : []))];
+            if (!paths.includes(dir)) paths.push(dir);
+            projects[i].paths = paths;
+            projects[i].path = paths[0];
             drawProjects();
           }
         });
@@ -1398,7 +2310,7 @@ function renderHost() {
     };
     drawProjects();
     $("#hc-add-project")?.addEventListener("click", () => {
-      projects.push({ id: `project-${projects.length + 1}`, name: "Project", path: "" });
+      projects.push({ id: `project-${projects.length + 1}`, name: "Project", path: "", paths: [] });
       drawProjects();
     });
     state._editProjects = projects;
@@ -1463,7 +2375,12 @@ function renderHost() {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
-      projects: state._editProjects || cfg.projects,
+      projects: (state._editProjects || cfg.projects || []).map((pr) => {
+        const paths = Array.isArray(pr.paths) && pr.paths.length
+          ? pr.paths
+          : String(pr.path || "").split(",").map((s) => s.trim()).filter(Boolean);
+        return { ...pr, paths, path: paths[0] || pr.path || "" };
+      }),
       profiles,
     };
   };
@@ -1736,6 +2653,32 @@ function wireChrome() {
   $$(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () => setNav(btn.dataset.nav));
   });
+  $("#btn-viewer")?.addEventListener("click", () => {
+    state.showViewer = !state.showViewer;
+    syncViewerPane();
+    if (state.showViewer) loadViewer(state.viewerPath);
+  });
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target?.isContentEditable) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key.toLowerCase() === "n" && !e.shiftKey) {
+      e.preventDefault();
+      setNav("compose");
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      setNav("projects");
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "t") {
+      e.preventDefault();
+      setNav("tasks");
+    } else if (ctrl && e.altKey && e.key.toLowerCase() === "i") {
+      e.preventDefault();
+      state.showViewer = !state.showViewer;
+      if (state.nav !== "sessions") setNav("sessions");
+      syncViewerPane();
+      if (state.showViewer) loadViewer(state.viewerPath);
+    }
+  });
   $("#btn-refresh")?.addEventListener("click", async () => {
     await syncConnection();
     await refreshHostStatus();
@@ -1805,11 +2748,24 @@ async function boot() {
   renderActiveHostChip();
   setNav("sessions");
   await refreshSessions();
+  syncViewerPane();
 
   state.refreshTimer = setInterval(async () => {
     await refreshHostStatus();
     if (state.wsStatus !== "live") await refreshSessions();
   }, 8000);
+  state.usageTimer = setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const res = await Api.profiles({ usage: true });
+      if (res?.profiles) {
+        state.profiles = res.profiles;
+        renderProfiles();
+      }
+    } catch {
+      /* */
+    }
+  }, 60_000);
 }
 
 boot().catch((e) => {

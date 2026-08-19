@@ -17,6 +17,8 @@
 
       <nav class="nav" id="nav">
         <button type="button" data-nav="sessions" class="nav-item active">Sessions</button>
+        <button type="button" data-nav="projects" class="nav-item">Projects</button>
+        <button type="button" data-nav="tasks" class="nav-item">Tasks</button>
         <button type="button" data-nav="compose" class="nav-item">Compose</button>
         <button type="button" data-nav="grok" class="nav-item">Grok disk</button>
         <button type="button" data-nav="claude" class="nav-item">Claude disk</button>
@@ -39,22 +41,28 @@
       <header class="toolbar" id="toolbar">
         <div class="toolbar-left">
           <h2 id="view-title">Sessions</h2>
+          <div id="session-count" class="session-count hidden"></div>
           <div id="profile-bar" class="profile-bar"></div>
         </div>
         <div class="toolbar-right">
+          <button type="button" id="btn-viewer" class="ghost toolbar-icon hidden" title="File viewer (Ctrl+Alt+I)">Viewer</button>
           <button type="button" id="active-host-chip" class="host-chip hidden"></button>
         </div>
       </header>
 
       <main id="main" class="main">
-        <!-- sessions: split list + detail -->
         <section id="view-sessions" class="view split active">
           <div id="session-list" class="panel list-panel"></div>
-          <div id="session-detail" class="panel detail-panel empty-detail">
-            <p class="muted-center">Select a session</p>
+          <div class="detail-split">
+            <div id="session-detail" class="panel detail-panel empty-detail">
+              <p class="muted-center">Select a session</p>
+            </div>
+            <div id="file-viewer" class="panel viewer-panel hidden"></div>
           </div>
         </section>
 
+        <section id="view-projects" class="view hidden"></section>
+        <section id="view-tasks" class="view hidden"></section>
         <section id="view-compose" class="view hidden"></section>
         <section id="view-disk" class="view hidden"></section>
         <section id="view-host" class="view hidden"></section>
@@ -65,6 +73,7 @@
 
   <p id="banner" class="banner hidden"></p>
   <script src="./api.js"></script>
+  <script src="./file-viewer.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

@@ -12,6 +12,8 @@ const {
   dialog,
 } = require("electron");
 const path = require("node:path");
+const os = require("node:os");
+const { readFile, stat } = require("node:fs/promises");
 const {
   loadConfig,
   saveConfig,
@@ -485,6 +487,91 @@ function registerIpc() {
     if (res.canceled || !res.filePaths[0]) return null;
     return res.filePaths[0];
   });
+
+  ipcMain.handle("dialog:pick-files", async (_e, opts) => {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const filters = opts?.images
+      ? [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }]
+      : undefined;
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openFile", "multiSelections"],
+      filters,
+    });
+    if (res.canceled || !res.filePaths.length) return [];
+    const out = [];
+    for (const p of res.filePaths) {
+      try {
+        const st = await stat(p);
+        if (!st.isFile() || st.size > 8 * 1024 * 1024) continue;
+        const buf = await readFile(p);
+        const ext = path.extname(p).slice(1).toLowerCase();
+        out.push({
+          path: p,
+          name: path.basename(p),
+          mimeType: mimeForExt(ext),
+          data: buf.toString("base64"),
+        });
+      } catch {
+        /* skip unreadable */
+      }
+    }
+    return out;
+  });
+
+  ipcMain.handle("fs:read-file", async (_e, target) => {
+    if (typeof target !== "string" || !target.trim()) {
+      return { ok: false, error: "No path" };
+    }
+    const expanded = target.replace(/^~(?=\/|$)/, os.homedir());
+    const resolved = path.resolve(expanded);
+    try {
+      const st = await stat(resolved);
+      if (!st.isFile()) return { ok: false, error: "Not a file" };
+      if (st.size > 8 * 1024 * 1024) return { ok: false, error: "File too large (8 MB cap)" };
+      const ext = path.extname(resolved).slice(1).toLowerCase();
+      const filename = path.basename(resolved);
+      const buf = await readFile(resolved);
+      if (isImageExt(ext)) {
+        return {
+          ok: true,
+          path: resolved,
+          ext,
+          filename,
+          dataUrl: `data:${mimeForExt(ext)};base64,${buf.toString("base64")}`,
+        };
+      }
+      if (buf.includes(0)) {
+        return { ok: true, path: resolved, ext, filename, binary: true };
+      }
+      return { ok: true, path: resolved, ext, filename, text: buf.toString("utf8") };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+}
+
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "heic"]);
+
+function isImageExt(ext) {
+  return IMAGE_EXTS.has(String(ext || "").toLowerCase());
+}
+
+function mimeForExt(ext) {
+  const e = String(ext || "").toLowerCase();
+  const map = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    bmp: "image/bmp",
+    ico: "image/x-icon",
+    heic: "image/heic",
+  };
+  return map[e] || "application/octet-stream";
 }
 
 function buildAppMenu() {

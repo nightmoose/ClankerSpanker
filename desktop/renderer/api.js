@@ -113,9 +113,21 @@ const Api = (() => {
         method: "DELETE",
       }),
 
-    profiles: (opts = {}) => request(opts.usage ? "/profiles?usage=1" : "/profiles"),
+    profiles: (opts = {}) => {
+      const params = new URLSearchParams();
+      if (opts.usage) params.set("usage", "1");
+      if (opts.admin) params.set("admin", "1");
+      const qs = params.toString();
+      return request(qs ? `/profiles?${qs}` : "/profiles");
+    },
     loginProfile: (id, body = {}) =>
       request(`/profiles/${enc(id)}/login`, { method: "POST", body: jsonBody(body) }),
+    createProfile: (body) =>
+      request("/profiles", { method: "POST", body: jsonBody(body) }),
+    updateProfile: (id, body) =>
+      request(`/profiles/${enc(id)}`, { method: "PATCH", body: jsonBody(body) }),
+    deleteProfile: (id) =>
+      request(`/profiles/${enc(id)}`, { method: "DELETE" }),
 
     dispatch: (body) => request("/dispatch", { method: "POST", body: jsonBody(body) }),
     prompt: (id, body) =>
@@ -178,5 +190,14 @@ const Api = (() => {
     attachGrok: (body) => request("/sessions/attach", { method: "POST", body: jsonBody(body) }),
     attachClaude: (body) =>
       request("/sessions/attach-claude", { method: "POST", body: jsonBody(body) }),
+
+    listBots: () => request("/bots"),
+    getBot: (id) => request(`/bots/${enc(id)}`),
+    createBot: (body) => request("/bots", { method: "POST", body: jsonBody(body) }),
+    updateBot: (id, patch) =>
+      request(`/bots/${enc(id)}`, { method: "PATCH", body: jsonBody(patch) }),
+    runBot: (id, body = {}) =>
+      request(`/bots/${enc(id)}/run`, { method: "POST", body: jsonBody(body) }),
+    getBotOutbox: (id) => request(`/bots/${enc(id)}/outbox`),
   };
 })();

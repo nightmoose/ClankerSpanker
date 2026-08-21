@@ -1257,13 +1257,15 @@ async function refreshSessions() {
       }
     } else if (state.nav === "grok" || state.nav === "claude") {
       renderDisk(state.nav);
-    } else if (state.nav === "compose") {
-      renderCompose();
     } else if (state.nav === "projects") {
       renderProjects();
     } else if (state.nav === "tasks") {
       renderTasks();
     }
+    // Compose intentionally NOT re-rendered here — the poll would clobber
+    // focus/selection while the user is mid-type. Compose only needs a
+    // fresh render on nav enter, on profile change, or after add-folder,
+    // all of which already call renderCompose() explicitly.
   } catch (e) {
     if (state.nav === "sessions") {
       $("#session-list").innerHTML = `<div class="list-empty">${escapeHtml(e.message)}</div>`;
@@ -1314,6 +1316,32 @@ function applyEvent(ev, { fromReplay = false } = {}) {
   if (state.selectedId && sid === state.selectedId && state.detail) {
     patchOpenDetail(ev);
     if (!fromReplay) renderDetail();
+
+    // Reconcile on turn boundaries. The live WS path sometimes drops the
+    // final `transcript` entry (host emits before persist flush, or shape
+    // mismatch in a backend path), so the last message only appears after
+    // the user navigates away + back. When the server tells us the session
+    // has gone idle or completed, fetch the authoritative detail once so
+    // the transcript matches disk without requiring a nav round-trip.
+    const wentIdle =
+      ev.type === "session.completed" ||
+      (ev.type === "session.updated" &&
+        ["idle", "completed"].includes(ev.payload?.status));
+    if (wentIdle && !fromReplay) {
+      const targetId = sid;
+      setTimeout(async () => {
+        if (state.selectedId !== targetId) return;
+        try {
+          const fresh = await Api.session(targetId);
+          if (state.selectedId !== targetId) return;
+          state.detail = fresh;
+          trackHighestSeq(fresh);
+          renderDetail();
+        } catch {
+          /* session might be gone — ignore */
+        }
+      }, 300);
+    }
   }
 
   if (["session.created", "session.updated", "session.completed", "session.failed"].includes(ev.type)) {
@@ -1707,6 +1735,12 @@ function renderCompose() {
     draft.worktree = $("#c-wt")?.checked ?? draft.worktree;
     draft.subagents = $("#c-sub")?.checked ?? draft.subagents;
   }
+  // Capture focus + caret so a mid-type re-render (add-folder callback,
+  // profile switch) doesn't bump the user out of the textarea.
+  const activeEl = document.activeElement;
+  const focusedId = activeEl && root.contains(activeEl) && activeEl.id ? activeEl.id : null;
+  const focusedSelStart = focusedId && typeof activeEl.selectionStart === "number" ? activeEl.selectionStart : null;
+  const focusedSelEnd = focusedId && typeof activeEl.selectionEnd === "number" ? activeEl.selectionEnd : null;
   const profile = state.profiles.find((p) => p.id === state.profileId);
   const grok = isGrokBackend(profile?.backend);
   const isBot = profile?.backend === "bot";
@@ -1799,6 +1833,20 @@ function renderCompose() {
         }
       })
       .catch(() => undefined);
+  }
+  // Restore focus + caret if user was typing before the re-render.
+  if (focusedId) {
+    const el = document.getElementById(focusedId);
+    if (el) {
+      try {
+        el.focus({ preventScroll: true });
+        if (focusedSelStart !== null && typeof el.setSelectionRange === "function") {
+          el.setSelectionRange(focusedSelStart, focusedSelEnd ?? focusedSelStart);
+        }
+      } catch {
+        /* focus may fail on select/checkbox — safe to ignore */
+      }
+    }
   }
   $("#c-go")?.addEventListener("click", async () => {
     persist();

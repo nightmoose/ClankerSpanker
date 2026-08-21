@@ -58,9 +58,23 @@ const state = {
   tasksShowDone: false,
   tasksSearch: "",
   projectSearch: "",
+  // Bots (hunter)
+  bots: [],
+  botsLoading: false,
+  selectedBotId: null,
+  botOutbox: {},
+  botDraftJob: {},
+  botRunNote: {},
+  newBotOpen: false,
+  newBotDraft: { name: "", job: "", profileId: "", projectId: "", interval: "6h", enabled: false },
+  newBotSaving: false,
   loginAckedFor: "",
   noteDraft: "",
   taskDraft: "",
+  // Profiles manager (loopback-only). Populated by Api.profiles({ admin }).
+  adminProfiles: [],
+  admin: false,
+  profileEditor: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -298,14 +312,19 @@ function setNav(nav) {
     sessions: "Sessions",
     projects: "Projects",
     tasks: "Tasks",
+    bots: "Bots",
     compose: "Compose",
     grok: "Grok disk",
     claude: "Claude disk",
+    profiles: "Profiles",
     host: "Host",
     settings: "Desktop",
   };
   $("#view-title").textContent = titles[nav] || nav;
-  $("#toolbar").classList.toggle("hidden", nav === "host" || nav === "settings");
+  $("#toolbar").classList.toggle(
+    "hidden",
+    nav === "host" || nav === "settings" || nav === "profiles",
+  );
   $(".toolbar-right").classList.toggle("hidden", nav !== "sessions");
   $("#profile-bar").classList.toggle("hidden", nav !== "sessions" && nav !== "compose");
   $("#session-count")?.classList.toggle("hidden", nav !== "sessions");
@@ -319,9 +338,11 @@ function setNav(nav) {
   $("#view-sessions").classList.toggle("hidden", nav !== "sessions");
   $("#view-projects")?.classList.toggle("hidden", nav !== "projects");
   $("#view-tasks")?.classList.toggle("hidden", nav !== "tasks");
+  $("#view-bots")?.classList.toggle("hidden", nav !== "bots");
   $("#view-compose").classList.toggle("hidden", nav !== "compose");
   $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude");
   $("#view-host").classList.toggle("hidden", nav !== "host");
+  $("#view-profiles")?.classList.toggle("hidden", nav !== "profiles");
   $("#view-settings").classList.toggle("hidden", nav !== "settings");
 
   syncViewerPane();
@@ -331,8 +352,10 @@ function setNav(nav) {
     if (state.detail) renderDetail();
   } else if (nav === "projects") renderProjects();
   else if (nav === "tasks") renderTasks();
+  else if (nav === "bots") renderBots();
   else if (nav === "compose") renderCompose();
   else if (nav === "grok" || nav === "claude") renderDisk(nav);
+  else if (nav === "profiles") renderProfilesAdmin();
   else if (nav === "host") renderHost();
   else if (nav === "settings") renderDesktopSettings();
 }
@@ -1196,7 +1219,9 @@ async function refreshSessions() {
     const [sessions, projects, profiles] = await Promise.all([
       Api.sessions(),
       Api.projects().catch(() => ({ projects: [] })),
-      Api.profiles({ usage: true }).catch(() => ({ profiles: [] })),
+      // Server ignores admin=1 for non-loopback callers; admin fields simply
+      // don't come back over LAN/Tailscale.
+      Api.profiles({ usage: true, admin: true }).catch(() => ({ profiles: [] })),
     ]);
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
@@ -1204,6 +1229,8 @@ async function refreshSessions() {
     state.claude = sessions.claudeSessions || [];
     state.projects = projects.projects || [];
     state.profiles = profiles.profiles || [];
+    state.admin = profiles.admin === true;
+    state.adminProfiles = profiles.adminProfiles || [];
     if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
     if (!state.enabledProfileIds.length) {
       state.enabledProfileIds = state.profiles.map((p) => p.id);
@@ -1295,6 +1322,16 @@ function applyEvent(ev, { fromReplay = false } = {}) {
     }
   }
   if (String(ev.type || "").startsWith("task.") && state.nav === "tasks") renderTasks();
+
+  // Bots list is derived from bot-backend sessions — quiet-reload lastRunAt/lastSessionId
+  // when any bot session transitions state or is newly created.
+  if (["session.created", "session.updated", "session.completed", "session.failed"].includes(ev.type)) {
+    const sess = ev.payload?.session || (idx => state.sessions[idx])(state.sessions.findIndex((s) => s.id === sid));
+    const isBot = (sess?.backend === "bot") || (ev.payload?.backend === "bot");
+    if (isBot && state.nav === "bots") {
+      loadBots({ preserveSelection: true }).then(() => renderBots()).catch(() => {});
+    }
+  }
 }
 
 function patchSessionListMeta(sid, ev) {
@@ -1672,6 +1709,7 @@ function renderCompose() {
   }
   const profile = state.profiles.find((p) => p.id === state.profileId);
   const grok = isGrokBackend(profile?.backend);
+  const isBot = profile?.backend === "bot";
   const opts = (state.projects || [])
     .filter((p) => !p.archived)
     .map((p) => {
@@ -1684,7 +1722,7 @@ function renderCompose() {
     <div class="compose-grid">
       <div class="card">
         <h3>Dispatch a task</h3>
-        <p class="hint">Runs on the host machine under ${escapeHtml(profile?.name || "default profile")}${profile?.backend ? ` · ${escapeHtml(profile.backend)}` : ""}.</p>
+        <p class="hint">Runs on the host machine under ${escapeHtml(profile?.name || "default profile")}${profile?.backend ? ` · ${escapeHtml(profile.backend)}` : ""}.${isBot ? " This is a hunter bot: dispatch opens a normal session — review the transcript and approve outbound drafts there. Nothing is sent." : ""}</p>
         <label class="field">Project</label>
         <div class="row-inline">
           <select id="c-project"><option value="">—</option>${opts}</select>
@@ -1744,6 +1782,24 @@ function renderCompose() {
       banner(e.message, true);
     }
   });
+  if (isBot && !(draft.prompt || "").trim()) {
+    Api.request("/bots")
+      .then((res) => {
+        const bot = (res.bots || []).find((b) => b.profileId === state.profileId) || (res.bots || [])[0];
+        if (!bot) return;
+        const ta = $("#c-prompt");
+        if (ta && !ta.value.trim()) {
+          ta.value = bot.job;
+          persist();
+        }
+        const sel = $("#c-project");
+        if (sel && [...sel.options].some((o) => o.value === bot.projectId)) {
+          sel.value = bot.projectId;
+          persist();
+        }
+      })
+      .catch(() => undefined);
+  }
   $("#c-go")?.addEventListener("click", async () => {
     persist();
     const prompt = state.composeDraft.prompt.trim();
@@ -2157,6 +2213,379 @@ async function renderTasks() {
   });
 }
 
+// ——— Bots (hunter) ———
+
+const BOT_INTERVALS = [
+  { value: "15m", label: "every 15 min" },
+  { value: "30m", label: "every 30 min" },
+  { value: "1h", label: "every hour" },
+  { value: "6h", label: "every 6 hours" },
+  { value: "12h", label: "every 12 hours" },
+  { value: "1d", label: "daily" },
+];
+
+function relativeTimeLabel(iso) {
+  if (!iso) return "never";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "unknown";
+  const diff = Date.now() - t;
+  if (diff < 45_000) return "just now";
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return `${Math.round(diff / 86_400_000)}d ago`;
+}
+
+function intervalLabel(v) {
+  return BOT_INTERVALS.find((i) => i.value === v)?.label || v || "manual";
+}
+
+function botProfileOptions() {
+  return (state.profiles || []).filter((p) => p.backend === "bot");
+}
+
+function projectOptions() {
+  return (state.projects || []);
+}
+
+async function loadBots({ preserveSelection = true } = {}) {
+  state.botsLoading = true;
+  try {
+    const res = await Api.listBots();
+    state.bots = res.bots || [];
+    if (!preserveSelection || !state.bots.some((b) => b.id === state.selectedBotId)) {
+      state.selectedBotId = state.bots[0]?.id || null;
+    }
+    if (state.selectedBotId) {
+      await loadBotOutbox(state.selectedBotId);
+    }
+  } catch (e) {
+    banner(e.message, true);
+    state.bots = [];
+  } finally {
+    state.botsLoading = false;
+  }
+}
+
+async function loadBotOutbox(botId) {
+  try {
+    const res = await Api.getBotOutbox(botId);
+    state.botOutbox[botId] = res.items || [];
+  } catch (e) {
+    state.botOutbox[botId] = [];
+  }
+}
+
+async function renderBots() {
+  const root = $("#view-bots");
+  if (!root) return;
+  if (!state.bots.length && !state.botsLoading) {
+    await loadBots({ preserveSelection: false });
+  }
+
+  const bots = state.bots || [];
+  const bot = bots.find((b) => b.id === state.selectedBotId) || null;
+  const outbox = bot ? state.botOutbox[bot.id] || [] : [];
+
+  root.innerHTML = `
+    <div class="bots-grid">
+      <div class="bots-list panel list-panel">
+        <div class="list-chrome">
+          <div class="row-inline">
+            <strong style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Bots · ${bots.length}</strong>
+            <button type="button" class="primary" id="btn-new-bot">+ New bot</button>
+          </div>
+        </div>
+        <div class="list-scroll">
+          ${
+            bots.length
+              ? bots
+                  .map((b) => {
+                    const sel = b.id === state.selectedBotId ? "selected" : "";
+                    const stateLabel = b.enabled ? "on" : "paused";
+                    const stateCls = b.enabled ? "ok" : "muted";
+                    return `<button type="button" class="session-card ${sel}" data-bot="${escapeAttr(b.id)}">
+                      <h3>${escapeHtml(b.name || "Untitled bot")}</h3>
+                      <div class="meta">
+                        <span class="pill ${stateCls}">${stateLabel}</span>
+                        <span>${escapeHtml(intervalLabel(b.interval))}</span>
+                        <span>last run ${escapeHtml(relativeTimeLabel(b.lastRunAt))}</span>
+                      </div>
+                      <div class="preview">${escapeHtml((b.job || "").slice(0, 140))}</div>
+                    </button>`;
+                  })
+                  .join("")
+              : `<div class="list-empty">No bots yet.<br/>Create a profile with backend=bot in <strong>Profiles</strong>, then <strong>+ New bot</strong>.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="panel detail-panel">
+        ${bot ? renderBotDetail(bot, outbox) : `<p class="muted-center">Select a bot</p>`}
+      </div>
+    </div>
+
+    ${state.newBotOpen ? renderNewBotForm() : ""}
+  `;
+
+  root.querySelectorAll("[data-bot]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      state.selectedBotId = btn.getAttribute("data-bot");
+      await loadBotOutbox(state.selectedBotId);
+      renderBots();
+    });
+  });
+
+  $("#btn-new-bot")?.addEventListener("click", () => {
+    state.newBotOpen = true;
+    state.newBotDraft = {
+      name: "",
+      job: "",
+      profileId: botProfileOptions()[0]?.id || "",
+      projectId: projectOptions()[0]?.id || "",
+      interval: "6h",
+      enabled: false,
+    };
+    renderBots();
+  });
+
+  if (bot) wireBotDetail(bot);
+  if (state.newBotOpen) wireNewBotForm();
+}
+
+function renderBotDetail(bot, outbox) {
+  const draftJob = state.botDraftJob[bot.id] ?? bot.job ?? "";
+  const runNote = state.botRunNote[bot.id] ?? "";
+  const dirty = draftJob !== (bot.job || "");
+  return `
+    <div class="detail-head">
+      <div class="detail-head-main">
+        <h3>${escapeHtml(bot.name)}</h3>
+        <div class="meta">
+          <span>${escapeHtml(bot.enabled ? "Scheduled" : "Paused")}</span>
+          <span>${escapeHtml(intervalLabel(bot.interval))}</span>
+          <span>last run ${escapeHtml(relativeTimeLabel(bot.lastRunAt))}</span>
+        </div>
+      </div>
+      <div class="row-actions">
+        <label class="check" style="margin:0"><input type="checkbox" id="bot-enabled" ${bot.enabled ? "checked" : ""}/> Enable schedule</label>
+        <select id="bot-interval">
+          ${BOT_INTERVALS.map((i) => `<option value="${escapeAttr(i.value)}" ${i.value === bot.interval ? "selected" : ""}>${escapeHtml(i.label)}</option>`).join("")}
+          ${BOT_INTERVALS.some((i) => i.value === bot.interval) ? "" : `<option selected value="${escapeAttr(bot.interval || "")}">${escapeHtml(bot.interval || "custom")}</option>`}
+        </select>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <label class="field">Standing job</label>
+      <textarea id="bot-job" placeholder="What should this bot do each fire?">${escapeHtml(draftJob)}</textarea>
+      <div class="inline-actions">
+        <button type="button" class="primary" id="bot-save-job" ${dirty ? "" : "disabled"}>Save job</button>
+        ${dirty ? `<button type="button" class="ghost" id="bot-revert-job">Revert</button>` : ""}
+      </div>
+    </div>
+
+    <div class="card">
+      <label class="field">One-shot note (optional)</label>
+      <input id="bot-run-note" placeholder="Only for this run — merged with the standing job." value="${escapeAttr(runNote)}" />
+      <div class="inline-actions">
+        <button type="button" class="primary" id="bot-run-now">Run now</button>
+        ${bot.lastSessionId ? `<button type="button" class="secondary" id="bot-open-last">Open last session</button>` : ""}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row-inline">
+        <strong style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Outbox · ${outbox.length}</strong>
+        <button type="button" class="ghost" id="bot-outbox-refresh">Refresh</button>
+      </div>
+      ${
+        outbox.length
+          ? `<div class="stack-gap" style="margin-top:8px">${outbox
+              .map(
+                (o) => `<details class="diff-file">
+                  <summary>${escapeHtml(o.filename)} <span class="diff-stat">${escapeHtml(relativeTimeLabel(o.updatedAt))} · ${o.bytes}B</span></summary>
+                  <pre class="diff-body">${escapeHtml(o.content || "(no preview)")}</pre>
+                </details>`,
+              )
+              .join("")}</div>`
+          : `<p class="hint">No outbox drafts yet.</p>`
+      }
+    </div>
+  `;
+}
+
+function wireBotDetail(bot) {
+  $("#bot-enabled")?.addEventListener("change", async (e) => {
+    try {
+      await Api.updateBot(bot.id, { enabled: e.target.checked });
+      await loadBots();
+      renderBots();
+    } catch (err) {
+      banner(err.message, true);
+    }
+  });
+  $("#bot-interval")?.addEventListener("change", async (e) => {
+    try {
+      await Api.updateBot(bot.id, { interval: e.target.value });
+      await loadBots();
+      renderBots();
+    } catch (err) {
+      banner(err.message, true);
+    }
+  });
+  $("#bot-job")?.addEventListener("input", (e) => {
+    state.botDraftJob[bot.id] = e.target.value;
+    // Cheap re-render just to toggle Save button; costs a full render. Fine for now.
+    renderBots();
+  });
+  $("#bot-save-job")?.addEventListener("click", async () => {
+    const nextJob = state.botDraftJob[bot.id] ?? bot.job;
+    try {
+      await Api.updateBot(bot.id, { job: nextJob });
+      delete state.botDraftJob[bot.id];
+      await loadBots();
+      banner("Job saved");
+      renderBots();
+    } catch (err) {
+      banner(err.message, true);
+    }
+  });
+  $("#bot-revert-job")?.addEventListener("click", () => {
+    delete state.botDraftJob[bot.id];
+    renderBots();
+  });
+  $("#bot-run-note")?.addEventListener("input", (e) => {
+    state.botRunNote[bot.id] = e.target.value;
+  });
+  $("#bot-run-now")?.addEventListener("click", async () => {
+    const note = state.botRunNote[bot.id] || "";
+    try {
+      const res = await Api.runBot(bot.id, note ? { note } : {});
+      delete state.botRunNote[bot.id];
+      banner("Bot fired");
+      await loadBots();
+      renderBots();
+      if (res?.session?.id) {
+        setNav("sessions");
+        openSession(res.session.id);
+      }
+    } catch (err) {
+      banner(err.message, true);
+    }
+  });
+  $("#bot-open-last")?.addEventListener("click", () => {
+    if (bot.lastSessionId) {
+      setNav("sessions");
+      openSession(bot.lastSessionId);
+    }
+  });
+  $("#bot-outbox-refresh")?.addEventListener("click", async () => {
+    await loadBotOutbox(bot.id);
+    renderBots();
+  });
+}
+
+function renderNewBotForm() {
+  const d = state.newBotDraft;
+  const botProfiles = botProfileOptions();
+  const projects = projectOptions();
+  const canSave =
+    !state.newBotSaving &&
+    d.name.trim() &&
+    d.job.trim() &&
+    d.profileId &&
+    d.projectId;
+  return `
+    <div class="modal-backdrop" id="newbot-backdrop">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>New bot</h3>
+          <button type="button" class="ghost" id="newbot-close">✕</button>
+        </div>
+        <div class="modal-body">
+          ${
+            !botProfiles.length
+              ? `<p class="hint" style="color:var(--warn)">No bot-backend profiles found. Open <strong>Profiles</strong> and create one with backend=bot first.</p>`
+              : ""
+          }
+          <label class="field">Name</label>
+          <input id="nb-name" placeholder="Lead hunter" value="${escapeAttr(d.name)}" />
+          <label class="field">Standing job</label>
+          <textarea id="nb-job" placeholder="What should this bot do each fire? Drafts go to .bot-outbox/ — nothing is sent until you approve.">${escapeHtml(d.job)}</textarea>
+          <label class="field">Profile (bot backend)</label>
+          <select id="nb-profile" ${botProfiles.length ? "" : "disabled"}>
+            ${botProfiles
+              .map(
+                (p) =>
+                  `<option value="${escapeAttr(p.id)}" ${p.id === d.profileId ? "selected" : ""}>${escapeHtml(p.name)}</option>`,
+              )
+              .join("")}
+          </select>
+          <label class="field">Working directory (project)</label>
+          <select id="nb-project">
+            ${projects
+              .map(
+                (p) =>
+                  `<option value="${escapeAttr(p.id)}" ${p.id === d.projectId ? "selected" : ""}>${escapeHtml(p.name)} — ${escapeHtml(p.path || (p.paths || [])[0] || "")}</option>`,
+              )
+              .join("")}
+          </select>
+          <label class="field">Schedule</label>
+          <select id="nb-interval">
+            ${BOT_INTERVALS.map((i) => `<option value="${escapeAttr(i.value)}" ${i.value === d.interval ? "selected" : ""}>${escapeHtml(i.label)}</option>`).join("")}
+          </select>
+          <label class="check"><input type="checkbox" id="nb-enabled" ${d.enabled ? "checked" : ""}/> Enable schedule</label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="ghost" id="newbot-cancel">Cancel</button>
+          <button type="button" class="primary" id="newbot-save" ${canSave ? "" : "disabled"}>${state.newBotSaving ? "Saving…" : "Create bot"}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wireNewBotForm() {
+  const close = () => {
+    state.newBotOpen = false;
+    renderBots();
+  };
+  $("#newbot-close")?.addEventListener("click", close);
+  $("#newbot-cancel")?.addEventListener("click", close);
+  $("#newbot-backdrop")?.addEventListener("mousedown", (e) => {
+    if (e.target.id === "newbot-backdrop") close();
+  });
+  $("#nb-name")?.addEventListener("input", (e) => { state.newBotDraft.name = e.target.value; });
+  $("#nb-job")?.addEventListener("input", (e) => { state.newBotDraft.job = e.target.value; });
+  $("#nb-profile")?.addEventListener("change", (e) => { state.newBotDraft.profileId = e.target.value; });
+  $("#nb-project")?.addEventListener("change", (e) => { state.newBotDraft.projectId = e.target.value; });
+  $("#nb-interval")?.addEventListener("change", (e) => { state.newBotDraft.interval = e.target.value; });
+  $("#nb-enabled")?.addEventListener("change", (e) => { state.newBotDraft.enabled = e.target.checked; });
+  $("#newbot-save")?.addEventListener("click", async () => {
+    const d = state.newBotDraft;
+    state.newBotSaving = true;
+    try {
+      const res = await Api.createBot({
+        name: d.name.trim(),
+        job: d.job.trim(),
+        profileId: d.profileId,
+        projectId: d.projectId,
+        interval: d.interval,
+        enabled: d.enabled,
+      });
+      state.newBotOpen = false;
+      state.selectedBotId = res.bot?.id || null;
+      await loadBots({ preserveSelection: true });
+      banner("Bot created");
+      renderBots();
+    } catch (err) {
+      banner(err.message, true);
+    } finally {
+      state.newBotSaving = false;
+    }
+  });
+}
+
 // ——— Host control panel ———
 
 async function loadHostConfigPanel() {
@@ -2511,6 +2940,316 @@ function renderHost() {
   if (logEl) logEl.scrollTop = logEl.scrollHeight;
 }
 
+// ——— Profiles manager (loopback only) ———
+
+const PROFILE_BACKEND_LABEL = {
+  grok: "Grok (xAI ACP)",
+  claude: "Claude Code",
+  antigravity: "Gemini (Antigravity)",
+  bot: "Bot (autonomous)",
+};
+const PROFILE_BACKEND_OPTIONS = ["grok", "claude", "antigravity", "bot"];
+const PROFILE_DEFAULT_COLOR = {
+  grok: "#73B8FF",
+  claude: "#F97316",
+  antigravity: "#34A853",
+  bot: "#E879F9",
+};
+
+function renderProfilesAdmin() {
+  const root = $("#view-profiles");
+  if (!root) return;
+  if (!Api.getConnection().token) {
+    root.innerHTML = `<div class="empty-detail"><p class="muted-center">Connect to a host in Desktop settings to load profiles.</p></div>`;
+    return;
+  }
+
+  const active = state.desktopConfig?.hosts?.find(
+    (h) => h.id === state.desktopConfig?.activeHostId,
+  );
+  const activeHostURL = active?.hostURL || "";
+
+  if (!state.admin) {
+    root.innerHTML = `
+      <div class="settings-grid">
+        <div class="card">
+          <h3>Profiles manager</h3>
+          <p class="hint">Profile creation and secret editing are restricted to the machine running the host — API keys never traverse the network.
+          You're connected to <code>${escapeHtml(activeHostURL || "?")}</code>, which the host sees as a non-loopback client, so this pane is read-only here.</p>
+          <p class="hint">Options: switch the active host to a loopback URL (<code>http://127.0.0.1:8787</code>) in Desktop settings, or open the built-in browser control plane at
+          <code>${escapeHtml(activeHostURL || "http://host")}/app/</code> on the host machine itself.</p>
+        </div>
+        <div class="card">
+          <h3>Configured profiles (read-only)</h3>
+          <div class="profile-list">${(state.profiles || [])
+            .map(
+              (p) => `
+              <div class="profile-row">
+                <span class="profile-dot" style="background:${escapeAttr(p.color || "#73B8FF")}"></span>
+                <div class="profile-meta">
+                  <div><strong>${escapeHtml(p.name)}</strong>
+                    <span class="pill muted">${escapeHtml(PROFILE_BACKEND_LABEL[p.backend] || p.backend)}</span>
+                    ${p.hasCredentials ? '<span class="pill ok">ready</span>' : '<span class="pill warn">no creds</span>'}
+                  </div>
+                  <div class="meta">${escapeHtml(p.id)}${p.model ? ` · model ${escapeHtml(p.model)}` : ""}</div>
+                </div>
+              </div>`,
+            )
+            .join("")}</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const rows = (state.adminProfiles || [])
+    .map((p) => {
+      const publ = (state.profiles || []).find((x) => x.id === p.id) || {};
+      const dir =
+        p.backend === "claude" ? p.claudeConfigDir : p.backend === "antigravity" ? p.antigravityConfigDir : "";
+      const envCount = p.env ? Object.keys(p.env).filter((k) => k.trim()).length : 0;
+      const canLogin = p.backend === "claude";
+      return `
+        <div class="profile-row">
+          <span class="profile-dot" style="background:${escapeAttr(p.color || "#73B8FF")}"></span>
+          <div class="profile-meta">
+            <div>
+              <strong>${escapeHtml(p.name)}</strong>
+              <span class="pill muted">${escapeHtml(PROFILE_BACKEND_LABEL[p.backend] || p.backend)}</span>
+              ${publ.hasCredentials ? '<span class="pill ok">ready</span>' : '<span class="pill warn">no creds</span>'}
+            </div>
+            <div class="meta">
+              <span>${escapeHtml(p.id)}</span>
+              ${p.model ? `<span>model ${escapeHtml(p.model)}</span>` : ""}
+              ${dir ? `<span>dir ${escapeHtml(shortPath(dir))}</span>` : ""}
+              ${envCount ? `<span>env keys ${envCount}</span>` : ""}
+            </div>
+          </div>
+          <div class="inline-actions" style="margin-top:0">
+            ${canLogin ? `<button type="button" class="secondary" data-login="${escapeAttr(p.id)}">Login</button>` : ""}
+            <button type="button" class="secondary" data-edit="${escapeAttr(p.id)}">Edit</button>
+            <button type="button" class="danger" data-delete="${escapeAttr(p.id)}">Delete</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  root.innerHTML = `
+    <div class="settings-grid">
+      <div class="card">
+        <div class="row-inline" style="justify-content:space-between;align-items:flex-start">
+          <div>
+            <h3>Profiles</h3>
+            <p class="hint">Local admin — creds and config paths are written straight to
+            <code>~/.grok-dispatch/config.json</code>. Restart the host to spawn agents under a new profile.</p>
+          </div>
+          <div class="inline-actions">
+            <button type="button" class="primary" id="btn-new-profile">Add profile</button>
+          </div>
+        </div>
+        <div class="profile-list">${rows || '<p class="hint">No profiles yet.</p>'}</div>
+      </div>
+      <div id="profile-editor"></div>
+    </div>`;
+
+  root.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openProfileEditor(btn.getAttribute("data-edit"))),
+  );
+  root.querySelectorAll("[data-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => deleteProfileAdmin(btn.getAttribute("data-delete"))),
+  );
+  root.querySelectorAll("[data-login]").forEach((btn) =>
+    btn.addEventListener("click", () => loginProfileAdmin(btn.getAttribute("data-login"))),
+  );
+  $("#btn-new-profile")?.addEventListener("click", () => openProfileEditor(null));
+
+  if (state.profileEditor) openProfileEditor(state.profileEditor.id, state.profileEditor.draft);
+}
+
+function openProfileEditor(id, draftOverride) {
+  const isNew = !id;
+  const source = isNew
+    ? {
+        id: "",
+        name: "",
+        backend: "grok",
+        color: PROFILE_DEFAULT_COLOR.grok,
+        model: "",
+        systemPrompt: "",
+        claudeConfigDir: "",
+        antigravityConfigDir: "",
+        env: {},
+      }
+    : (state.adminProfiles || []).find((p) => p.id === id);
+  if (!isNew && !source) return;
+  const draft = draftOverride || {
+    id: source.id || "",
+    name: source.name || "",
+    backend: source.backend || "grok",
+    color: source.color || PROFILE_DEFAULT_COLOR[source.backend] || "#73B8FF",
+    model: source.model || "",
+    systemPrompt: source.systemPrompt || "",
+    claudeConfigDir: source.claudeConfigDir || "",
+    antigravityConfigDir: source.antigravityConfigDir || "",
+    envText: envToText(source.env || {}),
+  };
+  state.profileEditor = { id: id || null, draft };
+
+  const dir =
+    draft.backend === "claude"
+      ? { label: "Claude config dir (CLAUDE_CONFIG_DIR)", key: "claudeConfigDir", hint: "Set for a second Claude account so it uses its own OAuth store. Leave blank for the default ~/.claude." }
+      : draft.backend === "antigravity"
+        ? { label: "Antigravity config dir", key: "antigravityConfigDir", hint: "Reserved — the agy CLI still uses the global ~/.gemini keyring today, so a second Gemini profile shares creds until Google adds isolation." }
+        : null;
+
+  const envHint =
+    draft.backend === "claude"
+      ? "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN. Leave blank to use interactive Claude login."
+      : draft.backend === "antigravity"
+        ? "GEMINI_API_KEY / GOOGLE_API_KEY / GOOGLE_GENAI_API_KEY. Or leave blank and run `agy` on the host."
+        : draft.backend === "bot"
+          ? "One of XAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY + OPENAI_BASE_URL."
+          : "XAI_API_KEY. Blank uses the local `grok` CLI login under ~/.grok/auth.json.";
+
+  const editor = $("#profile-editor");
+  if (!editor) return;
+  editor.innerHTML = `
+    <div class="card">
+      <h3>${isNew ? "New profile" : `Edit ${escapeHtml(source.name)}`}</h3>
+      <label class="field">Name</label>
+      <input id="pe-name" value="${escapeAttr(draft.name)}" placeholder="e.g. Work Claude" />
+      ${isNew
+        ? `<label class="field">Id (slug — leave blank to derive)</label>
+           <input id="pe-id" value="${escapeAttr(draft.id)}" placeholder="auto" />`
+        : ""}
+      <label class="field">Backend</label>
+      <select id="pe-backend">${PROFILE_BACKEND_OPTIONS.map(
+        (b) => `<option value="${b}" ${b === draft.backend ? "selected" : ""}>${escapeHtml(PROFILE_BACKEND_LABEL[b])}</option>`,
+      ).join("")}</select>
+      <label class="field">Color</label>
+      <input id="pe-color" value="${escapeAttr(draft.color)}" />
+      <label class="field">Model (blank = CLI default)</label>
+      <input id="pe-model" value="${escapeAttr(draft.model)}" placeholder="claude / grok-4 / gemini-3.5-flash-medium" />
+      ${dir
+        ? `<label class="field">${escapeHtml(dir.label)}</label>
+           <input id="pe-configdir" value="${escapeAttr(draft[dir.key])}" placeholder="~/.claude-work" />
+           <p class="hint">${escapeHtml(dir.hint)}</p>`
+        : ""}
+      <label class="field">Environment (KEY=VALUE per line — stays on this machine)</label>
+      <textarea id="pe-env" rows="4" spellcheck="false" placeholder="ANTHROPIC_API_KEY=sk-...">${escapeHtml(draft.envText)}</textarea>
+      <p class="hint">${escapeHtml(envHint)}</p>
+      <label class="field">System prompt (Claude persona — appended)</label>
+      <textarea id="pe-sysprompt" rows="3">${escapeHtml(draft.systemPrompt)}</textarea>
+      <div class="inline-actions" style="justify-content:flex-end;margin-top:12px">
+        <button type="button" class="secondary" id="pe-cancel">Cancel</button>
+        <button type="button" class="primary" id="pe-save">${isNew ? "Create profile" : "Save changes"}</button>
+      </div>
+    </div>`;
+
+  const readDraft = () => ({
+    id: isNew ? ($("#pe-id")?.value.trim() || "") : source.id,
+    name: $("#pe-name").value.trim(),
+    backend: $("#pe-backend").value,
+    color: $("#pe-color").value.trim(),
+    model: $("#pe-model").value.trim(),
+    systemPrompt: $("#pe-sysprompt").value.trim(),
+    claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : source.claudeConfigDir || "",
+    antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : source.antigravityConfigDir || "",
+    envText: $("#pe-env").value,
+  });
+
+  $("#pe-backend").addEventListener("change", () => {
+    const next = readDraft();
+    const prevDefault = PROFILE_DEFAULT_COLOR[draft.backend];
+    if (!next.color || next.color.toLowerCase() === (prevDefault || "").toLowerCase()) {
+      next.color = PROFILE_DEFAULT_COLOR[next.backend] || next.color;
+    }
+    openProfileEditor(id, next);
+  });
+  $("#pe-cancel").addEventListener("click", () => {
+    state.profileEditor = null;
+    renderProfilesAdmin();
+  });
+  $("#pe-save").addEventListener("click", async () => {
+    const d = readDraft();
+    if (!d.name) {
+      banner("Name is required", true);
+      return;
+    }
+    const payload = {
+      name: d.name,
+      backend: d.backend,
+      color: d.color || PROFILE_DEFAULT_COLOR[d.backend],
+      model: d.model || null,
+      systemPrompt: d.systemPrompt || null,
+      claudeConfigDir: d.claudeConfigDir || null,
+      antigravityConfigDir: d.antigravityConfigDir || null,
+      env: envFromText(d.envText),
+    };
+    try {
+      if (isNew) {
+        if (d.id) payload.id = d.id;
+        await Api.createProfile(payload);
+        banner("Profile created — restart the host to spawn agents under it");
+      } else {
+        await Api.updateProfile(source.id, payload);
+        banner("Profile saved");
+      }
+      state.profileEditor = null;
+      await refreshSessions();
+      renderProfilesAdmin();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  });
+}
+
+async function deleteProfileAdmin(id) {
+  if (!id) return;
+  if (!confirm(`Delete profile "${id}"? Config file is updated immediately.`)) return;
+  try {
+    await Api.deleteProfile(id);
+    banner("Profile deleted");
+    if (state.profileEditor?.id === id) state.profileEditor = null;
+    await refreshSessions();
+    renderProfilesAdmin();
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+async function loginProfileAdmin(id) {
+  if (!id) return;
+  try {
+    const r = await Api.loginProfile(id);
+    banner(r?.message || "Login started — check the host machine");
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+function envToText(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k && k.trim())
+    .map(([k, v]) => `${k}=${v ?? ""}`)
+    .join("\n");
+}
+
+function envFromText(text) {
+  const out = {};
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) return;
+      const k = trimmed.slice(0, eq).trim();
+      const v = trimmed.slice(eq + 1);
+      if (k) out[k] = v;
+    });
+  return out;
+}
+
 // ——— Desktop settings ———
 
 function renderDesktopSettings() {
@@ -2757,10 +3496,13 @@ async function boot() {
   state.usageTimer = setInterval(async () => {
     if (document.hidden) return;
     try {
-      const res = await Api.profiles({ usage: true });
+      const res = await Api.profiles({ usage: true, admin: true });
       if (res?.profiles) {
         state.profiles = res.profiles;
+        state.admin = res.admin === true;
+        state.adminProfiles = res.adminProfiles || [];
         renderProfiles();
+        if (state.nav === "profiles") renderProfilesAdmin();
       }
     } catch {
       /* */

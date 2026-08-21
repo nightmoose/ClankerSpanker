@@ -21,7 +21,7 @@ Functional parity with the Mac command center (not a SwiftUI clone):
 - Session tabs: **Transcript · Tools · Plan · Diff · Notes** (notes/tasks are CRUD, with right-click capture from a bubble).
 - Session ⋯ menu: rename, close as done, cancel, delete, transfer, reincarnate, review, assign project, archive.
 - Session list: Recent (last 5) / Active / Archived, host content search (`?q=`), multi-select profile chips with usage %.
-- Sidebar: **Projects** (CRUD, discover, multi-path) and **Tasks** (global list).
+- Sidebar: **Projects** (CRUD, discover, multi-path), **Tasks** (global list), and **Bots** (hunter agents — create, enable/disable, edit standing job, change schedule, run now, view `.bot-outbox/` drafts).
 - Compose: project + custom cwd, subagents toggle, Grok plan/worktree hidden for Claude/Antigravity.
 - Follow-up images; local file viewer pane (managed/local disk only).
 - Re-login banner → `POST /profiles/:id/login` (browser opens **on the host**).

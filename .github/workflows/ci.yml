@@ -1,0 +1,80 @@
+# ClankerSpanker CI — RFC-000 house style.
+#
+# Jobs:
+#   house-style  — RFC index, TEST-EXCEPTIONS, heavy-diff RFC+log, LAN-IP, test ratchet
+#   host         — typecheck + build (tests already ran inside house-style)
+#
+# Docs-only changes still run house-style (index integrity) but skip host build.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Change detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      heavy: ${{ steps.filter.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            heavy:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE'
+
+  house-style:
+    name: House style
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: host/package-lock.json
+      - name: Install host deps
+        working-directory: host
+        run: npm ci
+      - name: House-style check
+        run: python3 scripts/house-style-check.py
+
+  host:
+    name: Host — typecheck / build
+    needs: [changes, house-style]
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: host/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

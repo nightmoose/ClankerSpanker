@@ -273,6 +273,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.session-card.task-card h3 {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: unset;
+}
+.bubble.flash-msg {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .meta {
   color: var(--muted);
   font-size: 11px;

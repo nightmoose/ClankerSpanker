@@ -68,6 +68,8 @@ struct SessionNotesTab: View {
                     .font(.body)
                     .strikethrough(task.isDone)
                     .foregroundStyle(task.isDone ? .secondary : .primary)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let mid = task.sourceMessageId {
                     Button {
                         onJumpToMessage(mid)

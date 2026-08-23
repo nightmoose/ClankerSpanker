@@ -119,6 +119,8 @@ struct HostedSession: Identifiable, Hashable, Sendable {
 struct SessionRoute: Hashable, Sendable {
     var hostId: UUID
     var sessionId: String
+    /// When set, open Transcript and scroll/expand this entry.
+    var messageId: String? = nil
 }
 
 enum HostStore {

@@ -71,6 +71,7 @@ The Mac **Host** toolbar panel had install/projects/logs and **no profiles UI**.
 | **event-horizon/** | Untracked on purpose | Separate mini-game; `.gitignore`d. |
 | **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. Own RFC — do not silently add untested Swift surface. |
 | **House style** | **Shipped RFC-000** | RFC + `make check` + CI. Next feature starts with `make rfc SLUG=…`. |
+| **Markdown tables + todo jump** | **RFC-001** | Expanded-message GFM tables; Tasks open the source message (not just the session). |
 
 ---
 

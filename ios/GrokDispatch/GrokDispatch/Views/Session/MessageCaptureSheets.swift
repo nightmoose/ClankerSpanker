@@ -38,7 +38,7 @@ struct SaveAsTodoSheet: View {
                         .font(.body)
                         .frame(minHeight: 180)
                 } footer: {
-                    Text("Edit down to just the action you owe.").font(.caption2)
+                    Text("Keep the full message if you’ll need the context. Jump from Tasks still opens the original.").font(.caption2)
                 }
                 if let err = errorMessage {
                     Section { Text(err).font(.caption).foregroundStyle(DispatchColors.danger) }

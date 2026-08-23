@@ -15,6 +15,8 @@ struct TranscriptView: View {
     var onSaveAsTodo: ((TranscriptEntry) -> Void)? = nil
     var onScanForTodo: ((TranscriptEntry) -> Void)? = nil
     var onMakeNote: ((TranscriptEntry) -> Void)? = nil
+    /// When set (e.g. arriving from a todo), expand that transcript entry.
+    var expandMessageId: String? = nil
 
     @State private var expanded: ExpandedMessage?
 
@@ -128,6 +130,20 @@ struct TranscriptView: View {
             .frame(minWidth: 520, minHeight: 420)
         }
         #endif
+        .onAppear { tryExpand(expandMessageId) }
+        .onChange(of: expandMessageId) { _, id in tryExpand(id) }
+        .onChange(of: entries.count) { _, _ in tryExpand(expandMessageId) }
+    }
+
+    private func tryExpand(_ id: String?) {
+        guard expanded == nil, let id, !id.isEmpty else { return }
+        guard let entry = entries.first(where: { $0.id == id }) else { return }
+        expanded = ExpandedMessage(
+            id: entry.id,
+            role: entry.role,
+            text: entry.text,
+            title: roleLabel(entry.role)
+        )
     }
 
     // MARK: - Message bubble
@@ -397,6 +413,45 @@ struct MarkdownView: View {
             }
         case .rule:
             Divider().background(Color.white.opacity(0.2))
+        case .table(let headers, let rows):
+            markdownTable(headers: headers, rows: rows)
+        }
+    }
+
+    @ViewBuilder
+    private func markdownTable(headers: [String], rows: [[String]]) -> some View {
+        let cols = max(headers.count, rows.map(\.count).max() ?? 0)
+        ScrollView(.horizontal, showsIndicators: true) {
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(0..<cols, id: \.self) { i in
+                        Text(inline(i < headers.count ? headers[i] : ""))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                }
+                .background(Color.white.opacity(0.08))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    Divider().gridCellColumns(cols)
+                    GridRow {
+                        ForEach(0..<cols, id: \.self) { i in
+                            Text(inline(i < row.count ? row[i] : ""))
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
         }
     }
 
@@ -428,6 +483,7 @@ enum MarkdownParser {
         case unorderedList([String])
         case orderedList([String])
         case rule
+        case table(headers: [String], rows: [[String]])
     }
 
     static func blocks(from text: String) -> [Block] {
@@ -476,6 +532,25 @@ enum MarkdownParser {
                 flushParagraph()
                 blocks.append(.heading(level: level, content: content))
                 i += 1
+                continue
+            }
+
+            if i + 1 < lines.count,
+               looksLikeTableRow(trimmed),
+               isTableSeparator(lines[i + 1].trimmingCharacters(in: .whitespaces)) {
+                flushParagraph()
+                let headers = splitPipeCells(trimmed)
+                i += 2
+                var rows: [[String]] = []
+                while i < lines.count {
+                    let t = lines[i].trimmingCharacters(in: .whitespaces)
+                    if t.isEmpty { break }
+                    if !looksLikeTableRow(t) { break }
+                    if isTableSeparator(t) { i += 1; continue }
+                    rows.append(splitPipeCells(t))
+                    i += 1
+                }
+                blocks.append(.table(headers: headers, rows: rows))
                 continue
             }
 
@@ -562,5 +637,31 @@ enum MarkdownParser {
         let after = line.index(after: idx)
         guard after < line.endIndex, line[after] == " " else { return nil }
         return String(line[line.index(after: after)...])
+    }
+
+    /// GFM pipe table: at least two `|` and not a fence.
+    static func looksLikeTableRow(_ line: String) -> Bool {
+        guard line.contains("|") else { return false }
+        return line.filter { $0 == "|" }.count >= 1 && !line.hasPrefix("```")
+    }
+
+    /// `| --- | :---: | ---: |` (min three dashes per cell). Must contain `|`
+    /// so a lone `---` stays a horizontal rule, not a one-column table.
+    static func isTableSeparator(_ line: String) -> Bool {
+        guard line.contains("|") else { return false }
+        let cells = splitPipeCells(line)
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            let t = cell.replacingOccurrences(of: " ", with: "")
+            return t.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
+        }
+    }
+
+    static func splitPipeCells(_ line: String) -> [String] {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("|") { s.removeFirst() }
+        if s.hasSuffix("|") { s.removeLast() }
+        return s.split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 }

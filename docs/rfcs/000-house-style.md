@@ -44,6 +44,7 @@ Without that loop here, the next agent or human will recreate the pile.
 
 - [x] `python3 scripts/house-style-check.py` passes on this branch
 - [x] `cd host && npm test` — 106 tests (baseline seeded at 106)
+- [x] CI: `profiles.test.ts` Grok CLI credential case is hermetic (`GROK_HOME` temp dir), not this Mac’s `~/.grok/auth.json`
 - [x] `cd host && npm run typecheck && npm run build`
 
 ## Rollout

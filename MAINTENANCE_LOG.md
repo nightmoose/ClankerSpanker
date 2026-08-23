@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-08-23 — RFC-000 CI: hermetic Grok CLI credential test
+
+GitHub Actions failed `profileHasCredentials bot > accepts Grok CLI login`
+because it asserted `true` against **this Mac’s** `~/.grok/auth.json`. CI has
+no login file. Fixture now uses `GROK_HOME` + a temp `auth.json` (same injection
+`profiles.ts` already honors). 106 tests pass with empty home.
+
+---
+
 ## Run: 2026-08-23 — RFC-000 house style + CI gate
 
 Adopted ContractGate’s loop in this repo so the next session cannot recreate

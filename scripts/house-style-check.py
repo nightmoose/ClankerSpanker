@@ -197,18 +197,30 @@ def check_test_ratchet() -> list[str]:
         )
     except (StopIteration, ValueError):
         return ["host/test-baseline.txt has no integer count"]
-    r = run(["npm", "test"], cwd=ROOT / "host")
-    # vitest prints to stderr sometimes; combine
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env.pop("FORCE_COLOR", None)
+    r = subprocess.run(
+        ["npm", "test"],
+        cwd=ROOT / "host",
+        text=True,
+        capture_output=True,
+        env=env,
+    )
     blob = r.stdout + "\n" + r.stderr
-    m = re.search(r"Tests\s+(\d+)\s+passed", blob)
+    blob = re.sub(r"\x1b\[[0-9;]*m", "", blob)
+    m = re.search(r"Tests\s+(?:.*?(\d+)\s+failed.*?\|\s+)?(\d+)\s+passed", blob)
     if r.returncode != 0:
         return [
             "host tests failed (ratchet not measured):\n"
             + blob[-2000:]
         ]
     if not m:
-        return ["could not parse vitest summary for test-count ratchet"]
-    count = int(m.group(1))
+        return [
+            "could not parse vitest summary for test-count ratchet:\n"
+            + blob[-800:]
+        ]
+    count = int(m.group(2))
     if count < baseline:
         return [
             f"test-count ratchet: {count} tests < baseline {baseline}. "

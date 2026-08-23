@@ -2,7 +2,7 @@ import SwiftUI
 
 struct QuestionBarView: View {
     let pending: PendingQuestion
-    @Binding var selectedAnswers: [Int: String]
+    @Binding var selectedAnswers: [String: String]
     @Binding var comment: String
     var isActing: Bool
     let onSubmit: () -> Void
@@ -22,57 +22,66 @@ struct QuestionBarView: View {
                 Spacer()
             }
 
-            ForEach(Array(pending.questions.enumerated()), id: \.offset) { idx, q in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(q.question)
-                        .font(.subheadline.weight(.semibold))
+            // Cap the questions block and make it scroll so long multi-question
+            // interviews don't push the Submit button off screen on iPhone.
+            // Header + comment + Submit stay pinned outside this scroll.
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(pending.questions) { q in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(q.question)
+                                .font(.subheadline.weight(.semibold))
 
-                    if q.options.isEmpty {
-                        TextField("Your answer…", text: binding(for: idx))
-                            .padding(10)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    } else {
-                        ForEach(q.options, id: \.label) { opt in
-                            Button {
-                                selectedAnswers[idx] = opt.label
-                            } label: {
-                                HStack(alignment: .top, spacing: 10) {
-                                    Image(systemName: selectedAnswers[idx] == opt.label
-                                          ? "checkmark.circle.fill"
-                                          : "circle")
-                                        .foregroundStyle(
-                                            selectedAnswers[idx] == opt.label
-                                            ? DispatchColors.accent
-                                            : .secondary
-                                        )
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(opt.label)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                            .multilineTextAlignment(.leading)
-                                        if let d = opt.description, !d.isEmpty {
-                                            Text(d)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .multilineTextAlignment(.leading)
+                            if q.options.isEmpty {
+                                TextField("Your answer…", text: binding(for: q.id))
+                                    .padding(10)
+                                    .background(Color.white.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            } else {
+                                ForEach(q.options, id: \.label) { opt in
+                                    Button {
+                                        selectedAnswers[q.id] = opt.label
+                                    } label: {
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: selectedAnswers[q.id] == opt.label
+                                                  ? "checkmark.circle.fill"
+                                                  : "circle")
+                                                .foregroundStyle(
+                                                    selectedAnswers[q.id] == opt.label
+                                                    ? DispatchColors.accent
+                                                    : .secondary
+                                                )
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(opt.label)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundStyle(.primary)
+                                                    .multilineTextAlignment(.leading)
+                                                if let d = opt.description, !d.isEmpty {
+                                                    Text(d)
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                        .multilineTextAlignment(.leading)
+                                                }
+                                            }
+                                            Spacer(minLength: 0)
                                         }
+                                        .padding(12)
+                                        .background(
+                                            selectedAnswers[q.id] == opt.label
+                                            ? DispatchColors.accent.opacity(0.15)
+                                            : Color.white.opacity(0.06)
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
-                                    Spacer(minLength: 0)
+                                    .buttonStyle(.plain)
                                 }
-                                .padding(12)
-                                .background(
-                                    selectedAnswers[idx] == opt.label
-                                    ? DispatchColors.accent.opacity(0.15)
-                                    : Color.white.opacity(0.06)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
+                .padding(.vertical, 2)
             }
+            .frame(maxHeight: 360)
 
             TextField("Optional extra notes…", text: $comment)
                 .padding(10)
@@ -90,10 +99,10 @@ struct QuestionBarView: View {
         .background(.ultraThinMaterial)
     }
 
-    private func binding(for idx: Int) -> Binding<String> {
+    private func binding(for id: String) -> Binding<String> {
         Binding(
-            get: { selectedAnswers[idx] ?? "" },
-            set: { selectedAnswers[idx] = $0 }
+            get: { selectedAnswers[id] ?? "" },
+            set: { selectedAnswers[id] = $0 }
         )
     }
 }

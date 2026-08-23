@@ -9,6 +9,7 @@ struct OnboardingView: View {
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showToken = true
+    @State private var showManualSteps = false
 
     var body: some View {
         ZStack {
@@ -48,32 +49,31 @@ struct OnboardingView: View {
                     }
                     #endif
 
+                    // Automatic setup — recommended path. Fills the fields below.
                     DispatchCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            #if os(macOS)
-                            Label("Or connect to any host", systemImage: "1.circle.fill")
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Automatic setup", systemImage: "sparkles")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(DispatchColors.accent)
-                            numbered("Run the host on this Mac or another machine")
-                            numbered("Open the setup page and copy the host token")
-                            Text(ConnectionDefaults.setupPageURL.absoluteString)
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(DispatchColors.accent)
-                                .textSelection(.enabled)
-                            numbered("Paste URL + token below and Save & connect")
-                            #else
-                            Label("Do this on your iPhone", systemImage: "1.circle.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(DispatchColors.accent)
+                            Text("On the same Wi‑Fi as your Mac. Grabs the host URL and token, then you tap Save & connect.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
 
-                            numbered("Open Safari on this phone (same Wi‑Fi as the Mac)")
-                            numbered("Go to:")
-                            Text(ConnectionDefaults.setupPageURL.absoluteString)
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(DispatchColors.accent)
-                                .textSelection(.enabled)
-                            numbered("Tap “Copy Host token”, paste below")
-                            numbered("Tap Save & connect (leave API key blank forever)")
+                            #if targetEnvironment(simulator)
+                            DispatchButton(
+                                title: "Use simulator defaults + fill token",
+                                icon: "laptopcomputer"
+                            ) {
+                                hostURL = ConnectionDefaults.simulatorHostURL
+                                Task { await fetchTokenFromLocalSetup() }
+                            }
+                            #else
+                            DispatchButton(
+                                title: "Fetch token from Mac (same Wi‑Fi)",
+                                icon: "arrow.down.circle"
+                            ) {
+                                Task { await fetchTokenFromLocalSetup() }
+                            }
                             #endif
                         }
                     }
@@ -136,24 +136,38 @@ struct OnboardingView: View {
                         Task { await saveAndTest() }
                     }
 
-                    #if targetEnvironment(simulator)
-                    DispatchButton(
-                        title: "Use simulator defaults + fill token from Mac",
-                        icon: "laptopcomputer",
-                        style: .secondary
-                    ) {
-                        hostURL = ConnectionDefaults.simulatorHostURL
-                        Task { await fetchTokenFromLocalSetup() }
+                    // Manual fallback — collapsed by default so the automatic
+                    // path is the visible one. Users only need this when the
+                    // fetch fails or they're on a different network.
+                    DispatchCard {
+                        DisclosureGroup(isExpanded: $showManualSteps) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                #if os(macOS)
+                                numbered("Run the host on this Mac or another machine")
+                                numbered("Open the setup page and copy the host token")
+                                #else
+                                numbered("Open Safari on this phone (same Wi‑Fi as the Mac)")
+                                numbered("Go to:")
+                                #endif
+                                Text(ConnectionDefaults.setupPageURL.absoluteString)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(DispatchColors.accent)
+                                    .textSelection(.enabled)
+                                #if os(macOS)
+                                numbered("Paste URL + token above and Save & connect")
+                                #else
+                                numbered("Tap “Copy Host token”, paste above")
+                                numbered("Tap Save & connect (leave API key blank forever)")
+                                #endif
+                            }
+                            .padding(.top, 8)
+                        } label: {
+                            Label("Manual setup", systemImage: "list.number")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .tint(DispatchColors.accent)
                     }
-                    #else
-                    DispatchButton(
-                        title: "Fetch token from Mac (same Wi‑Fi)",
-                        icon: "arrow.down.circle",
-                        style: .secondary
-                    ) {
-                        Task { await fetchTokenFromLocalSetup() }
-                    }
-                    #endif
                 }
                 .padding(20)
             }

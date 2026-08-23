@@ -32,6 +32,8 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 |------------|------------|------------------------|-----------------|
 | Session list / detail / approvals / follow-up | Yes | Yes | Yes |
 | Compose / dispatch | Yes | Yes | Yes |
+| First-turn screenshot attach on New Session | Yes | Yes | No |
+| Tool-call ellipsis (rawInput / command) | Yes | Yes | No (browser session UI has no tool rows) |
 | Grok / Claude disk attach | Yes (via host API) | Yes | Yes |
 | Multi-host registry | Yes | Remote mode + URL | URL in settings |
 | Start/stop **local** host | Yes | Yes (managed mode) | No |

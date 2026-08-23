@@ -41,6 +41,7 @@ const state = {
     planMode: true,
     worktree: true,
     subagents: true,
+    images: [],
   },
   wsStatus: "offline",
   hostStatus: null,
@@ -1403,6 +1404,10 @@ function patchOpenDetail(ev) {
 
   switch (ev.type) {
     case "transcript": {
+      if (payload.streaming) {
+        if (payload.text) state.streamingText = (state.streamingText || "") + payload.text;
+        break;
+      }
       if (payload.id && !(d.transcript || []).some((e) => e.id === payload.id)) {
         d.transcript = [...(d.transcript || []), payload];
       }
@@ -1459,6 +1464,9 @@ function patchOpenDetail(ev) {
     }
     case "session.updated": {
       Object.assign(d, payload || {});
+      if (["idle", "completed", "failed", "cancelled"].includes(String(payload.status || ""))) {
+        state.streamingText = "";
+      }
       break;
     }
     case "session.completed": {
@@ -1768,6 +1776,15 @@ function renderCompose() {
         <input id="c-title" placeholder="Short name" value="${escapeAttr(draft.title || "")}" />
         <label class="field">Prompt</label>
         <textarea id="c-prompt" placeholder="What should the agent do?">${escapeHtml(draft.prompt || "")}</textarea>
+        <label class="field">Screenshots (optional, max 4)</label>
+        <div class="img-row" id="c-img-row">
+          ${(draft.images || []).map((im, i) =>
+            `<span class="img-thumb"><img src="data:${escapeAttr(im.mimeType)};base64,${escapeAttr(im.data)}" alt=""/><button type="button" class="img-x" data-rm-compose-img="${i}">×</button></span>`
+          ).join("")}
+        </div>
+        <div class="row-inline">
+          <button type="button" class="secondary" id="c-attach-img">Attach images…</button>
+        </div>
         ${grok ? `<label class="check"><input type="checkbox" id="c-plan" ${draft.planMode !== false ? "checked" : ""}/> Plan mode</label>
         <label class="check"><input type="checkbox" id="c-wt" ${draft.worktree !== false ? "checked" : ""}/> Worktree</label>` : `<p class="hint">Plan mode / worktree are Grok ACP flags — hidden for ${escapeHtml(profile?.backend || "this backend")}.</p>`}
         <label class="check"><input type="checkbox" id="c-sub" ${draft.subagents !== false ? "checked" : ""}/> Subagents</label>
@@ -1785,6 +1802,7 @@ function renderCompose() {
       planMode: $("#c-plan") ? $("#c-plan").checked : state.composeDraft.planMode,
       worktree: $("#c-wt") ? $("#c-wt").checked : state.composeDraft.worktree,
       subagents: $("#c-sub")?.checked !== false,
+      images: state.composeDraft.images || [],
     };
   };
   root.querySelectorAll("input, textarea, select").forEach((el) => {
@@ -1848,22 +1866,44 @@ function renderCompose() {
       }
     }
   }
+  $("#c-attach-img")?.addEventListener("click", async () => {
+    persist();
+    const files = await window.clanker.pickFiles({ images: true });
+    if (!files?.length) return;
+    const room = Math.max(0, 4 - (state.composeDraft.images || []).length);
+    state.composeDraft.images = [...(state.composeDraft.images || []), ...files.slice(0, room)];
+    renderCompose();
+  });
+  root.querySelectorAll("[data-rm-compose-img]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      persist();
+      const i = Number(btn.getAttribute("data-rm-compose-img"));
+      (state.composeDraft.images || []).splice(i, 1);
+      renderCompose();
+    });
+  });
   $("#c-go")?.addEventListener("click", async () => {
     persist();
     const prompt = state.composeDraft.prompt.trim();
-    if (!prompt) {
+    const images = state.composeDraft.images || [];
+    if (!prompt && !images.length) {
       banner("Write a prompt first", true);
       return;
     }
     try {
       const body = {
-        prompt,
+        prompt:
+          prompt ||
+          (images.length === 1
+            ? "Please review this screenshot for debugging."
+            : `Please review these ${images.length} screenshots for debugging.`),
         projectId: state.composeDraft.projectId || undefined,
         cwd: state.composeDraft.cwd.trim() || undefined,
         title: state.composeDraft.title.trim() || undefined,
         subagents: state.composeDraft.subagents,
         profileId: state.profileId || undefined,
       };
+      if (images.length) body.images = images;
       if (grok) {
         body.planMode = state.composeDraft.planMode;
         body.worktree = state.composeDraft.worktree;
@@ -1872,6 +1912,7 @@ function renderCompose() {
       banner("Dispatched");
       state.composeDraft.prompt = "";
       state.composeDraft.title = "";
+      state.composeDraft.images = [];
       await refreshSessions();
       setNav("sessions");
       openSession(detail.id);

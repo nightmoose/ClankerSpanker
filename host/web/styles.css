@@ -76,6 +76,15 @@ button.danger { color: var(--danger); border-color: #5a2a2a; }
 main { max-width: 920px; margin: 0 auto; padding: 16px; }
 .view { display: flex; flex-direction: column; gap: 12px; }
 
+pre.preview {
+  white-space: pre-wrap;
+  font-size: 12px;
+  max-height: 280px;
+  overflow: auto;
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -110,6 +119,38 @@ main { max-width: 920px; margin: 0 auto; padding: 16px; }
   color: var(--muted);
   padding: 48px 16px;
 }
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.profile-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.profile-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.profile-meta { flex: 1; min-width: 0; }
+.profile-meta .meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.pill.warn { color: var(--warn); border-color: #5a4820; }
 
 label.field {
   display: block;

@@ -108,15 +108,39 @@ struct DispatchButton: View {
 
 struct StatusBadge: View {
     let status: SessionStatus
+    /// Compact list style: small square rounded tile with just the status icon.
+    /// The status label lives elsewhere in list rows so the tile stays tight
+    /// and lets the session title dominate.
+    var compact: Bool = false
 
     var body: some View {
-        Label(status.label, systemImage: status.systemImage)
-            .font(.caption.weight(.semibold))
+        if compact {
+            Image(systemName: status.systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 40, height: 40)
+                .background(color.opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityLabel(status.label)
+        } else {
+            // Explicit HStack + fixedSize so "Your turn" never wraps to two lines.
+            HStack(spacing: 4) {
+                Image(systemName: status.systemImage)
+                    .font(.caption.weight(.semibold))
+                Text(status.label)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .foregroundStyle(color)
             .background(color.opacity(0.15))
             .clipShape(Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(status.label)
+        }
     }
 
     private var color: Color {

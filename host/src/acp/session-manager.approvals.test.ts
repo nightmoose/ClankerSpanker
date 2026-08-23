@@ -1,0 +1,244 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  SessionManager,
+  buildOrphanedApprovalResumePrompt,
+  isSafeBashCommand,
+  lastUserTextIs,
+  materializeImagesInCwd,
+} from "./session-manager.js";
+import type { DispatchSession, HostConfigFile, PendingApproval } from "../types.js";
+
+function testConfig(dataDir: string): HostConfigFile {
+  return {
+    hostToken: "t".repeat(32),
+    bindHost: "127.0.0.1",
+    bindPort: 8787,
+    grokBinary: "/bin/echo",
+    projects: [],
+    allowCustomPaths: true,
+    profiles: [{ id: "fullscore", name: "FullScore", backend: "claude", color: "#F97316" }],
+    autoApproveKinds: ["read", "search", "think", "fetch"],
+    notifyDesktop: false,
+    dataDir,
+  };
+}
+
+function claudeSession(cwd: string, id = "sess-claude"): DispatchSession {
+  const ts = new Date().toISOString();
+  return {
+    id,
+    backend: "claude",
+    title: "ClankerSpanker Updates",
+    prompt: "fix it",
+    cwd,
+    model: "claude",
+    profileId: "fullscore",
+    profileName: "FullScore",
+    planMode: false,
+    subagents: false,
+    worktree: false,
+    status: "awaiting_approval",
+    createdAt: ts,
+    updatedAt: ts,
+    transcript: [],
+    toolCalls: [],
+    events: [],
+  };
+}
+
+function parkedWrite(sessionId: string): PendingApproval {
+  return {
+    id: "orphan-write",
+    sessionId,
+    title: "Write: /tmp/foo.md",
+    kind: "edit",
+    rawInput: { file_path: "/tmp/foo.md", contents: "hi" },
+    options: [
+      { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+      { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+    ],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+describe("isSafeBashCommand", () => {
+  it("allows read-only git and listing, rejects mutating or compound commands", () => {
+    expect(isSafeBashCommand("git status")).toBe(true);
+    expect(isSafeBashCommand("git diff")).toBe(true);
+    expect(isSafeBashCommand("ls -la")).toBe(true);
+    expect(isSafeBashCommand("git commit -am wip")).toBe(false);
+    expect(isSafeBashCommand("git status && rm -rf /")).toBe(false);
+    expect(isSafeBashCommand("npx tsc --noEmit")).toBe(false);
+  });
+});
+
+describe("lastUserTextIs", () => {
+  it("detects when dispatch already wrote the opening user bubble", () => {
+    expect(lastUserTextIs({ transcript: [{ id: "1", role: "user", text: "hi", at: "" }] }, "hi")).toBe(true);
+    expect(lastUserTextIs({ transcript: [{ id: "1", role: "user", text: "hi", at: "" }] }, "bye")).toBe(false);
+    expect(lastUserTextIs({ transcript: [] }, "hi")).toBe(false);
+  });
+});
+
+describe("buildOrphanedApprovalResumePrompt", () => {
+  it("tells the resumed agent to perform the approved tool and not redo completed work", () => {
+    const prompt = buildOrphanedApprovalResumePrompt({
+      decision: "approve",
+      title: "Write: /tmp/foo.md",
+      rawInput: { file_path: "/tmp/foo.md" },
+    });
+    expect(prompt).toContain("APPROVED");
+    expect(prompt).toContain("Write: /tmp/foo.md");
+    expect(prompt).toContain("/tmp/foo.md");
+    expect(prompt).toMatch(/do not re-ask/i);
+    expect(prompt).toMatch(/Do not restart work/i);
+    expect(prompt).not.toMatch(/dismissed/i);
+  });
+});
+
+describe("SessionManager approvals", () => {
+  let manager: SessionManager | undefined;
+
+  afterEach(() => {
+    manager?.stopApprovalSweeper();
+    manager = undefined;
+  });
+
+  it("resolves a live Claude hook without dismissing the agent", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    manager = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    session.status = "running";
+    manager.store.save(session);
+
+    const approval = manager.createClaudeApproval({
+      sessionId: session.id,
+      toolName: "Write",
+      title: "Write: /tmp/foo.md",
+      toolInput: { file_path: "/tmp/foo.md", contents: "hi" },
+    });
+    expect(approval.status).toBe("pending");
+    expect(manager.get(session.id)?.status).toBe("awaiting_approval");
+
+    const result = await manager.resolveApproval(session.id, approval.id, "approve");
+    expect(result.status).toBe("running");
+    expect(result.pendingApproval).toBeFalsy();
+    expect(manager.getClaudeApproval(approval.id)?.status).toBe("approved");
+    expect(result.transcript.map((t) => t.text).join("\n")).not.toMatch(/dismissed/i);
+  });
+
+  it("orphaned approve resumes the session instead of dismissing", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    manager = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    const parked = parkedWrite(session.id);
+    session.pendingApprovalId = parked.id;
+    session.pendingApproval = parked;
+    manager.store.save(session);
+
+    const resumes: string[] = [];
+    manager.resumeOrphanedSession = (_id, prompt) => {
+      resumes.push(prompt);
+    };
+
+    const result = await manager.resolveApproval(session.id, parked.id, "approve");
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]).toContain("APPROVED");
+    expect(resumes[0]).toContain("Write: /tmp/foo.md");
+    expect(result.status).toBe("running");
+    expect(result.pendingApproval).toBeFalsy();
+    expect(result.pendingApprovalId).toBeFalsy();
+    const last = result.transcript.at(-1)?.text ?? "";
+    expect(last).toMatch(/resuming the agent/i);
+    expect(last).not.toMatch(/dismissed/i);
+    expect(last).not.toMatch(/Send a follow-up/i);
+    expect(result.autoApproveSignatures?.some((s) => s.includes("foo.md"))).toBe(true);
+  });
+
+  it("orphaned reject dismisses without spawning a follow-up", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    manager = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    const parked = parkedWrite(session.id);
+    session.pendingApprovalId = parked.id;
+    session.pendingApproval = parked;
+    manager.store.save(session);
+
+    const resumes: string[] = [];
+    manager.resumeOrphanedSession = () => {
+      resumes.push("called");
+    };
+
+    const result = await manager.resolveApproval(session.id, parked.id, "reject");
+    expect(resumes).toHaveLength(0);
+    expect(result.status).toBe("idle");
+    expect(result.pendingApproval).toBeFalsy();
+    expect(result.transcript.at(-1)?.text).toMatch(/Rejected/);
+    expect(result.transcript.at(-1)?.text).toMatch(/dismissed/i);
+  });
+
+  it("auto-approves read-only bash without parking the session", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    manager = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    session.status = "running";
+    manager.store.save(session);
+
+    const approval = manager.createClaudeApproval({
+      sessionId: session.id,
+      toolName: "Bash",
+      title: "Bash: git status",
+      toolInput: { command: "git status" },
+    });
+    expect(approval.status).toBe("approved");
+    expect(manager.get(session.id)?.status).toBe("running");
+    expect(manager.get(session.id)?.pendingApproval).toBeFalsy();
+  });
+});
+
+describe("getToolCall", () => {
+  it("returns stringified rawInput for the ellipsis endpoint", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    const mgr = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    session.status = "idle";
+    session.toolCalls = [
+      {
+        toolCallId: "tc-1",
+        title: "Bash",
+        kind: "execute",
+        status: "completed",
+        updatedAt: new Date().toISOString(),
+        rawInput: { command: "ls -la" },
+      },
+    ];
+    mgr.store.save(session);
+    const detail = mgr.getToolCall(session.id, "tc-1");
+    expect(detail?.title).toBe("Bash");
+    expect(detail?.rawInputJson).toContain("ls -la");
+    expect(mgr.getToolCall(session.id, "missing")).toBeNull();
+    mgr.stopApprovalSweeper();
+  });
+});
+
+describe("materializeImagesInCwd", () => {
+  it("copies screenshots into the project cwd so Claude Read is not sandboxed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cs-img-cwd-"));
+    const srcDir = mkdtempSync(join(tmpdir(), "cs-img-src-"));
+    const src = join(srcDir, "shot.png");
+    writeFileSync(src, "png-bytes");
+    const dests = materializeImagesInCwd(cwd, [src]);
+    expect(dests).toHaveLength(1);
+    expect(dests[0]!.startsWith(join(cwd, ".clankerspanker-attachments"))).toBe(true);
+    expect(readFileSync(dests[0]!, "utf8")).toBe("png-bytes");
+    expect(existsSync(join(cwd, ".clankerspanker-attachments", ".gitignore"))).toBe(true);
+  });
+});

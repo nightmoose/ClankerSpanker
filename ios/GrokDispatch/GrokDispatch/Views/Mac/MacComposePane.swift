@@ -1,7 +1,9 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
-/// Desktop compose form used in the New Task sheet.
+/// Desktop compose form used in the New Session sheet.
 struct MacComposePane: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var vm = ComposerViewModel()
@@ -39,6 +41,45 @@ struct MacComposePane: View {
                             .frame(minHeight: 140)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
+                    }
+                    .padding(6)
+                }
+
+                GroupBox("Screenshots") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Attach up to 4 images on the first turn — same as follow-up. Useful for “here’s the bug, fix it.”")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !vm.pendingImages.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(vm.pendingImages) { att in
+                                        ZStack(alignment: .topTrailing) {
+                                            Image(platformImage: att.preview)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 64, height: 64)
+                                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            Button {
+                                                vm.removeImage(id: att.id)
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, .black.opacity(0.65))
+                                            }
+                                            .offset(x: 6, y: -6)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                        Button {
+                            pickImageFilesFromDisk()
+                        } label: {
+                            Label("Attach images…", systemImage: "paperclip")
+                        }
+                        .disabled(vm.isSubmitting || vm.pendingImages.count >= 4)
                     }
                     .padding(6)
                 }
@@ -90,13 +131,20 @@ struct MacComposePane: View {
                     .padding(6)
                 }
 
-                GroupBox("Options") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Plan mode", isOn: $vm.planMode)
-                        Toggle("Git worktree", isOn: $vm.worktree)
-                        Toggle("Subagents", isOn: $vm.subagents)
+                let bound = appState.selectedBoundProfile
+                if bound?.profile.isGrok == true {
+                    GroupBox("Options") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Plan mode", isOn: $vm.planMode)
+                            Toggle("Git worktree", isOn: $vm.worktree)
+                            Toggle("Subagents", isOn: $vm.subagents)
+                        }
+                        .padding(6)
                     }
-                    .padding(6)
+                } else if bound?.profile.isBot == true {
+                    Text("This is a hunter bot. Dispatch opens a normal session — review the transcript and approve outbound drafts there. Nothing is sent.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 HStack {
@@ -111,7 +159,7 @@ struct MacComposePane: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(vm.isSubmitting || vm.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(vm.isSubmitting || (vm.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && vm.pendingImages.isEmpty))
                     .keyboardShortcut(.defaultAction)
 
                     if let status {
@@ -143,6 +191,35 @@ struct MacComposePane: View {
             Task { await vm.load(appState: appState) }
         } catch {
             vm.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func pickImageFilesFromDisk() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.canCreateDirectories = false
+        panel.message = "Choose screenshot or image files to send"
+        panel.prompt = "Attach"
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .webP, .bmp, .tiff, .heic, .image]
+        let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+        if FileManager.default.fileExists(atPath: desktop.path) {
+            panel.directoryURL = desktop
+        }
+        guard panel.runModal() == .OK else { return }
+        var images: [PlatformImage] = []
+        for url in panel.urls {
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url),
+                  let image = PlatformImage.cs_fromData(data) else { continue }
+            images.append(image)
+        }
+        if !images.isEmpty {
+            vm.addImages(images)
+        } else if !panel.urls.isEmpty {
+            vm.errorMessage = "Could not load selected image files"
         }
     }
 

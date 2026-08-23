@@ -130,6 +130,8 @@ const Api = (() => {
       request(`/profiles/${enc(id)}`, { method: "DELETE" }),
 
     dispatch: (body) => request("/dispatch", { method: "POST", body: jsonBody(body) }),
+    toolCall: (sessionId, toolCallId) =>
+      request(`/sessions/${enc(sessionId)}/tool-calls/${enc(toolCallId)}`),
     prompt: (id, body) =>
       request(`/sessions/${enc(id)}/prompt`, { method: "POST", body: jsonBody(body) }),
     approve: (id, body) =>

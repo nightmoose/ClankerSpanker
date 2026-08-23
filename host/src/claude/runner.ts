@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { findClaudeBinary } from "../sessions/reader.js";
 import { agentPathEnv } from "../platform.js";
+import { isClaudeModelSentinel } from "../profiles.js";
 
 export interface ClaudeRunnerOptions {
   cwd: string;
@@ -20,12 +21,40 @@ export interface ClaudeRunnerOptions {
   requirePhoneApproval: boolean;
   /** Profile-specific env (ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR, …) for multi-account. */
   profileEnv?: NodeJS.ProcessEnv;
+  /**
+   * Claude model slug (e.g. "claude-sonnet-4-6", "claude-opus-4-7"). Sentinels
+   * "claude" / "default" / "" skip `--model` and let the CLI choose its own
+   * default — avoids pinning stale slugs from old profile configs.
+   */
+  model?: string;
+  /**
+   * Persona / project-context text passed via `--append-system-prompt`. Applied
+   * on every turn, so it must be static across the session (per-profile config,
+   * not per-message).
+   */
+  appendSystemPrompt?: string;
+  /**
+   * Extra directories Claude may Read (session/project attachment stores).
+   * Passed as `--add-dir` and `permissions.additionalDirectories`.
+   */
+  extraDirs?: string[];
+}
+
+export interface ClaudeUsageDelta {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 export interface ClaudeRunnerEvents {
   text: (chunk: string) => void;
+  /** Extended-thinking output — Claude's reasoning traces, separate from the reply. */
+  thought: (chunk: string) => void;
   tool: (info: { name: string; id?: string; input?: unknown; status: string }) => void;
   system: (text: string) => void;
+  /** Cumulative token usage for this turn (emitted at end of turn). */
+  usage: (delta: ClaudeUsageDelta) => void;
   done: (info: { text: string; sessionId?: string; error?: string }) => void;
 }
 
@@ -36,6 +65,12 @@ export class ClaudeRunner extends EventEmitter {
   private proc: ChildProcess | null = null;
   private fullText = "";
   private claudeSessionId: string | undefined;
+  private turnUsage: ClaudeUsageDelta = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  };
 
   constructor(private readonly opts: ClaudeRunnerOptions) {
     super();
@@ -58,12 +93,30 @@ export class ClaudeRunner extends EventEmitter {
       args.push("--resume", this.opts.resumeSessionId);
     }
 
+    // Pin the model when the profile/request specifies one. Sentinels
+    // ("claude" / "default") skip this so the CLI's own default applies —
+    // otherwise old profile configs would pin stale slugs forever.
+    const model = this.opts.model?.trim();
+    if (model && !isClaudeModelSentinel(model)) {
+      args.push("--model", model);
+    }
+
+    // Persona / project context injected once per turn.
+    const persona = this.opts.appendSystemPrompt?.trim();
+    if (persona) {
+      args.push("--append-system-prompt", persona);
+    }
+
     if (this.opts.requirePhoneApproval) {
       // default mode + hook gate for write/execute tools
       args.push("--permission-mode", "default");
       args.push("--settings", settingsPath);
     } else {
       args.push("--permission-mode", "acceptEdits");
+    }
+
+    for (const dir of extraDirsForClaude(this.opts.extraDirs)) {
+      args.push("--add-dir", dir);
     }
 
     this.proc = spawn(claudeBin, args, {
@@ -104,6 +157,17 @@ export class ClaudeRunner extends EventEmitter {
       throw new Error(err);
     }
 
+    // Emit final usage before `done` so listeners can persist it in the same
+    // event loop cycle they mark the session idle.
+    if (
+      this.turnUsage.inputTokens > 0 ||
+      this.turnUsage.outputTokens > 0 ||
+      this.turnUsage.cacheReadTokens > 0 ||
+      this.turnUsage.cacheCreationTokens > 0
+    ) {
+      this.emit("usage", { ...this.turnUsage });
+    }
+
     const result = { text: this.fullText.trim(), sessionId: this.claudeSessionId };
     this.emit("done", result);
     return result;
@@ -125,22 +189,7 @@ export class ClaudeRunner extends EventEmitter {
     chmodSync(hookPath, 0o755);
 
     const settingsPath = join(dir, `settings-${this.opts.dispatchSessionId}.json`);
-    const settings = {
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|Delete",
-            hooks: [
-              {
-                type: "command",
-                command: `node ${JSON.stringify(hookPath)}`,
-                timeout: 600,
-              },
-            ],
-          },
-        ],
-      },
-    };
+    const settings = buildClaudeHookSettings(hookPath, extraDirsForClaude(this.opts.extraDirs));
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
     return settingsPath;
   }
@@ -167,18 +216,41 @@ export class ClaudeRunner extends EventEmitter {
       ((msg.message as { session_id?: string } | undefined)?.session_id);
     if (sid) this.claudeSessionId = sid;
 
+    // Token accounting rides on assistant / result frames.
+    this.accumulateUsage(msg);
+
     if (type === "assistant" || type === "stream_event") {
       const text = extractAssistantText(msg);
       if (text) {
         this.fullText += text;
         this.emit("text", text);
       }
+      const thought = extractThinkingText(msg);
+      if (thought) this.emit("thought", thought);
       const tool = extractToolUse(msg);
       if (tool) this.emit("tool", { ...tool, status: "pending" });
       return;
     }
 
     if (type === "content_block_delta" || type === "content_block_start") {
+      // `content_block_delta` carries a `delta.type` discriminator — thinking
+      // deltas MUST NOT be folded into the assistant reply text or the phone
+      // will show the model's reasoning as the answer.
+      const delta = msg.delta as { text?: string; type?: string; thinking?: string } | undefined;
+      const deltaType = delta?.type ?? "";
+      if (deltaType === "thinking_delta") {
+        const thinking = delta?.thinking ?? delta?.text ?? "";
+        if (thinking) this.emit("thought", thinking);
+        return;
+      }
+      // `content_block_start` for a thinking block sometimes carries seed text.
+      if (type === "content_block_start") {
+        const block = msg.content_block as { type?: string; thinking?: string } | undefined;
+        if (block?.type === "thinking" && block.thinking) {
+          this.emit("thought", block.thinking);
+          return;
+        }
+      }
       const text = extractDeltaText(msg);
       if (text) {
         this.fullText += text;
@@ -225,7 +297,32 @@ export class ClaudeRunner extends EventEmitter {
         this.fullText += text;
         this.emit("text", text);
       }
+      const thought = extractThinkingText(msg);
+      if (thought) this.emit("thought", thought);
     }
+  }
+
+  /** Pull an Anthropic-shape `usage` block off the message and add to the running turn total. */
+  private accumulateUsage(msg: Record<string, unknown>): void {
+    const usage = extractUsage(msg);
+    if (!usage) return;
+    // The stream re-sends the same usage numbers as it grows — accept the
+    // maximum seen for each field so we don't double-count partial frames.
+    this.turnUsage.inputTokens = Math.max(this.turnUsage.inputTokens, usage.inputTokens);
+    this.turnUsage.outputTokens = Math.max(this.turnUsage.outputTokens, usage.outputTokens);
+    this.turnUsage.cacheReadTokens = Math.max(
+      this.turnUsage.cacheReadTokens,
+      usage.cacheReadTokens,
+    );
+    this.turnUsage.cacheCreationTokens = Math.max(
+      this.turnUsage.cacheCreationTokens,
+      usage.cacheCreationTokens,
+    );
+  }
+
+  /** Total tokens observed on this turn — read by run() before the `done` emit. */
+  get usage(): ClaudeUsageDelta {
+    return { ...this.turnUsage };
   }
 }
 
@@ -233,16 +330,83 @@ function extractAssistantText(msg: Record<string, unknown>): string {
   const message = (msg.message ?? msg) as {
     role?: string;
     content?: unknown;
-    delta?: { text?: string; partial_json?: string };
+    delta?: { text?: string; type?: string; partial_json?: string };
   };
-  if (message.delta?.text) return message.delta.text;
+  // `text_delta` = reply chunk; `thinking_delta` = extended-thinking chunk.
+  // Only fold text_delta into the reply — thinking is emitted separately.
+  if (message.delta?.text && message.delta?.type !== "thinking_delta") {
+    return message.delta.text;
+  }
   return contentToText(message.content) ?? contentToText(msg.content) ?? "";
+}
+
+/** Pull extended-thinking text out of an assistant/message frame (non-streaming path). */
+function extractThinkingText(msg: Record<string, unknown>): string {
+  const message = (msg.message ?? msg) as { content?: unknown };
+  return thinkingFromContent(message.content) ?? thinkingFromContent(msg.content) ?? "";
+}
+
+function thinkingFromContent(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const parts: string[] = [];
+  for (const c of content) {
+    if (c && typeof c === "object" && (c as { type?: string }).type === "thinking") {
+      const t = c as { thinking?: string; text?: string };
+      const body = t.thinking ?? t.text ?? "";
+      if (body) parts.push(String(body));
+    }
+  }
+  const joined = parts.join("");
+  return joined || undefined;
 }
 
 function extractDeltaText(msg: Record<string, unknown>): string {
   const delta = msg.delta as { text?: string; type?: string } | undefined;
+  if (delta?.type === "thinking_delta") return "";
   if (delta?.text) return delta.text;
   return "";
+}
+
+/**
+ * Pull an Anthropic usage envelope off an assistant/result frame.
+ * Fields per SSE / result: input_tokens, output_tokens,
+ * cache_read_input_tokens, cache_creation_input_tokens.
+ */
+function extractUsage(msg: Record<string, unknown>): ClaudeUsageDelta | null {
+  const candidates: unknown[] = [
+    (msg.message as { usage?: unknown } | undefined)?.usage,
+    msg.usage,
+    (msg.result as { usage?: unknown } | undefined)?.usage,
+  ];
+  for (const raw of candidates) {
+    if (!raw || typeof raw !== "object") continue;
+    const u = raw as Record<string, unknown>;
+    const inputTokens = numberField(u, "input_tokens", "inputTokens");
+    const outputTokens = numberField(u, "output_tokens", "outputTokens");
+    const cacheReadTokens = numberField(u, "cache_read_input_tokens", "cacheReadInputTokens");
+    const cacheCreationTokens = numberField(
+      u,
+      "cache_creation_input_tokens",
+      "cacheCreationInputTokens",
+    );
+    if (
+      inputTokens > 0 ||
+      outputTokens > 0 ||
+      cacheReadTokens > 0 ||
+      cacheCreationTokens > 0
+    ) {
+      return { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens };
+    }
+  }
+  return null;
+}
+
+function numberField(obj: Record<string, unknown>, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  }
+  return 0;
 }
 
 function extractToolUse(msg: Record<string, unknown>): { name: string; id?: string; input?: unknown } | null {
@@ -267,21 +431,106 @@ function contentToText(content: unknown): string | undefined {
     else if (c && typeof c === "object" && (c as { type?: string }).type === "text") {
       parts.push(String((c as { text?: string }).text ?? ""));
     }
+    // "thinking" blocks are intentionally skipped — they surface via extractThinkingText.
   }
   const t = parts.join("");
   return t || undefined;
 }
 
-/** Node hook: blocks Edit/Bash until ClankerSpanker host + phone approve. */
-const APPROVAL_HOOK_SOURCE = `#!/usr/bin/env node
+/**
+ * Claude Code PreToolUse decision payload (current format).
+ *
+ * Claude Code only reads `hookSpecificOutput.permissionDecision` for PreToolUse.
+ * Flat `{ decision, reason }` is silently discarded — the tool then falls through
+ * to the native permission system, which in headless `-p` + `default` mode yields
+ * "haven't granted it yet" even after the phone taps Approve.
+ *
+ * See: https://code.claude.com/docs/en/hooks (PreToolUse decision control)
+ * and anthropics/claude-code#48760.
+ */
+export function buildPreToolUseDecision(
+  decision: "allow" | "deny" | "ask" | "defer",
+  reason: string,
+): {
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "allow" | "deny" | "ask" | "defer";
+    permissionDecisionReason: string;
+  };
+} {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: decision,
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+/**
+ * Node hook: blocks Edit/Bash until ClankerSpanker host + phone approve.
+ * Must emit hookSpecificOutput.permissionDecision (not flat decision/reason).
+ */
+/** Directories that actually exist, for `--add-dir` / settings. */
+export function extraDirsForClaude(dirs?: string[]): string[] {
+  if (!dirs?.length) return [];
+  const out: string[] = [];
+  for (const dir of dirs) {
+    if (dir && existsSync(dir) && !out.includes(dir)) out.push(dir);
+  }
+  return out;
+}
+
+/** Settings.json body: PreToolUse hook + optional extra-dir Read grants. */
+export function buildClaudeHookSettings(hookPath: string, extraDirs: string[] = []): Record<string, unknown> {
+  const settings: Record<string, unknown> = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|Delete",
+          hooks: [
+            {
+              type: "command",
+              command: `node ${JSON.stringify(hookPath)}`,
+              timeout: 600,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  if (extraDirs.length) {
+    settings.permissions = {
+      additionalDirectories: extraDirs,
+      allow: extraDirs.map((d) => `Read(${d}/**)`),
+    };
+  }
+  return settings;
+}
+
+export const APPROVAL_HOOK_SOURCE = `#!/usr/bin/env node
 import { readFileSync } from "fs";
 
 const sessionId = process.env.CLAUDE_DISPATCH_SESSION_ID;
 const host = (process.env.CLAUDE_DISPATCH_HOST || "http://127.0.0.1:8787").replace(/\\/$/, "");
 const token = process.env.CLAUDE_DISPATCH_TOKEN || "";
 
-function out(obj) {
-  process.stdout.write(JSON.stringify(obj));
+/**
+ * PreToolUse only honors hookSpecificOutput.permissionDecision.
+ * Flat {decision, reason} is ignored → "haven't granted it yet" in headless.
+ */
+function decide(decision, reason) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: decision,
+      permissionDecisionReason: reason || "",
+    },
+  }));
+}
+
+function log(msg) {
+  try { process.stderr.write("[clankerspanker-hook] " + msg + "\\n"); } catch { /* ignore */ }
 }
 
 async function main() {
@@ -305,16 +554,18 @@ async function main() {
   // Safe tools auto-allow if hook was matched incorrectly
   const safe = /^(Read|Grep|Glob|LS|NotebookRead)$/i.test(String(toolName));
   if (safe) {
-    out({ decision: "allow", reason: "read-only" });
+    decide("allow", "read-only");
     process.exit(0);
   }
 
   if (!sessionId || !token) {
-    out({ decision: "deny", reason: "ClankerSpanker hook missing session/token env" });
-    process.exit(2);
+    log("missing CLAUDE_DISPATCH_SESSION_ID or CLAUDE_DISPATCH_TOKEN");
+    decide("deny", "ClankerSpanker hook missing session/token env");
+    process.exit(0);
   }
 
   try {
+    log("requesting approval for " + title);
     const createRes = await fetch(host + "/internal/claude-approval", {
       method: "POST",
       headers: {
@@ -330,8 +581,9 @@ async function main() {
     });
     if (!createRes.ok) {
       const t = await createRes.text();
-      out({ decision: "deny", reason: "approval create failed: " + t.slice(0, 200) });
-      process.exit(2);
+      log("create failed: " + t.slice(0, 200));
+      decide("deny", "approval create failed: " + t.slice(0, 200));
+      process.exit(0);
     }
     const { approvalId } = await createRes.json();
     const deadline = Date.now() + 10 * 60 * 1000;
@@ -343,19 +595,24 @@ async function main() {
       if (!poll.ok) continue;
       const st = await poll.json();
       if (st.status === "approved") {
-        out({ decision: "allow", reason: st.comment || "approved on phone" });
+        log("approved " + approvalId);
+        decide("allow", st.comment || "approved on phone");
         process.exit(0);
       }
       if (st.status === "rejected") {
-        out({ decision: "deny", reason: st.comment || "rejected on phone" });
-        process.exit(2);
+        log("rejected " + approvalId);
+        decide("deny", st.comment || "rejected on phone");
+        process.exit(0);
       }
     }
-    out({ decision: "deny", reason: "approval timed out (10m)" });
-    process.exit(2);
+    log("timed out waiting for approval");
+    decide("deny", "approval timed out (10m)");
+    process.exit(0);
   } catch (e) {
-    out({ decision: "deny", reason: "hook error: " + (e && e.message ? e.message : e) });
-    process.exit(2);
+    const msg = e && e.message ? e.message : String(e);
+    log("error: " + msg);
+    decide("deny", "hook error: " + msg);
+    process.exit(0);
   }
 }
 

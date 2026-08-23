@@ -22,6 +22,11 @@ const state = {
   baseURL: localStorage.getItem(STORAGE_URL) || window.location.origin,
   ws: null,
   connected: false,
+  // Profiles admin (Profiles tab). Populated by GET /profiles?admin=1
+  // when the browser is talking to the host over loopback.
+  admin: false,
+  adminProfiles: [],
+  profileEditor: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -71,7 +76,7 @@ function setConn(ok) {
 }
 
 function showView(name) {
-  ["list", "detail", "compose", "settings"].forEach((v) => {
+  ["list", "detail", "compose", "profiles", "settings"].forEach((v) => {
     $(`#view-${v}`)?.classList.toggle("hidden", v !== name);
   });
 }
@@ -444,24 +449,46 @@ function renderDetail() {
   });
 }
 
-function renderCompose() {
+async function renderCompose() {
   const root = $("#view-compose");
+  const profile = state.profiles.find((p) => p.id === state.profileId);
+  const isBot = profile?.backend === "bot";
   const opts = state.projects
     .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} — ${escapeHtml(p.path)}</option>`)
     .join("");
   root.innerHTML = `
     <div class="card">
       <h3>Dispatch a task</h3>
+      ${isBot ? `<p class="preview">Hunter bot — this becomes a normal session. Review the transcript and approve outbound drafts there. Nothing is sent.</p>` : ""}
       <label class="field">Project</label>
       <select id="c-project">${opts || `<option value="">(configure projects on host)</option>`}</select>
       <label class="field">Title (optional)</label>
       <input id="c-title" placeholder="Short name" />
       <label class="field">Prompt</label>
       <textarea id="c-prompt" placeholder="What should the agent do?"></textarea>
-      <label class="field"><input type="checkbox" id="c-plan" checked /> Plan mode</label>
-      <label class="field"><input type="checkbox" id="c-wt" checked /> Worktree</label>
+      ${
+        isBot
+          ? ""
+          : `<label class="field"><input type="checkbox" id="c-plan" checked /> Plan mode</label>
+      <label class="field"><input type="checkbox" id="c-wt" checked /> Worktree</label>`
+      }
       <button type="button" class="primary" id="c-go" style="width:100%;margin-top:12px">Spank a clanker</button>
     </div>`;
+  if (isBot) {
+    try {
+      const res = await api("/bots");
+      const bot =
+        (res.bots || []).find((b) => b.profileId === state.profileId) || (res.bots || [])[0];
+      if (bot) {
+        const ta = $("#c-prompt");
+        if (ta && !ta.value.trim()) ta.value = bot.job;
+        const sel = $("#c-project");
+        if (sel && [...sel.options].some((o) => o.value === bot.projectId)) sel.value = bot.projectId;
+      }
+    } catch {
+      /* optional */
+    }
+  }
   $("#c-go")?.addEventListener("click", async () => {
     const prompt = $("#c-prompt").value.trim();
     if (!prompt) {
@@ -475,8 +502,8 @@ function renderCompose() {
           prompt,
           projectId: $("#c-project").value || undefined,
           title: $("#c-title").value.trim() || undefined,
-          planMode: $("#c-plan").checked,
-          worktree: $("#c-wt").checked,
+          planMode: $("#c-plan")?.checked ?? false,
+          worktree: $("#c-wt")?.checked ?? false,
           subagents: true,
           profileId: state.profileId || undefined,
         }),
@@ -490,6 +517,318 @@ function renderCompose() {
       banner(e.message, true);
     }
   });
+}
+
+// ——— Profiles manager (loopback only) ———
+
+const BACKEND_LABEL = {
+  grok: "Grok (xAI ACP)",
+  claude: "Claude Code",
+  antigravity: "Gemini (Antigravity CLI)",
+  bot: "Bot (autonomous)",
+};
+const BACKEND_OPTIONS = ["grok", "claude", "antigravity", "bot"];
+const DEFAULT_COLOR_BY_BACKEND = {
+  grok: "#73B8FF",
+  claude: "#F97316",
+  antigravity: "#34A853",
+  bot: "#E879F9",
+};
+
+function renderProfiles() {
+  showView("profiles");
+  const root = $("#view-profiles");
+
+  if (!state.token) {
+    root.innerHTML = `<div class="list-empty">Connect in Settings to load profiles.</div>`;
+    return;
+  }
+  if (!state.admin) {
+    const localApp = `http://127.0.0.1:${window.location.port || 8787}/app/`;
+    root.innerHTML = `
+      <div class="card">
+        <h3>Profiles manager</h3>
+        <p class="preview">You're connected from another device, so create/edit is locked
+          (API keys must stay on the host). On the Mac running the gateway, open the
+          <strong>Host</strong> toolbar panel or this page locally:</p>
+        <p class="preview"><a href="${escapeAttr(localApp)}">${escapeHtml(localApp)}</a></p>
+        <p class="preview">Read-only view of configured profiles:</p>
+        <div class="profile-list">${(state.profiles || [])
+          .map(
+            (p) => `
+          <div class="profile-row">
+            <span class="profile-dot" style="background:${escapeAttr(p.color || "#73B8FF")}"></span>
+            <div class="profile-meta">
+              <div><strong>${escapeHtml(p.name)}</strong>
+                <span class="pill muted">${escapeHtml(BACKEND_LABEL[p.backend] || p.backend)}</span>
+                ${p.hasCredentials ? '<span class="pill ok">ready</span>' : '<span class="pill warn">no creds</span>'}
+              </div>
+              <div class="meta">${escapeHtml(p.id)}${p.model ? ` · ${escapeHtml(p.model)}` : ""}</div>
+            </div>
+          </div>`,
+          )
+          .join("")}</div>
+      </div>`;
+    return;
+  }
+
+  const rows = (state.adminProfiles || [])
+    .map((p) => {
+      const publ = (state.profiles || []).find((x) => x.id === p.id) || {};
+      const badges = [
+        `<span class="pill muted">${escapeHtml(BACKEND_LABEL[p.backend] || p.backend)}</span>`,
+        publ.hasCredentials
+          ? '<span class="pill ok">ready</span>'
+          : '<span class="pill warn">no creds</span>',
+      ];
+      const configDir =
+        p.backend === "claude"
+          ? p.claudeConfigDir
+          : p.backend === "antigravity"
+            ? p.antigravityConfigDir
+            : null;
+      const envCount = p.env ? Object.keys(p.env).filter((k) => k.trim()).length : 0;
+      const canLogin = p.backend === "claude";
+      return `
+        <div class="profile-row">
+          <span class="profile-dot" style="background:${escapeAttr(p.color || "#73B8FF")}"></span>
+          <div class="profile-meta">
+            <div><strong>${escapeHtml(p.name)}</strong> ${badges.join(" ")}</div>
+            <div class="meta">
+              <span>${escapeHtml(p.id)}</span>
+              ${p.model ? `<span>model: ${escapeHtml(p.model)}</span>` : ""}
+              ${configDir ? `<span>dir: ${escapeHtml(shortPath(configDir))}</span>` : ""}
+              ${envCount ? `<span>env: ${envCount}</span>` : ""}
+            </div>
+          </div>
+          <div class="row-actions">
+            ${canLogin ? `<button type="button" class="secondary" data-login="${escapeAttr(p.id)}">Login</button>` : ""}
+            <button type="button" class="secondary" data-edit="${escapeAttr(p.id)}">Edit</button>
+            <button type="button" class="danger" data-delete="${escapeAttr(p.id)}">Delete</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  root.innerHTML = `
+    <div class="card">
+      <div class="row">
+        <div>
+          <h3>Profiles</h3>
+          <p class="preview">Local admin — creds and config paths edit through this pane and get written to <code>~/.grok-dispatch/config.json</code>. Restart the host to pick up new profiles.</p>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="primary" id="btn-new-profile">Add profile</button>
+        </div>
+      </div>
+      <div class="profile-list">${rows || '<p class="preview">No profiles yet.</p>'}</div>
+    </div>
+    <div id="profile-editor"></div>`;
+
+  root.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openProfileEditor(btn.getAttribute("data-edit"))),
+  );
+  root.querySelectorAll("[data-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => deleteProfile(btn.getAttribute("data-delete"))),
+  );
+  root.querySelectorAll("[data-login]").forEach((btn) =>
+    btn.addEventListener("click", () => loginProfile(btn.getAttribute("data-login"))),
+  );
+  $("#btn-new-profile")?.addEventListener("click", () => openProfileEditor(null));
+
+  if (state.profileEditor) openProfileEditor(state.profileEditor.id, state.profileEditor.draft);
+}
+
+function openProfileEditor(id, draftOverride) {
+  const isNew = !id;
+  const source = isNew
+    ? {
+        id: "",
+        name: "",
+        backend: "grok",
+        color: DEFAULT_COLOR_BY_BACKEND.grok,
+        model: "",
+        systemPrompt: "",
+        claudeConfigDir: "",
+        antigravityConfigDir: "",
+        env: {},
+      }
+    : (state.adminProfiles || []).find((p) => p.id === id);
+  if (!isNew && !source) return;
+  const draft = draftOverride || {
+    id: source.id || "",
+    name: source.name || "",
+    backend: source.backend || "grok",
+    color: source.color || DEFAULT_COLOR_BY_BACKEND[source.backend] || "#73B8FF",
+    model: source.model || "",
+    systemPrompt: source.systemPrompt || "",
+    claudeConfigDir: source.claudeConfigDir || "",
+    antigravityConfigDir: source.antigravityConfigDir || "",
+    envText: envToText(source.env || {}),
+  };
+  state.profileEditor = { id: id || null, draft };
+
+  const dir =
+    draft.backend === "claude"
+      ? { label: "Claude config dir", key: "claudeConfigDir", hint: "Sets CLAUDE_CONFIG_DIR for this profile so a second Claude account uses its own OAuth store. Leave blank for the default ~/.claude." }
+      : draft.backend === "antigravity"
+        ? { label: "Antigravity config dir", key: "antigravityConfigDir", hint: "Reserved for multi-account isolation once the agy CLI supports it — today it still uses the global ~/.gemini keyring." }
+        : null;
+
+  const envHint =
+    draft.backend === "claude"
+      ? "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN (leave blank to use interactive Claude login)."
+      : draft.backend === "antigravity"
+        ? "GEMINI_API_KEY / GOOGLE_API_KEY / GOOGLE_GENAI_API_KEY (or leave blank and run `agy` on the host to sign in)."
+        : draft.backend === "bot"
+          ? "One of XAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY + OPENAI_BASE_URL."
+          : "XAI_API_KEY (or leave blank to use the local `grok` CLI login at ~/.grok/auth.json).";
+
+  const host = $("#profile-editor");
+  host.innerHTML = `
+    <div class="card">
+      <h3>${isNew ? "New profile" : `Edit ${escapeHtml(source.name)}`}</h3>
+      <label class="field">Name</label>
+      <input id="pe-name" value="${escapeAttr(draft.name)}" placeholder="e.g. Work Claude" />
+      ${isNew
+        ? `<label class="field">Id (slug — leave blank to derive from name)</label>
+           <input id="pe-id" value="${escapeAttr(draft.id)}" placeholder="auto" />`
+        : ""}
+      <label class="field">Backend</label>
+      <select id="pe-backend">${BACKEND_OPTIONS.map(
+        (b) => `<option value="${b}" ${b === draft.backend ? "selected" : ""}>${escapeHtml(BACKEND_LABEL[b])}</option>`,
+      ).join("")}</select>
+      <label class="field">Color (hex or name)</label>
+      <input id="pe-color" value="${escapeAttr(draft.color)}" />
+      <label class="field">Model (leave blank for CLI default)</label>
+      <input id="pe-model" value="${escapeAttr(draft.model)}" placeholder="e.g. claude, grok-4, gemini-3.5-flash-medium" />
+      ${dir
+        ? `<label class="field">${escapeHtml(dir.label)}</label>
+           <input id="pe-configdir" value="${escapeAttr(draft[dir.key])}" placeholder="~/.claude-work" />
+           <p class="preview">${escapeHtml(dir.hint)}</p>`
+        : ""}
+      <label class="field">Environment (KEY=VALUE per line, secrets stay on this machine)</label>
+      <textarea id="pe-env" rows="4" spellcheck="false" placeholder="ANTHROPIC_API_KEY=sk-...">${escapeHtml(draft.envText)}</textarea>
+      <p class="preview">${escapeHtml(envHint)}</p>
+      <label class="field">System prompt (Claude persona — appended)</label>
+      <textarea id="pe-sysprompt" rows="3">${escapeHtml(draft.systemPrompt)}</textarea>
+      <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
+        <button type="button" class="secondary" id="pe-cancel">Cancel</button>
+        <button type="button" class="primary" id="pe-save">${isNew ? "Create profile" : "Save changes"}</button>
+      </div>
+    </div>`;
+
+  const readDraft = () => ({
+    id: isNew ? ($("#pe-id")?.value.trim() || "") : source.id,
+    name: $("#pe-name").value.trim(),
+    backend: $("#pe-backend").value,
+    color: $("#pe-color").value.trim(),
+    model: $("#pe-model").value.trim(),
+    systemPrompt: $("#pe-sysprompt").value.trim(),
+    claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : source.claudeConfigDir || "",
+    antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : source.antigravityConfigDir || "",
+    envText: $("#pe-env").value,
+  });
+
+  $("#pe-backend").addEventListener("change", () => {
+    const next = readDraft();
+    // Snap color to default if user hasn't customized off the previous backend default
+    const prevDefault = DEFAULT_COLOR_BY_BACKEND[draft.backend];
+    if (!next.color || next.color.toLowerCase() === prevDefault?.toLowerCase()) {
+      next.color = DEFAULT_COLOR_BY_BACKEND[next.backend] || next.color;
+    }
+    openProfileEditor(id, next);
+  });
+  $("#pe-cancel").addEventListener("click", () => {
+    state.profileEditor = null;
+    renderProfiles();
+  });
+  $("#pe-save").addEventListener("click", async () => {
+    const d = readDraft();
+    if (!d.name) {
+      banner("Name is required", true);
+      return;
+    }
+    const env = envFromText(d.envText);
+    const payload = {
+      name: d.name,
+      backend: d.backend,
+      color: d.color || DEFAULT_COLOR_BY_BACKEND[d.backend],
+      model: d.model || null,
+      systemPrompt: d.systemPrompt || null,
+      claudeConfigDir: d.claudeConfigDir || null,
+      antigravityConfigDir: d.antigravityConfigDir || null,
+      env,
+    };
+    try {
+      if (isNew) {
+        if (d.id) payload.id = d.id;
+        await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
+        banner("Profile created — it is live now. Refresh the Mac app if chips don't appear.");
+      } else {
+        await api(`/profiles/${encodeURIComponent(source.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        banner("Profile saved");
+      }
+      state.profileEditor = null;
+      await refresh();
+      renderProfiles();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  });
+}
+
+async function deleteProfile(id) {
+  if (!id) return;
+  if (!confirm(`Delete profile "${id}"? Config file is updated immediately; running sessions using this profile are refused.`)) return;
+  try {
+    await api(`/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+    banner("Profile deleted");
+    if (state.profileEditor?.id === id) state.profileEditor = null;
+    await refresh();
+    renderProfiles();
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+async function loginProfile(id) {
+  if (!id) return;
+  try {
+    const r = await api(`/profiles/${encodeURIComponent(id)}/login`, {
+      method: "POST",
+      body: "{}",
+    });
+    banner(r?.message || "Login started — check the host terminal / browser");
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+function envToText(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k && k.trim())
+    .map(([k, v]) => `${k}=${v ?? ""}`)
+    .join("\n");
+}
+
+function envFromText(text) {
+  const out = {};
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) return;
+      const k = trimmed.slice(0, eq).trim();
+      const v = trimmed.slice(eq + 1);
+      if (k) out[k] = v;
+    });
+  return out;
 }
 
 function renderSettings() {
@@ -542,7 +881,8 @@ async function refresh() {
     const [sessions, projects, profiles] = await Promise.all([
       api("/sessions"),
       api("/projects").catch(() => ({ projects: [] })),
-      api("/profiles").catch(() => ({ profiles: [] })),
+      // Ask for admin payload; server ignores it for non-loopback callers.
+      api("/profiles?admin=1").catch(() => ({ profiles: [], admin: false })),
     ]);
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
@@ -550,6 +890,8 @@ async function refresh() {
     state.claude = sessions.claudeSessions || [];
     state.projects = projects.projects || [];
     state.profiles = profiles.profiles || [];
+    state.admin = profiles.admin === true;
+    state.adminProfiles = profiles.adminProfiles || [];
     if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
     setConn(true);
     if (!state.detail) renderList();
@@ -629,6 +971,8 @@ function boot() {
         renderCompose();
       } else if (state.tab === "settings") {
         renderSettings();
+      } else if (state.tab === "profiles") {
+        renderProfiles();
       } else {
         renderList();
       }

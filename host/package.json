@@ -2,7 +2,7 @@
   "name": "clankerspanker-host",
   "version": "0.3.2",
   "private": true,
-  "description": "Local-first host gateway for ClankerSpanker (browser + iOS \u2192 Grok Build / Claude Code)",
+  "description": "Local-first host gateway for ClankerSpanker (browser + iOS → Grok Build / Claude Code / Antigravity CLI / in-process bot runtime)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

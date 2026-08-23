@@ -161,6 +161,98 @@ struct SettingsView: View {
                     }
                     .listRowBackground(DispatchColors.card)
 
+                    Section {
+                        if appState.boundProfiles.isEmpty {
+                            Text("Add a host and refresh to load profiles.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(appState.boundProfiles) { bound in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Circle().fill(bound.uiColor).frame(width: 8, height: 8)
+                                        Text(bound.displayName)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(bound.backendLabel)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        if let can = bound.profile.usage?.canWork {
+                                            Text(can ? "Ready" : "Exhausted")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(can ? DispatchColors.success : DispatchColors.danger)
+                                        }
+                                    }
+                                    if let usage = bound.profile.usage {
+                                        Text(usage.shortLabel)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(usage.trafficColor)
+                                        if let email = usage.accountEmail {
+                                            Text(email)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if let err = usage.error, !err.isEmpty {
+                                            Text(err)
+                                                .font(.caption2)
+                                                .foregroundStyle(DispatchColors.danger)
+                                                .lineLimit(2)
+                                        }
+                                        if usage.canWork == false || usage.status == "error" || usage.status == "unknown" {
+                                            if bound.profile.isClaude {
+                                                Button {
+                                                    Task {
+                                                        isWorking = true
+                                                        defer { isWorking = false }
+                                                        do {
+                                                            let res = try await appState.api.loginProfile(
+                                                                id: bound.profile.id,
+                                                                host: bound.host,
+                                                                email: usage.accountEmail
+                                                            )
+                                                            statusMessage = res.message ?? res.error ?? "Login started"
+                                                        } catch {
+                                                            statusMessage = error.localizedDescription
+                                                        }
+                                                    }
+                                                } label: {
+                                                    Label("Sign in on this Mac…", systemImage: "arrow.up.forward.app")
+                                                        .font(.caption.weight(.semibold))
+                                                }
+                                                .buttonStyle(.bordered)
+                                            }
+                                        }
+                                    } else {
+                                        Text(bound.profile.hasCredentials == true ? "Usage not loaded yet" : "No credentials")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Text(bound.hostLabel)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .listRowBackground(DispatchColors.card)
+                            }
+                            Button {
+                                Task {
+                                    isWorking = true
+                                    defer { isWorking = false }
+                                    await appState.refreshProfileUsage()
+                                    statusMessage = "Usage refreshed"
+                                }
+                            } label: {
+                                Label(isWorking ? "Refreshing…" : "Refresh usage", systemImage: "gauge.with.dots.needle.67percent")
+                            }
+                            .disabled(isWorking)
+                            .listRowBackground(DispatchColors.card)
+                        }
+                    } header: {
+                        Text("Profile usage")
+                    } footer: {
+                        Text("Profile chips show plan usage used this period (Claude 5h/wk, Grok weekly credits, Gemini remaining Cloud Code quota).")
+                            .font(.caption2)
+                    }
+
                     Section("Reminders") {
                         Toggle("Keep hosts reachable reminder", isOn: $keepAwakeReminder)
                     }
@@ -182,7 +274,14 @@ struct SettingsView: View {
                     }
 
                     Section("About") {
-                        LabeledContent("App", value: "ClankerSpanker 0.6.0")
+                        LabeledContent(
+                            "App",
+                            value: {
+                                let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                                let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+                                return "ClankerSpanker \(v) (\(b))"
+                            }()
+                        )
                         #if os(macOS)
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker.mac")
                         LabeledContent("Platform", value: "macOS")
@@ -197,12 +296,20 @@ struct SettingsView: View {
                 }
                 .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Settings")
+            // Title lives in the top tab strip; no page header.
+            .navigationTitle("")
+            #if os(iOS)
+            .toolbar(.hidden, for: .navigationBar)
+            #endif
             .onAppear {
                 keepAwakeReminder = UserDefaults.standard.object(forKey: "keepAwakeReminder") as? Bool ?? true
             }
             .onChange(of: keepAwakeReminder) { _, value in
                 UserDefaults.standard.set(value, forKey: "keepAwakeReminder")
+            }
+            .onChange(of: appState.tabRefreshTick) { _, _ in
+                guard appState.selectedTab == .settings else { return }
+                Task { await appState.refreshSessions() }
             }
         }
     }

@@ -24,6 +24,7 @@ struct MacHostPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                profilesCard
                 projectsCard
                 packageCard
                 logsCard
@@ -167,6 +168,11 @@ struct MacHostPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(4)
         }
+    }
+
+    private var profilesCard: some View {
+        MacProfilesSection(loopbackHost: HostEndpoint(name: "This Mac", baseURL: host.localBaseURL))
+            .environmentObject(appState)
     }
 
     private var projectsCard: some View {

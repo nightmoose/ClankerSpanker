@@ -36,6 +36,22 @@ export function defaultProfiles(): AgentProfile[] {
   ];
 }
 
+/** Map a raw profile backend string. Unknown values still fall through to grok — except `bot`. */
+export function normalizeBackend(raw?: string): SessionBackend {
+  const b = (raw ?? "").trim().toLowerCase();
+  if (b === "claude") return "claude";
+  if (b === "antigravity" || b === "agy" || b === "gemini") return "antigravity";
+  if (b === "bot") return "bot";
+  return "grok";
+}
+
+function defaultColorForBackend(backend: SessionBackend): string {
+  if (backend === "claude") return "#F97316";
+  if (backend === "antigravity") return "#34A853"; // Google green
+  if (backend === "bot") return "#E879F9";
+  return "#73B8FF";
+}
+
 export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
   if (!raw?.length) return defaultProfiles();
   const seen = new Set<string>();
@@ -45,15 +61,20 @@ export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
     const id = p.id.trim();
     if (seen.has(id)) continue;
     seen.add(id);
-    const backend: SessionBackend = p.backend === "claude" ? "claude" : "grok";
+    const backend = normalizeBackend(p.backend);
     out.push({
       id,
       name: p.name.trim(),
       backend,
-      color: (p.color ?? (backend === "claude" ? "#F97316" : "#73B8FF")).trim(),
+      color: (p.color ?? defaultColorForBackend(backend)).trim(),
       env: p.env && typeof p.env === "object" ? { ...p.env } : {},
       claudeConfigDir: p.claudeConfigDir?.trim() || undefined,
+      antigravityConfigDir: p.antigravityConfigDir?.trim() || undefined,
       model: p.model?.trim() || undefined,
+      systemPrompt: p.systemPrompt?.trim() || undefined,
+      toolAllowlist: Array.isArray(p.toolAllowlist)
+        ? p.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
+        : undefined,
     });
   }
   return out.length ? out : defaultProfiles();
@@ -66,6 +87,8 @@ export function publicProfiles(config: HostConfigFile): PublicAgentProfile[] {
     backend: p.backend,
     color: p.color,
     model: p.model,
+    systemPrompt: p.systemPrompt,
+    toolAllowlist: p.toolAllowlist,
     hasCredentials: profileHasCredentials(p),
   }));
 }
@@ -80,8 +103,46 @@ export function profileHasCredentials(p: AgentProfile): boolean {
     // Default CLI login often lives as OAuth under ~/.claude.json (no API key env)
     return existsSync(join(homedir(), ".claude.json"));
   }
-  // Grok uses machine-level grok login / XAI_API_KEY
-  return Boolean(process.env.XAI_API_KEY || p.env?.XAI_API_KEY);
+  if (p.backend === "antigravity") {
+    const key =
+      p.env?.GEMINI_API_KEY?.trim() ||
+      p.env?.GOOGLE_API_KEY?.trim() ||
+      p.env?.GOOGLE_GENAI_API_KEY?.trim();
+    if (key) return true;
+    if (
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_GENAI_API_KEY
+    ) {
+      return true;
+    }
+    // Interactive `agy` login stores credentials in OS keyring + local settings
+    const home = homedir();
+    const configDir = p.antigravityConfigDir?.trim() || join(home, ".gemini", "antigravity-cli");
+    if (existsSync(configDir)) return true;
+    if (existsSync(join(home, ".gemini"))) return true;
+    return false;
+  }
+  if (p.backend === "bot") {
+    const env = { ...process.env, ...(p.env ?? {}) };
+    if (env.XAI_API_KEY?.trim()) return true;
+    if (env.ANTHROPIC_API_KEY?.trim() || env.ANTHROPIC_AUTH_TOKEN?.trim()) return true;
+    if (env.OPENAI_API_KEY?.trim() && env.OPENAI_BASE_URL?.trim()) return true;
+    if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || env.GOOGLE_GENAI_API_KEY?.trim()) {
+      return true;
+    }
+    // Same Grok CLI login NightMoose uses for ACP.
+    const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
+    if (existsSync(join(grokHome, "auth.json"))) return true;
+    if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
+    return false;
+  }
+  // Grok: API key env OR CLI login (~/.grok/auth.json from `grok` sign-in)
+  if (process.env.XAI_API_KEY?.trim() || p.env?.XAI_API_KEY?.trim()) return true;
+  const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
+  if (existsSync(join(grokHome, "auth.json"))) return true;
+  if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
+  return false;
 }
 
 export function resolveProfile(
@@ -109,7 +170,37 @@ export function profileProcessEnv(profile: AgentProfile): NodeJS.ProcessEnv {
     // Claude Code respects CLAUDE_CONFIG_DIR for multi-account isolation when set
     env.CLAUDE_CONFIG_DIR = profile.claudeConfigDir;
   }
+  if (profile.antigravityConfigDir) {
+    // Hint for future multi-login; also set XDG-style home override if useful
+    env.ANTIGRAVITY_CONFIG_DIR = profile.antigravityConfigDir;
+  }
   return env;
+}
+
+/** Default model slug for a backend when profile/request omit one. */
+export function defaultModelForBackend(backend: SessionBackend): string {
+  if (backend === "claude") return "claude";
+  if (backend === "antigravity") return "antigravity";
+  if (backend === "bot") return "grok-4";
+  return "grok-build";
+}
+
+/**
+ * Model strings that mean "let the CLI pick its own default." When the
+ * session model matches one of these, runners should NOT pass `--model` —
+ * the CLI's own default (usually the newest Sonnet / Opus for the account
+ * plan) is preferable to pinning an old slug.
+ */
+const CLAUDE_MODEL_SENTINELS: ReadonlySet<string> = new Set(["claude", "default", ""]);
+
+/** True when the given model string is a placeholder that should not be passed to `claude --model`. */
+export function isClaudeModelSentinel(model?: string | null): boolean {
+  return CLAUDE_MODEL_SENTINELS.has((model ?? "").trim().toLowerCase());
+}
+
+/** Grok ACP meta (plan mode / worktree / subagents) — not used by CLI backends. */
+export function isGrokBackend(backend?: SessionBackend | string | null): boolean {
+  return !backend || backend === "grok";
 }
 
 /** CSS-friendly color for web; clients may also parse hex. */
@@ -126,6 +217,7 @@ export function resolveColorHex(color: string): string {
     red: "#F87171",
     pink: "#F472B6",
     teal: "#2DD4BF",
+    fuchsia: "#E879F9",
   };
   return named[c] ?? "#A1A1AA";
 }

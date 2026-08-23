@@ -28,9 +28,32 @@ paths:
     get:
       summary: git diff in session cwd
       security: [{ bearerAuth: [] }]
+  /bots:
+    get:
+      summary: List autonomous bots
+      security: [{ bearerAuth: [] }]
+    post:
+      summary: Create a bot
+      security: [{ bearerAuth: [] }]
+  /bots/{id}:
+    patch:
+      summary: Update a bot
+      security: [{ bearerAuth: [] }]
+  /bots/{id}/run:
+    post:
+      summary: Manually fire a bot run (optional JSON { note } for a one-shot instruction)
+      security: [{ bearerAuth: [] }]
+  /bots/{id}/outbox:
+    get:
+      summary: List .bot-outbox markdown drafts for this bot's project
+      security: [{ bearerAuth: [] }]
   /dispatch:
     post:
       summary: Create and start a task
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/tool-calls/{toolCallId}:
+    get:
+      summary: Full tool-call payload (rawInput/content JSON) for the ellipsis detail sheet
       security: [{ bearerAuth: [] }]
   /sessions/{id}/prompt:
     post:

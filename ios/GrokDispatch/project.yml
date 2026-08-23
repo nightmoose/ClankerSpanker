@@ -9,8 +9,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.6.1"
-    CURRENT_PROJECT_VERSION: "15"
+    MARKETING_VERSION: "0.6.10"
+    CURRENT_PROJECT_VERSION: "24"
     DEVELOPMENT_TEAM: "XHS7K665C9"
     CODE_SIGN_STYLE: Automatic
     # Phone target turns this OFF — generated merge was dropping NSAppTransportSecurity.
@@ -49,9 +49,13 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
+        # Critical: do NOT set NSAllowsLocalNetworking here. On iOS 10+ it causes
+        # NSAllowsArbitraryLoads to be ignored, and Tailscale 100.x is not "local".
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: "ClankerSpanker connects to your Mac host on the local network and Tailscale to run agent sessions."
+        NSCameraUsageDescription: "ClankerSpanker attaches camera photos to agent messages for debugging UI and app screens."
+        NSPhotoLibraryUsageDescription: "ClankerSpanker attaches screenshots and photos to agent messages for debugging."
         CFBundleURLTypes:
           - CFBundleURLName: com.nightmoose.clankerspanker
             CFBundleURLSchemes:
@@ -93,7 +97,6 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true
         CFBundleURLTypes:
           - CFBundleURLName: com.nightmoose.clankerspanker.mac

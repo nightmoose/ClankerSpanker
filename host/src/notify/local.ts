@@ -8,12 +8,34 @@ import { hostPlatform } from "../platform.js";
  * - Windows: PowerShell balloon (best effort)
  * - else: log only
  */
+/**
+ * macOS bundle ID we want desktop notifications attributed to. A bare
+ * `osascript -e 'display notification ...'` gets attributed to Script Editor
+ * (that's who's running the script) so clicking the banner opens Script
+ * Editor instead of ClankerSpanker. Running the same command inside a
+ * `tell application id "…" to …` block attributes it to that app and makes
+ * clicks open ClankerSpanker Mac.
+ */
+const MAC_APP_BUNDLE_ID = "com.nightmoose.clankerspanker.mac";
+
 export function notifyDesktop(title: string, message: string): void {
   const plat = hostPlatform();
   if (plat === "darwin") {
-    const script = `display notification ${jsonString(message)} with title ${jsonString(title)}`;
+    const escapedTitle = jsonString(title);
+    const escapedMessage = jsonString(message);
+    const script =
+      `tell application id ${jsonString(MAC_APP_BUNDLE_ID)} ` +
+      `to display notification ${escapedMessage} with title ${escapedTitle}`;
     execFile("osascript", ["-e", script], (err) => {
-      if (err) console.warn("[notify] osascript failed:", err.message);
+      if (!err) return;
+      // ClankerSpanker Mac isn't registered with Launch Services (fresh
+      // machine, or CLI-only host). Fall back to the bare notification —
+      // banner will be attributed to Script Editor, which is ugly but at
+      // least the user gets notified.
+      const fallback = `display notification ${escapedMessage} with title ${escapedTitle}`;
+      execFile("osascript", ["-e", fallback], (err2) => {
+        if (err2) console.warn("[notify] osascript failed:", err2.message);
+      });
     });
     return;
   }

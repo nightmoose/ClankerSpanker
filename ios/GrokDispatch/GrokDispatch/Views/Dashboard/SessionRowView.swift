@@ -5,29 +5,20 @@ struct SessionRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(session.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                if let name = session.profileName, !name.isEmpty {
-                    Text(name)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .foregroundStyle(Color(hex: session.profileColor ?? "") ?? (session.backend == "claude" ? Color.orange : DispatchColors.accent))
-                        .background((Color(hex: session.profileColor ?? "") ?? Color.orange).opacity(0.15))
-                        .clipShape(Capsule())
-                } else if session.backend == "claude" || session.model.lowercased().contains("claude") {
-                    Text("Claude")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .foregroundStyle(Color.orange)
-                        .background(Color.orange.opacity(0.15))
-                        .clipShape(Capsule())
+            // Title + profile stacked left; square status tile aligned to both lines on the right.
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    profileChip
                 }
-                StatusBadge(status: session.status)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                StatusBadge(status: session.status, compact: true)
+                    .layoutPriority(1)
             }
 
             if let preview = session.transcriptPreview, !preview.isEmpty {
@@ -55,6 +46,57 @@ struct SessionRowView: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var profileChip: some View {
+        if let name = session.profileName, !name.isEmpty {
+            Text(name)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(profileColor)
+                .background(profileColor.opacity(0.15))
+                .clipShape(Capsule())
+        } else if session.backend == "antigravity"
+            || session.model.lowercased().contains("gemini")
+            || session.model.lowercased().contains("antigravity")
+        {
+            Text("Agy")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(Color(red: 0.20, green: 0.66, blue: 0.33))
+                .background(Color(red: 0.20, green: 0.66, blue: 0.33).opacity(0.15))
+                .clipShape(Capsule())
+        } else if session.backend == "bot" {
+            Text("Bot")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(Color(red: 0.91, green: 0.47, blue: 0.98))
+                .background(Color(red: 0.91, green: 0.47, blue: 0.98).opacity(0.15))
+                .clipShape(Capsule())
+        } else if session.backend == "claude" || session.model.lowercased().contains("claude") {
+            Text("Claude")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(Color.orange)
+                .background(Color.orange.opacity(0.15))
+                .clipShape(Capsule())
+        }
+    }
+
+    private var profileColor: Color {
+        Color(hex: session.profileColor ?? "")
+            ?? (session.backend == "bot"
+                ? Color(red: 0.91, green: 0.47, blue: 0.98)
+                : session.backend == "claude"
+                    ? Color.orange
+                    : session.backend == "antigravity"
+                        ? Color(red: 0.20, green: 0.66, blue: 0.33)
+                        : DispatchColors.accent)
     }
 
     private func shortPath(_ path: String) -> String {

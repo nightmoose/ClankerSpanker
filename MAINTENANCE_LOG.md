@@ -2,6 +2,13 @@
 
 ---
 
+## Run: 2026-08-23 — RFC-000 CI: parse vitest summary without ANSI
+
+Second CI fail: tests were green but the ratchet regex missed `Tests 106 passed`
+because Actions emits ANSI. Strip CSI sequences and set `NO_COLOR=1`.
+
+---
+
 ## Run: 2026-08-23 — RFC-000 CI: hermetic Grok CLI credential test
 
 GitHub Actions failed `profileHasCredentials bot > accepts Grok CLI login`

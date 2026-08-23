@@ -40,6 +40,9 @@ struct SessionDetailView: View {
     /// When set, the transcript scrolls to this entry id after its ScrollViewReader
     /// picks up the change. Used by "Jump to message" from Notes/Tasks rows.
     @State private var pendingScrollToMessageId: String?
+    /// Open the expanded markdown viewer on this entry (todo / jump).
+    @State private var expandMessageId: String?
+    private let initialMessageId: String?
     @State private var showDeleteConfirm = false
     @State private var showSessionDetails = false
     @Environment(\.dismiss) private var dismissView
@@ -72,8 +75,9 @@ struct SessionDetailView: View {
         }
     }
 
-    init(sessionId: String, host: HostEndpoint) {
+    init(sessionId: String, host: HostEndpoint, scrollToMessageId: String? = nil) {
         _vm = StateObject(wrappedValue: SessionDetailViewModel(sessionId: sessionId, host: host))
+        self.initialMessageId = scrollToMessageId
     }
 
     private var canSendFollowUp: Bool {
@@ -431,6 +435,11 @@ struct SessionDetailView: View {
         .task {
             await vm.load(api: appState.api)
             await vm.loadDiff(api: appState.api)
+            if let mid = initialMessageId, !mid.isEmpty {
+                selectedTab = .transcript
+                pendingScrollToMessageId = mid
+                expandMessageId = mid
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { note in
             guard let data = note.object as? Data else { return }
@@ -780,7 +789,8 @@ struct SessionDetailView: View {
                 agentLabel: agentLabel(for: detail),
                 onSaveAsTodo: { entry in captureSheet = .saveAsTodo(entry) },
                 onScanForTodo: { entry in captureSheet = .scanForTodo(entry) },
-                onMakeNote: { entry in captureSheet = .makeNote(entry) }
+                onMakeNote: { entry in captureSheet = .makeNote(entry) },
+                expandMessageId: expandMessageId
             )
         case .tools:
             if detail.toolCalls.isEmpty {
@@ -848,6 +858,7 @@ struct SessionDetailView: View {
                     // scrollTo fires.
                     selectedTab = .transcript
                     pendingScrollToMessageId = messageId
+                    expandMessageId = messageId
                 }
             )
             .environmentObject(appState)
@@ -1231,16 +1242,27 @@ private struct TranscriptScrollPane<Content: View>: View {
             .onChange(of: pendingScrollToMessageId) { _, target in
                 jumpToMessage(proxy, target)
             }
+            .onAppear {
+                if pendingScrollToMessageId != nil {
+                    jumpToMessage(proxy, pendingScrollToMessageId)
+                }
+            }
         }
     }
 
     private func jumpToMessage(_ proxy: ScrollViewProxy, _ target: String?) {
         guard let target else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.easeInOut(duration: 0.35)) {
-                proxy.scrollTo(target, anchor: .center)
+        // LazyVStack may not have materialized the row yet — retry like pinBottom.
+        let delays: [Double] = [0.05, 0.12, 0.28, 0.5, 0.9, 1.4]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            if pendingScrollToMessageId == target {
                 pendingScrollToMessageId = nil
             }
         }
@@ -1248,6 +1270,8 @@ private struct TranscriptScrollPane<Content: View>: View {
 
     private func pinBottom(_ proxy: ScrollViewProxy, initial: Bool) {
         guard selectedTab == .transcript else { return }
+        // A pending jump wins — otherwise the bottom-pin retries yank us off the message.
+        guard pendingScrollToMessageId == nil else { return }
         let targets = bottomTargets()
         func go(animated: Bool) {
             let apply = {

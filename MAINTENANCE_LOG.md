@@ -2,6 +2,23 @@
 
 ---
 
+## Run: 2026-08-23 — RFC-001 markdown tables + todo jump to source
+
+Expanded-message `MarkdownParser` had no table block — GFM `| col |` rows
+rendered as pipe soup. Added table parse + `Grid` render.
+
+Tasks tab built `SessionRoute` with session id only, so the user landed at
+the bottom of the transcript. Route now carries `sourceMessageId`; detail
+scrolls (retries; pin-to-bottom skipped while jumping) and opens the
+expand sheet on that message. Save-as-todo footer no longer tells you to
+throw the body away. Linux Tasks list used `t.sessionId` (wrong) and
+ellipsis-truncated the card; both fixed, plus `openSession(id, messageId)`.
+
+**Soak:** expand a table-heavy assistant message; tap a todo that was saved
+from a message.
+
+---
+
 ## Run: 2026-08-23 — RFC-000 CI: parse vitest summary without ANSI
 
 Second CI fail: tests were green but the ratchet regex missed `Tests 106 passed`

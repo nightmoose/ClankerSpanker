@@ -50,14 +50,22 @@ struct DashboardView: View {
             #endif
             .navigationDestination(item: $pendingRoute) { route in
                 if let host = appState.hosts.first(where: { $0.id == route.hostId }) {
-                    SessionDetailView(sessionId: route.sessionId, host: host)
+                    SessionDetailView(
+                        sessionId: route.sessionId,
+                        host: host,
+                        scrollToMessageId: route.messageId
+                    )
                 } else {
                     Text("Host no longer available").foregroundStyle(.secondary)
                 }
             }
             .navigationDestination(for: SessionRoute.self) { route in
                 if let host = appState.hosts.first(where: { $0.id == route.hostId }) {
-                    SessionDetailView(sessionId: route.sessionId, host: host)
+                    SessionDetailView(
+                        sessionId: route.sessionId,
+                        host: host,
+                        scrollToMessageId: route.messageId
+                    )
                 } else {
                     Text("Host no longer available").foregroundStyle(.secondary)
                 }

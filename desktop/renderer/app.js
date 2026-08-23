@@ -589,7 +589,7 @@ function scheduleHostSearch(query) {
     });
 }
 
-async function openSession(id) {
+async function openSession(id, messageId) {
   const isNew = state.selectedId !== id;
   state.selectedId = id;
   if (isNew) {
@@ -601,15 +601,34 @@ async function openSession(id) {
     state.noteDraft = "";
     state.taskDraft = "";
   }
+  if (messageId) {
+    state.tab = "transcript";
+    state.pendingJumpMessageId = messageId;
+  }
   try {
     state.detail = await Api.session(id);
     trackHighestSeq(state.detail);
     renderSessionList();
     renderDetail();
     $("#view-sessions").classList.add("detail-open");
+    jumpToPendingMessage();
   } catch (e) {
     banner(e.message, true);
   }
+}
+
+function jumpToPendingMessage(attempt) {
+  const id = state.pendingJumpMessageId;
+  if (!id) return;
+  const n = attempt || 0;
+  const el = document.getElementById(`msg-${id}`);
+  if (el) {
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("flash-msg");
+    state.pendingJumpMessageId = null;
+    return;
+  }
+  if (n < 12) setTimeout(() => jumpToPendingMessage(n + 1), 80);
 }
 
 // ——— Detail (transcript + tabs) ———
@@ -2262,7 +2281,8 @@ async function renderTasks() {
   let rows = state.tasksShowDone ? state.tasks : state.tasks.filter((t) => t.status !== "done");
   if (q) {
     rows = rows.filter((t) => {
-      const sess = [...state.sessions, ...state.archived].find((s) => s.id === t.sessionId);
+      const sid = t.sourceSessionId || t.sessionId;
+      const sess = [...state.sessions, ...state.archived].find((s) => s.id === sid);
       return (t.text || "").toLowerCase().includes(q) || (sess?.title || "").toLowerCase().includes(q);
     });
   }
@@ -2277,10 +2297,11 @@ async function renderTasks() {
       rows.length
         ? rows
             .map((t) => {
-              const sess = [...state.sessions, ...state.archived].find((s) => s.id === t.sessionId);
-              return `<button type="button" class="session-card" data-open-task="${escapeAttr(t.sessionId)}">
+              const sid = t.sourceSessionId || t.sessionId;
+              const sess = [...state.sessions, ...state.archived].find((s) => s.id === sid);
+              return `<button type="button" class="session-card task-card" data-open-task="${escapeAttr(sid)}" data-jump-msg="${escapeAttr(t.sourceMessageId || "")}">
                 <h3>${t.status === "done" ? "☑ " : "☐ "}${escapeHtml(t.text)}</h3>
-                <div class="meta"><span>${escapeHtml(sess?.title || t.sessionId)}</span><span class="${statusClass(t.status)}">${escapeHtml(t.status)}</span></div>
+                <div class="meta"><span>${escapeHtml(sess?.title || sid)}</span><span class="${statusClass(t.status)}">${escapeHtml(t.status)}</span></div>
               </button>`;
             })
             .join("")
@@ -2297,7 +2318,7 @@ async function renderTasks() {
   root.querySelectorAll("[data-open-task]").forEach((btn) => {
     btn.addEventListener("click", () => {
       setNav("sessions");
-      openSession(btn.getAttribute("data-open-task"));
+      openSession(btn.getAttribute("data-open-task"), btn.getAttribute("data-jump-msg") || undefined);
     });
   });
 }

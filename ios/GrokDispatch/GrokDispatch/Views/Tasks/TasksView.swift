@@ -43,7 +43,11 @@ struct TasksView: View {
             #endif
             .navigationDestination(item: $pendingRoute) { route in
                 if let host = appState.hosts.first(where: { $0.id == route.hostId }) {
-                    SessionDetailView(sessionId: route.sessionId, host: host)
+                    SessionDetailView(
+                        sessionId: route.sessionId,
+                        host: host,
+                        scrollToMessageId: route.messageId
+                    )
                 } else {
                     Text("Host no longer available").foregroundStyle(.secondary)
                 }
@@ -235,12 +239,19 @@ struct TasksView: View {
                         .strikethrough(task.isDone)
                         .foregroundStyle(task.isDone ? .secondary : .primary)
                         .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Image(systemName: "text.bubble").font(.caption2).foregroundStyle(.tertiary)
                         Text(sessionTitle(for: task))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        if task.sourceMessageId != nil {
+                            Text("· original message")
+                                .font(.caption2)
+                                .foregroundStyle(DispatchColors.accent)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -273,7 +284,11 @@ struct TasksView: View {
 
     private func openSource(_ task: SessionTask) {
         guard let hostId = appState.selectedHost?.id else { return }
-        pendingRoute = SessionRoute(hostId: hostId, sessionId: task.sourceSessionId)
+        pendingRoute = SessionRoute(
+            hostId: hostId,
+            sessionId: task.sourceSessionId,
+            messageId: task.sourceMessageId
+        )
     }
 
     private func load() async {

@@ -69,7 +69,8 @@ The Mac **Host** toolbar panel had install/projects/logs and **no profiles UI**.
 | **ConnectionDefaults hardcode** | Known defect | Still may ship `http://192.168.50.9:8787` — AGENTS.md; fix when touching iOS networking. |
 | **Rename leftovers** | Hygiene | `GrokDispatch` directory names, `x-grok-dispatch-token` on the wire (do not rename casually). |
 | **event-horizon/** | Untracked on purpose | Separate mini-game; `.gitignore`d. |
-| **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. |
+| **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. Own RFC — do not silently add untested Swift surface. |
+| **House style** | **Shipped RFC-000** | RFC + `make check` + CI. Next feature starts with `make rfc SLUG=…`. |
 
 ---
 

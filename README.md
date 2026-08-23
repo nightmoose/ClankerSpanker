@@ -12,6 +12,8 @@ iOS (phone)     ──┘                              └── claude (+ appro
 
 Client ownership and parity: **[docs/CLIENTS.md](docs/CLIENTS.md)** (read this before adding another laptop UI).
 
+How we work (ContractGate house style, **enforced**): **[docs/HOUSE-STYLE.md](docs/HOUSE-STYLE.md)**. `make check` before merge.
+
 ## Repo layout
 
 ```

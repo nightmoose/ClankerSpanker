@@ -26,12 +26,17 @@ struct ClankerSpankerApp: App {
         .defaultSize(width: 1320, height: 860)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New task…") {
+                Button("New session…") {
                     appState.selectedTab = .compose
                     NotificationCenter.default.post(name: .macShowCompose, object: nil)
                     MacAppChrome.showMainWindow()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+                Button("New bot…") {
+                    NotificationCenter.default.post(name: .macShowNewBot, object: nil)
+                    MacAppChrome.showMainWindow()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandMenu("Host") {
                 Button("Start local host") {
@@ -84,7 +89,7 @@ private struct MacMenuBarMenu: View {
         Text(statusLine)
             .font(.caption)
         Divider()
-        Button("New task…") {
+        Button("New session…") {
             MacAppChrome.showMainWindow()
             NotificationCenter.default.post(name: .macShowCompose, object: nil)
         }
@@ -170,6 +175,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .badge]
     }
+
+    /// Approve/Reject tapped from a notification action button. Forwards
+    /// (sessionId, hostId, approvalId, action) to AppState via NotificationCenter
+    /// which then makes the API call.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        let action = response.actionIdentifier
+        let payload: [String: Any] = [
+            "action": action,
+            "userInfo": info,
+        ]
+        NotificationCenter.default.post(name: .dispatchNotificationAction, object: payload)
+        completionHandler()
+    }
 }
 #endif
 
@@ -189,6 +212,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .badge]
+    }
+
+    /// Approve/Reject tapped from a notification action button. Forwards
+    /// (sessionId, hostId, approvalId, action) to AppState via NotificationCenter
+    /// which then makes the API call.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        let action = response.actionIdentifier
+        let payload: [String: Any] = [
+            "action": action,
+            "userInfo": info,
+        ]
+        NotificationCenter.default.post(name: .dispatchNotificationAction, object: payload)
+        completionHandler()
     }
 }
 #endif

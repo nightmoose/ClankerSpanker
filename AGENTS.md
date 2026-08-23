@@ -2,8 +2,9 @@
 
 **Check your saved memory before starting** — look for `estate-four-repo-map`,
 `estate-open-work` and `estate-sandbox-git-limits`. Then read
-`~/mercenary/STATUS-2026-07-30.md`, the authoritative state of play across all
-four repos.
+`~/mercenary/STATUS-2026-08-23.md` (estate-wide) and
+[`PROJECT_STATUS.md`](./PROJECT_STATUS.md) (this repo). Day-to-day play:
+[`docs/NEXT-STEPS.md`](docs/NEXT-STEPS.md). `STATUS-2026-07-30.md` is historical.
 
 ## Orientation — the naming is a mess, and that is the first trap
 
@@ -57,7 +58,7 @@ Linux = Electron (`desktop/`). Do not dual-maintain full session UIs on Mac.
 ## Gates
 
 ```bash
-cd host && npm test        # vitest — 18 tests as of 2026-07-30
+cd host && npm test        # vitest — 103 tests as of 2026-08-21
 cd host && npm run typecheck
 cd host && npm run build
 ```

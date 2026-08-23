@@ -23,7 +23,7 @@ export interface DiskSessionHint {
 }
 
 /** Best-effort scan of ~/.grok/sessions for display / resume hints. */
-export function listDiskSessions(limit = 40): DiskSessionHint[] {
+export function listDiskSessions(limit = 200): DiskSessionHint[] {
   const root = join(homedir(), ".grok", "sessions");
   if (!existsSync(root)) return [];
 
@@ -51,12 +51,25 @@ export function listDiskSessions(limit = 40): DiskSessionHint[] {
           updated_at?: string;
           current_model_id?: string;
         };
+        const title =
+          summary.generated_title?.trim() ||
+          summary.session_summary?.trim() ||
+          undefined;
+        // Prefer mtime when summary lacks updated_at so recent TUI work sorts first
+        let updatedAt = summary.updated_at;
+        if (!updatedAt) {
+          try {
+            updatedAt = new Date(statSync(summaryPath).mtimeMs).toISOString();
+          } catch {
+            /* ignore */
+          }
+        }
         results.push({
           id: summary.info?.session_id ?? sid,
           source: "grok",
           cwd: summary.info?.cwd,
-          title: summary.generated_title ?? summary.session_summary,
-          updatedAt: summary.updated_at,
+          title,
+          updatedAt,
           model: summary.current_model_id,
         });
       } catch {
@@ -75,7 +88,7 @@ export function listDiskSessions(limit = 40): DiskSessionHint[] {
  *   ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl
  * Encoding: absolute path with non-alphanumerics → `-` (leading slash becomes leading `-`).
  */
-export function listClaudeSessions(limit = 40): DiskSessionHint[] {
+export function listClaudeSessions(limit = 100): DiskSessionHint[] {
   const root = join(homedir(), ".claude", "projects");
   if (!existsSync(root)) return [];
 

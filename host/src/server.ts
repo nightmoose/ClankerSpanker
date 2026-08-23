@@ -4,22 +4,44 @@ import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { HostConfigFile } from "./types.js";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync as fsReadFileSync, unlinkSync, writeFileSync } from "node:fs";
+import type { AgentProfile, HostConfigFile, SessionBackend } from "./types.js";
 import type {
   AnswerQuestionsRequest,
   ApproveRequest,
   AttachClaudeRequest,
   AttachRequest,
+  Bot,
   DispatchRequest,
+  DispatchSession,
+  ProjectAttachment,
+  ProjectInfo,
+  ProjectResource,
   PromptFollowUpRequest,
   RejectRequest,
   SessionEvent,
+  ReviewWorkRequest,
+  TransferProfileRequest,
 } from "./types.js";
 import { isAuthorized, unauthorizedBody } from "./auth.js";
 import { SessionManager } from "./acp/session-manager.js";
+import type { BotRuntime } from "./bot/index.js";
 import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
-import { publicProfiles } from "./profiles.js";
+import { normalizeBackend, publicProfiles, resolveProfile } from "./profiles.js";
+import { profilesWithUsage } from "./usage.js";
+import { startProfileLogin } from "./login.js";
+import {
+  discoverKnownProjects,
+  normalizeProject,
+  projectAttachmentsDir,
+  resolveProjectPath,
+  saveConfig,
+} from "./config.js";
+import { listOutbox } from "./bot/outbox.js";
+import { seedHunter } from "./bot/seed.js";
+import { isLocalMachineAddr } from "./local-machine.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
@@ -37,10 +59,19 @@ const WEB_ROOT = (() => {
 
 type WsClient = WebSocket & { isAlive?: boolean };
 
-export function startServer(config: HostConfigFile, manager: SessionManager) {
+/**
+ * True when the request originates from this machine (loopback or any of our
+ * own NIC / Tailscale addresses). Gates profile admin so API keys never leave
+ * this host — a phone on the LAN/Tailscale is still refused.
+ */
+function isLocalMachineReq(req: IncomingMessage): boolean {
+  return isLocalMachineAddr(req.socket.remoteAddress);
+}
+
+export function startServer(config: HostConfigFile, manager: SessionManager, bots?: BotRuntime) {
   const server = createServer(async (req, res) => {
     try {
-      await handleHttp(req, res, config, manager);
+      await handleHttp(req, res, config, manager, bots);
     } catch (err) {
       console.error("[http]", err);
       if (!res.headersSent) {
@@ -51,6 +82,12 @@ export function startServer(config: HostConfigFile, manager: SessionManager) {
 
   const wss = new WebSocketServer({ server, path: "/ws" });
   const clients = new Set<WsClient>();
+  const localClients = new Set<WsClient>();
+
+  // Let SessionManager suppress its shell-based desktop notifications when
+  // a loopback client (the Mac app) is present to post its own richer local
+  // notification instead. Prevents duplicate banners.
+  manager.setLocalClientChecker(() => localClients.size > 0);
 
   wss.on("connection", (ws: WsClient, req) => {
     // Auth via query ?token= or header
@@ -64,12 +101,18 @@ export function startServer(config: HostConfigFile, manager: SessionManager) {
 
     ws.isAlive = true;
     clients.add(ws);
+    if (isLocalMachineAddr(req.socket.remoteAddress)) {
+      localClients.add(ws);
+    }
     ws.send(JSON.stringify({ type: "hello", at: new Date().toISOString(), version: "0.1.0" }));
 
     ws.on("pong", () => {
       ws.isAlive = true;
     });
-    ws.on("close", () => clients.delete(ws));
+    ws.on("close", () => {
+      clients.delete(ws);
+      localClients.delete(ws);
+    });
     ws.on("message", (data) => {
       // Optional subscribe filter later; for now ignore client messages except ping
       try {
@@ -87,6 +130,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager) {
     for (const ws of clients) {
       if (ws.isAlive === false) {
         clients.delete(ws);
+        localClients.delete(ws);
         ws.terminate();
         continue;
       }
@@ -125,6 +169,7 @@ async function handleHttp(
   res: ServerResponse,
   config: HostConfigFile,
   manager: SessionManager,
+  bots?: BotRuntime,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -133,7 +178,7 @@ async function handleHttp(
   // CORS for local tooling
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Grok-Dispatch-Token");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   if (method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -176,13 +221,638 @@ async function handleHttp(
 
   // GET /projects
   if (method === "GET" && path === "/projects") {
-    json(res, 200, { projects: config.projects, allowCustomPaths: config.allowCustomPaths });
+    const projects = (config.projects ?? []).map(normalizeProject);
+    json(res, 200, { projects, allowCustomPaths: config.allowCustomPaths });
+    return;
+  }
+
+  // POST /projects — create a new project.
+  // Body: { name, paths?: string[] | undefined, path?: string | undefined,
+  //         color?, defaultProfileId? }
+  if (method === "POST" && path === "/projects") {
+    try {
+      const body = (await readJson(req)) as Partial<ProjectInfo> & { path?: string };
+      if (!body?.name || typeof body.name !== "string" || !body.name.trim()) {
+        json(res, 400, { error: "name is required" });
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      const created = normalizeProject({
+        id: (body.id?.trim()) || slugForId(body.name) || randomUUID(),
+        name: body.name.trim(),
+        paths: Array.isArray(body.paths) ? body.paths : (body.path ? [body.path] : []),
+        color: body.color,
+        defaultProfileId: body.defaultProfileId,
+        resources: body.resources ?? [],
+        attachments: body.attachments ?? [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      const existing = config.projects ?? [];
+      if (existing.some((p) => p.id === created.id)) {
+        json(res, 409, { error: `Project id "${created.id}" already exists` });
+        return;
+      }
+      config.projects = [...existing, created];
+      saveConfig(config);
+      json(res, 201, { project: created });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /projects/:id
+  const projectDetailMatch = /^\/projects\/([^/]+)$/.exec(path);
+  if (method === "GET" && projectDetailMatch) {
+    const id = decodeURIComponent(projectDetailMatch[1]!);
+    const p = (config.projects ?? []).find((x) => x.id === id);
+    if (!p) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    json(res, 200, { project: normalizeProject(p) });
+    return;
+  }
+
+  // PATCH /projects/:id — partial update.
+  if (method === "PATCH" && projectDetailMatch) {
+    const id = decodeURIComponent(projectDetailMatch[1]!);
+    try {
+      const body = (await readJson(req)) as Partial<ProjectInfo> & { path?: string };
+      const projects = config.projects ?? [];
+      const idx = projects.findIndex((x) => x.id === id);
+      if (idx < 0) {
+        json(res, 404, { error: "Project not found" });
+        return;
+      }
+      const current = projects[idx]!;
+      const merged = normalizeProject({
+        ...current,
+        ...body,
+        id: current.id, // never let id be renamed here
+        paths: Array.isArray(body.paths)
+          ? body.paths
+          : (typeof body.path === "string" ? [body.path] : (current.paths ?? [])),
+        updatedAt: new Date().toISOString(),
+      });
+      projects[idx] = merged;
+      config.projects = projects;
+      saveConfig(config);
+      json(res, 200, { project: merged });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /projects/:id — soft-archive by default; ?hard=1 removes entirely
+  // (including on-disk attachments dir).
+  if (method === "DELETE" && projectDetailMatch) {
+    const id = decodeURIComponent(projectDetailMatch[1]!);
+    const hard = url.searchParams.get("hard") === "1";
+    const projects = config.projects ?? [];
+    const idx = projects.findIndex((x) => x.id === id);
+    if (idx < 0) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    if (hard) {
+      // Best-effort wipe of the on-disk project dir.
+      try {
+        const attachDir = projectAttachmentsDir(config.dataDir, id);
+        for (const att of projects[idx]?.attachments ?? []) {
+          try { unlinkSync(join(attachDir, att.filename)); } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
+      config.projects = projects.filter((x) => x.id !== id);
+    } else {
+      projects[idx] = normalizeProject({
+        ...projects[idx]!,
+        archived: true,
+        updatedAt: new Date().toISOString(),
+      });
+      config.projects = projects;
+    }
+    saveConfig(config);
+    json(res, 200, { ok: true, hard });
+    return;
+  }
+
+  // POST /projects/discover — return filesystem-inferred candidates without
+  // adding them. Client decides which to import via POST /projects.
+  if (method === "POST" && path === "/projects/discover") {
+    const candidates = discoverKnownProjects();
+    const existingIds = new Set((config.projects ?? []).map((p) => p.id));
+    const existingPaths = new Set(
+      (config.projects ?? []).flatMap((p) => (p.paths ?? []).map((x) => x)),
+    );
+    const filtered = candidates.filter(
+      (c) => !existingIds.has(c.id) && !c.paths.some((p) => existingPaths.has(p)),
+    );
+    json(res, 200, { projects: filtered });
+    return;
+  }
+
+  // POST /projects/:id/attachments — upload a file (base64 in JSON body).
+  // Body: { data (base64), mimeType, filename?, originalName?, note?, fromSessionId? }
+  // Response: { attachment: ProjectAttachment }
+  const projectAttachUploadMatch = /^\/projects\/([^/]+)\/attachments$/.exec(path);
+  if (method === "POST" && projectAttachUploadMatch) {
+    const id = decodeURIComponent(projectAttachUploadMatch[1]!);
+    const projects = config.projects ?? [];
+    const idx = projects.findIndex((x) => x.id === id);
+    if (idx < 0) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    try {
+      const body = (await readJson(req)) as {
+        data: string;
+        mimeType: string;
+        filename?: string;
+        originalName?: string;
+        note?: string;
+        fromSessionId?: string;
+      };
+      if (!body?.data || !body.mimeType) {
+        json(res, 400, { error: "data (base64) and mimeType required" });
+        return;
+      }
+      const attachment = writeProjectAttachment(config, id, body);
+      const current = projects[idx]!;
+      const updated = normalizeProject({
+        ...current,
+        attachments: [...(current.attachments ?? []), attachment],
+        updatedAt: new Date().toISOString(),
+      });
+      projects[idx] = updated;
+      config.projects = projects;
+      saveConfig(config);
+      json(res, 201, { attachment });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /projects/:id/attachments/:aid — serve raw bytes.
+  const projectAttachGetMatch = /^\/projects\/([^/]+)\/attachments\/([^/]+)$/.exec(path);
+  if (method === "GET" && projectAttachGetMatch) {
+    const pid = decodeURIComponent(projectAttachGetMatch[1]!);
+    const aid = decodeURIComponent(projectAttachGetMatch[2]!);
+    const project = (config.projects ?? []).find((x) => x.id === pid);
+    const att = project?.attachments?.find((a) => a.id === aid);
+    if (!project || !att) {
+      json(res, 404, { error: "Attachment not found" });
+      return;
+    }
+    const full = join(projectAttachmentsDir(config.dataDir, pid), att.filename);
+    try {
+      const bytes = fsReadFileSync(full);
+      res.writeHead(200, {
+        "Content-Type": att.mimeType || "application/octet-stream",
+        "Content-Length": String(bytes.length),
+        "Cache-Control": "private, max-age=300",
+      });
+      res.end(bytes);
+    } catch (err) {
+      json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /projects/:id/attachments/:aid
+  if (method === "DELETE" && projectAttachGetMatch) {
+    const pid = decodeURIComponent(projectAttachGetMatch[1]!);
+    const aid = decodeURIComponent(projectAttachGetMatch[2]!);
+    const projects = config.projects ?? [];
+    const pIdx = projects.findIndex((x) => x.id === pid);
+    if (pIdx < 0) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    const project = projects[pIdx]!;
+    const att = project.attachments?.find((a) => a.id === aid);
+    if (!att) {
+      json(res, 404, { error: "Attachment not found" });
+      return;
+    }
+    try { unlinkSync(join(projectAttachmentsDir(config.dataDir, pid), att.filename)); } catch { /* ignore */ }
+    projects[pIdx] = normalizeProject({
+      ...project,
+      attachments: (project.attachments ?? []).filter((a) => a.id !== aid),
+      updatedAt: new Date().toISOString(),
+    });
+    config.projects = projects;
+    saveConfig(config);
+    json(res, 200, { ok: true });
     return;
   }
 
   // GET /profiles — public agent accounts for nav segments (no secrets)
+  // ?usage=1 attaches Claude OAuth 5h/weekly utilization (cached ~45s).
+  // ?admin=1 (this machine only) additionally returns full profile records
+  // (env / configDir) for the local Profiles manager UI.
   if (method === "GET" && path === "/profiles") {
-    json(res, 200, { profiles: publicProfiles(config) });
+    const wantUsage = url.searchParams.get("usage") === "1";
+    const wantAdmin = url.searchParams.get("admin") === "1";
+    const localAdmin = isLocalMachineReq(req);
+    const adminPayload = wantAdmin && localAdmin
+      ? { admin: true as const, adminProfiles: config.profiles ?? [] }
+      : { admin: false as const };
+    if (!wantUsage) {
+      json(res, 200, { profiles: publicProfiles(config), ...adminPayload });
+      return;
+    }
+    try {
+      const base = publicProfiles(config);
+      // Sessions feed Grok local activity (today/tools) — not fake TPM %
+      let sessions: DispatchSession[] = [];
+      try {
+        sessions = manager.list();
+      } catch {
+        sessions = [];
+      }
+      const profiles = await profilesWithUsage(base, config.profiles ?? [], { sessions });
+      json(res, 200, { profiles, usage: true, ...adminPayload });
+    } catch (err) {
+      json(res, 200, {
+        profiles: publicProfiles(config),
+        usage: false,
+        usageError: err instanceof Error ? err.message : String(err),
+        ...adminPayload,
+      });
+    }
+    return;
+  }
+
+  // POST /profiles — this machine only. Creates a new profile (all fields,
+  // including env / API keys / configDir). API keys must never leave this
+  // host, so the gate is peer address, not just the host token.
+  if (method === "POST" && path === "/profiles") {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, {
+        error: "Profile creation is only allowed from the host machine",
+      });
+      return;
+    }
+    try {
+      const body = (await readJson(req)) as Partial<AgentProfile>;
+      const nameRaw = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!nameRaw) {
+        json(res, 400, { error: "name is required" });
+        return;
+      }
+      const backend: SessionBackend = normalizeBackend(
+        typeof body.backend === "string" ? body.backend : undefined,
+      );
+      const idRaw = typeof body.id === "string" && body.id.trim().length > 0
+        ? body.id.trim()
+        : slugForId(nameRaw) || randomUUID();
+      const existing = config.profiles ?? [];
+      if (existing.some((p) => p.id === idRaw)) {
+        json(res, 409, { error: `Profile id "${idRaw}" already exists` });
+        return;
+      }
+      const created: AgentProfile = {
+        id: idRaw,
+        name: nameRaw,
+        backend,
+        color: (typeof body.color === "string" && body.color.trim()) || "#73B8FF",
+        env: sanitizeEnv(body.env),
+        claudeConfigDir: trimOrUndef(body.claudeConfigDir),
+        antigravityConfigDir: trimOrUndef(body.antigravityConfigDir),
+        model: trimOrUndef(body.model),
+        systemPrompt: trimOrUndef(body.systemPrompt),
+        toolAllowlist: Array.isArray(body.toolAllowlist)
+          ? body.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
+          : undefined,
+      };
+      config.profiles = [...existing, created];
+      saveConfig(config);
+      json(res, 201, {
+        profile: publicProfiles(config).find((p) => p.id === created.id),
+        adminProfile: created,
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // PATCH /profiles/:id — safe partial update over any origin: color, model,
+  // systemPrompt, toolAllowlist. On this machine also accepts name/backend/env/
+  // claudeConfigDir/antigravityConfigDir (Profiles manager on the host).
+  const profilePatchMatch = path.match(/^\/profiles\/([^/]+)$/);
+  if (method === "PATCH" && profilePatchMatch) {
+    const profileId = decodeURIComponent(profilePatchMatch[1] ?? "");
+    try {
+      const body = (await readJson(req)) as {
+        color?: string;
+        model?: string | null;
+        systemPrompt?: string | null;
+        toolAllowlist?: string[] | null;
+        // this-machine-only
+        name?: string;
+        backend?: string;
+        env?: Record<string, string> | null;
+        claudeConfigDir?: string | null;
+        antigravityConfigDir?: string | null;
+      };
+      const profiles = config.profiles ?? [];
+      const idx = profiles.findIndex((p) => p.id === profileId);
+      if (idx < 0) {
+        json(res, 404, { error: "Profile not found" });
+        return;
+      }
+      const current = profiles[idx]!;
+      const next: AgentProfile = { ...current };
+      if (typeof body.color === "string" && body.color.trim()) {
+        next.color = body.color.trim();
+      }
+      if (body.model === null) {
+        next.model = undefined;
+      } else if (typeof body.model === "string") {
+        const trimmed = body.model.trim();
+        next.model = trimmed.length > 0 ? trimmed : undefined;
+      }
+      if (body.systemPrompt === null) {
+        next.systemPrompt = undefined;
+      } else if (typeof body.systemPrompt === "string") {
+        const trimmed = body.systemPrompt.trim();
+        next.systemPrompt = trimmed.length > 0 ? trimmed : undefined;
+      }
+      if (body.toolAllowlist === null) {
+        next.toolAllowlist = undefined;
+      } else if (Array.isArray(body.toolAllowlist)) {
+        const cleaned = body.toolAllowlist
+          .map((s) => String(s).trim())
+          .filter((s) => s.length > 0);
+        next.toolAllowlist = cleaned.length ? cleaned : undefined;
+      }
+      // This-machine-only fields: secrets + identity. Silently ignored from other devices.
+      if (isLocalMachineReq(req)) {
+        if (typeof body.name === "string" && body.name.trim()) {
+          next.name = body.name.trim();
+        }
+        if (typeof body.backend === "string" && body.backend.trim()) {
+          next.backend = normalizeBackend(body.backend);
+        }
+        if (body.env === null) {
+          next.env = {};
+        } else if (body.env && typeof body.env === "object") {
+          next.env = sanitizeEnv(body.env);
+        }
+        if (body.claudeConfigDir === null) {
+          next.claudeConfigDir = undefined;
+        } else if (typeof body.claudeConfigDir === "string") {
+          next.claudeConfigDir = trimOrUndef(body.claudeConfigDir);
+        }
+        if (body.antigravityConfigDir === null) {
+          next.antigravityConfigDir = undefined;
+        } else if (typeof body.antigravityConfigDir === "string") {
+          next.antigravityConfigDir = trimOrUndef(body.antigravityConfigDir);
+        }
+      }
+      profiles[idx] = next;
+      config.profiles = profiles;
+      saveConfig(config);
+      const adminReply = isLocalMachineReq(req) ? { adminProfile: next } : {};
+      json(res, 200, {
+        profile: publicProfiles(config).find((p) => p.id === profileId),
+        ...adminReply,
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /profiles/:id — this machine only. Refuses if a live session is
+  // currently using the profile so we don't orphan an in-flight agent.
+  if (method === "DELETE" && profilePatchMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, {
+        error: "Profile deletion is only allowed from the host machine",
+      });
+      return;
+    }
+    const profileId = decodeURIComponent(profilePatchMatch[1] ?? "");
+    const profiles = config.profiles ?? [];
+    const idx = profiles.findIndex((p) => p.id === profileId);
+    if (idx < 0) {
+      json(res, 404, { error: "Profile not found" });
+      return;
+    }
+    try {
+      const live = manager.list().filter((s) => {
+        if (s.profileId !== profileId) return false;
+        const status = s.status;
+        return status !== "completed" && status !== "cancelled" && status !== "failed";
+      });
+      if (live.length > 0) {
+        json(res, 409, {
+          error: `Profile "${profileId}" is in use by ${live.length} live session(s). Cancel or complete them first.`,
+        });
+        return;
+      }
+    } catch {
+      /* manager unavailable — proceed */
+    }
+    config.profiles = profiles.filter((_, i) => i !== idx);
+    saveConfig(config);
+    json(res, 200, { ok: true, deleted: profileId });
+    return;
+  }
+
+  // POST /profiles/:id/login — open host browser login for this agent account
+  const loginMatch = path.match(/^\/profiles\/([^/]+)\/login$/);
+  if (method === "POST" && loginMatch) {
+    const profileId = decodeURIComponent(loginMatch[1] ?? "");
+    try {
+      const profile = resolveProfile(config, profileId);
+      let email: string | undefined;
+      try {
+        const body = await readJson(req);
+        if (body && typeof (body as { email?: string }).email === "string") {
+          email = (body as { email?: string }).email;
+        }
+      } catch {
+        /* empty body ok */
+      }
+      // Prefer known account email from usage file if not provided
+      if (!email && profile.backend === "claude") {
+        try {
+          const { readFileSync, existsSync } = await import("node:fs");
+          const { join } = await import("node:path");
+          const { homedir } = await import("node:os");
+          const candidates = profile.claudeConfigDir
+            ? [join(profile.claudeConfigDir, ".claude.json")]
+            : [join(homedir(), ".claude.json")];
+          for (const fp of candidates) {
+            if (!existsSync(fp)) continue;
+            const raw = JSON.parse(readFileSync(fp, "utf8")) as {
+              oauthAccount?: { emailAddress?: string };
+            };
+            email = raw.oauthAccount?.emailAddress;
+            if (email) break;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const result = startProfileLogin(profile, { email });
+      if (!result.ok) {
+        json(res, 400, result);
+        return;
+      }
+      json(res, 200, result);
+    } catch (err) {
+      json(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  // GET /bots
+  if (method === "GET" && path === "/bots") {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started — restart the ClankerSpanker host" });
+      return;
+    }
+    try {
+      seedHunter(config, bots.store);
+    } catch (err) {
+      console.warn("[bot] seed on GET /bots failed:", err instanceof Error ? err.message : err);
+    }
+    json(res, 200, { bots: bots.store.list() });
+    return;
+  }
+
+  // POST /bots
+  if (method === "POST" && path === "/bots") {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started" });
+      return;
+    }
+    try {
+      const body = (await readJson(req)) as Partial<Bot> & {
+        name: string;
+        profileId: string;
+        projectId: string;
+        job: string;
+      };
+      const profile = config.profiles.find((p) => p.id === body.profileId);
+      if (!profile) throw new Error("Unknown profileId");
+      const created = bots.store.create(body);
+      json(res, 201, { bot: created });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  const botItemMatch = /^\/bots\/([^/]+)$/.exec(path);
+  const botRunMatch = /^\/bots\/([^/]+)\/run$/.exec(path);
+  const botOutboxMatch = /^\/bots\/([^/]+)\/outbox$/.exec(path);
+
+  // GET /bots/:id
+  if (method === "GET" && botItemMatch && !botRunMatch && !botOutboxMatch) {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started" });
+      return;
+    }
+    const id = decodeURIComponent(botItemMatch[1] ?? "");
+    const bot = bots.store.get(id);
+    if (!bot) {
+      json(res, 404, { error: "Bot not found" });
+      return;
+    }
+    let lastSession = null;
+    if (bot.lastSessionId) {
+      const s = manager.get(bot.lastSessionId);
+      if (s) lastSession = manager.store.toSummary(s, manager.isLive(bot.lastSessionId));
+    }
+    json(res, 200, { bot, lastSession });
+    return;
+  }
+
+  // GET /bots/:id/outbox — drafts written under the bot project's .bot-outbox/
+  if (method === "GET" && botOutboxMatch) {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started" });
+      return;
+    }
+    try {
+      const id = decodeURIComponent(botOutboxMatch[1] ?? "");
+      const bot = bots.store.get(id);
+      if (!bot) {
+        json(res, 404, { error: "Bot not found" });
+        return;
+      }
+      const { path: cwd } = resolveProjectPath(config, bot.projectId);
+      json(res, 200, { botId: bot.id, cwd, items: listOutbox(cwd) });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // PATCH /bots/:id
+  if (method === "PATCH" && botItemMatch) {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started" });
+      return;
+    }
+    try {
+      const id = decodeURIComponent(botItemMatch[1] ?? "");
+      const raw = (await readJson(req)) as Record<string, unknown>;
+      const body: Partial<Bot> = {};
+      for (const [k, v] of Object.entries(raw)) {
+        if (v !== null && v !== undefined) (body as Record<string, unknown>)[k] = v;
+      }
+      if (body.profileId) {
+        const profile = config.profiles.find((p) => p.id === body.profileId);
+        if (!profile) throw new Error("Unknown profileId");
+      }
+      const updated = bots.store.update(id, body);
+      json(res, 200, { bot: updated });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /bots/:id/run — manual fire (allowed even when disabled, for testing)
+  if (method === "POST" && botRunMatch) {
+    if (!bots) {
+      json(res, 503, { error: "Bot runtime not started" });
+      return;
+    }
+    try {
+      const id = decodeURIComponent(botRunMatch[1] ?? "");
+      const bot = bots.store.get(id);
+      if (!bot) {
+        json(res, 404, { error: "Bot not found" });
+        return;
+      }
+      if (manager.hasActiveRun(bot.id)) {
+        json(res, 409, { error: "Bot already has a running or awaiting_approval session" });
+        return;
+      }
+      const body = (await readJson(req).catch(() => ({}))) as { note?: string };
+      const session = await manager.fireBot(bot, body.note);
+      bots.store.update(bot.id, {
+        lastRunAt: new Date().toISOString(),
+        lastSessionId: session.id,
+      });
+      json(res, 202, { session: manager.store.toSummary(session, true), bot: bots.store.get(bot.id) });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
 
@@ -191,7 +861,21 @@ async function handleHttp(
   // Pass ?includeArchived=1 to put everything in `sessions` (legacy / debugging).
   if (method === "GET" && path === "/sessions") {
     const includeArchived = url.searchParams.get("includeArchived") === "1";
-    const all = manager.list().map((s) => {
+    const contentQuery = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    // Mirror Grok Build TUI: pull any on-disk sessions not yet in the Dispatch store
+    // (cheap metadata import — agent process only starts on first attach/follow-up).
+    if (url.searchParams.get("noImport") !== "1") {
+      try {
+        manager.syncGrokDiskSessions(200);
+      } catch (err) {
+        console.warn("[sessions] disk import failed:", err);
+      }
+    }
+    const rawSessions = manager.list().filter((s) => {
+      if (!contentQuery) return true;
+      return sessionMatchesContentQuery(s, contentQuery);
+    });
+    const all = rawSessions.map((s) => {
       const summary = manager.store.toSummary(s, manager.isLive(s.id));
       // Backfill profile fields for older sessions — only when exactly one profile
       // matches the backend. With Personal + FullScore both Claude, do NOT invent
@@ -217,13 +901,40 @@ async function handleHttp(
     });
     const active = all.filter((s) => !s.archived);
     const archived = all.filter((s) => s.archived);
-    const disk = listDiskSessions(30);
-    const claude = listClaudeSessions(30);
+    const linkedGrok = new Set(
+      all.map((s) => s.grokSessionId).filter((id): id is string => Boolean(id)),
+    );
+    const linkedClaude = new Set(
+      all.map((s) => s.claudeSessionId).filter((id): id is string => Boolean(id)),
+    );
+    // Only return disk hints that still need a one-tap attach (unlinked / no cwd skipped).
+    // When q is set, also filter disk titles/cwd.
+    let disk = listDiskSessions(200).filter(
+      (d) => !linkedGrok.has(d.id) && !manager.isForgottenGrokSession(d.id),
+    );
+    let claude = listClaudeSessions(100).filter(
+      (d) => !linkedClaude.has(d.id) && !manager.isForgottenClaudeSession(d.id),
+    );
+    if (contentQuery) {
+      disk = disk.filter(
+        (d) =>
+          (d.title ?? "").toLowerCase().includes(contentQuery) ||
+          (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
+          d.id.toLowerCase().includes(contentQuery),
+      );
+      claude = claude.filter(
+        (d) =>
+          (d.title ?? "").toLowerCase().includes(contentQuery) ||
+          (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
+          d.id.toLowerCase().includes(contentQuery),
+      );
+    }
     json(res, 200, {
       sessions: includeArchived ? all : active,
       archivedSessions: archived,
       diskSessions: disk,
       claudeSessions: claude,
+      query: contentQuery || undefined,
     });
     return;
   }
@@ -245,6 +956,36 @@ async function handleHttp(
     return;
   }
 
+  // GET /sessions/:id/events?since=N — replay events emitted after N.
+  // iOS calls this on WebSocket reconnect to fill the gap.
+  const eventsMatch = /^\/sessions\/([^/]+)\/events$/.exec(path);
+  if (method === "GET" && eventsMatch) {
+    const id = decodeURIComponent(eventsMatch[1]!);
+    const sinceRaw = url.searchParams.get("since");
+    const sinceSeq = sinceRaw !== null ? Number.parseInt(sinceRaw, 10) : 0;
+    if (Number.isNaN(sinceSeq) || sinceSeq < 0) {
+      json(res, 400, { error: "invalid ?since= (want non-negative integer)" });
+      return;
+    }
+    const events = manager.getEventsSince(id, sinceSeq);
+    json(res, 200, { events });
+    return;
+  }
+
+  // GET /sessions/:id/tool-calls/:toolCallId — full rawInput/content for the ellipsis sheet
+  const toolCallMatch = /^\/sessions\/([^/]+)\/tool-calls\/([^/]+)$/.exec(path);
+  if (method === "GET" && toolCallMatch) {
+    const id = decodeURIComponent(toolCallMatch[1]!);
+    const toolCallId = decodeURIComponent(toolCallMatch[2]!);
+    const detail = manager.getToolCall(id, toolCallId);
+    if (!detail) {
+      json(res, 404, { error: "Tool call not found" });
+      return;
+    }
+    json(res, 200, detail);
+    return;
+  }
+
   // GET /sessions/:id/diff
   const diffMatch = /^\/sessions\/([^/]+)\/diff$/.exec(path);
   if (method === "GET" && diffMatch) {
@@ -262,7 +1003,23 @@ async function handleHttp(
   if (method === "POST" && path === "/dispatch") {
     const body = (await readJson(req)) as DispatchRequest;
     try {
+      if (!body.botId && bots) {
+        const profileId = body.profileId;
+        const match = bots.store.list().find((b) => !profileId || b.profileId === profileId);
+        const profile = profileId ? config.profiles.find((p) => p.id === profileId) : undefined;
+        if (profile?.backend === "bot" && match) body.botId = match.id;
+      }
       const session = await manager.dispatch(body);
+      if (session.botId && bots?.store.get(session.botId)) {
+        try {
+          bots.store.update(session.botId, {
+            lastRunAt: new Date().toISOString(),
+            lastSessionId: session.id,
+          });
+        } catch {
+          /* non-fatal */
+        }
+      }
       json(res, 201, manager.store.toDetail(session, null));
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -406,6 +1163,7 @@ async function handleHttp(
         "approve",
         body.optionId,
         body.comment,
+        body.scope ?? "once",
       );
       json(res, 200, manager.store.toDetail(session, manager.getPendingApproval(id)));
     } catch (err) {
@@ -434,6 +1192,37 @@ async function handleHttp(
     return;
   }
 
+  // POST /sessions/:id/close — shut down the agent and mark completed+archived.
+  // "I've reached a natural stopping point" — distinct from cancel (interrupted)
+  // and archive (soft-hide without stopping the process).
+  const closeMatch = /^\/sessions\/([^/]+)\/close$/.exec(path);
+  if (method === "POST" && closeMatch) {
+    const id = decodeURIComponent(closeMatch[1]!);
+    try {
+      const session = await manager.closeAsDone(id);
+      json(res, 200, manager.store.toDetail(session, null));
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /sessions/:id — permanent delete. Cancels first if running,
+  // then wipes the session JSON and attachments dir. Tasks/notes on the
+  // session record go with it; project attachments promoted from this
+  // session are left alone (they're independent project resources).
+  const sessionDeleteMatch = /^\/sessions\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && sessionDeleteMatch) {
+    const id = decodeURIComponent(sessionDeleteMatch[1]!);
+    try {
+      await manager.deleteSession(id);
+      json(res, 200, { ok: true });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   // POST /sessions/:id/cancel
   const cancelMatch = /^\/sessions\/([^/]+)\/cancel$/.exec(path);
   if (method === "POST" && cancelMatch) {
@@ -441,6 +1230,119 @@ async function handleHttp(
     try {
       const session = await manager.cancel(id);
       json(res, 200, manager.store.toDetail(session, null));
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // ── Tasks + Notes ────────────────────────────────────────────────
+
+  // GET /tasks?status=open — global list across every session on this host.
+  if (method === "GET" && path === "/tasks") {
+    const rawStatus = url.searchParams.get("status");
+    const status =
+      rawStatus === "open" || rawStatus === "done" ? rawStatus : undefined;
+    json(res, 200, { tasks: manager.listTasks({ status }) });
+    return;
+  }
+
+  // POST /sessions/:id/tasks — create a task on this session.
+  // Body: { text, sourceMessageId? }
+  const sessionTasksMatch = /^\/sessions\/([^/]+)\/tasks$/.exec(path);
+  if (method === "POST" && sessionTasksMatch) {
+    const id = decodeURIComponent(sessionTasksMatch[1]!);
+    try {
+      const body = (await readJson(req)) as { text?: string; sourceMessageId?: string };
+      const task = manager.createTask(id, {
+        text: body.text ?? "",
+        sourceMessageId: body.sourceMessageId,
+      });
+      json(res, 201, { task });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // PATCH /sessions/:id/tasks/:tid — update text and/or status.
+  // DELETE /sessions/:id/tasks/:tid — remove.
+  const taskItemMatch = /^\/sessions\/([^/]+)\/tasks\/([^/]+)$/.exec(path);
+  if (taskItemMatch && (method === "PATCH" || method === "DELETE")) {
+    const sid = decodeURIComponent(taskItemMatch[1]!);
+    const tid = decodeURIComponent(taskItemMatch[2]!);
+    try {
+      if (method === "PATCH") {
+        const body = (await readJson(req)) as {
+          text?: string;
+          status?: "open" | "done";
+        };
+        const task = manager.updateTask(sid, tid, body);
+        json(res, 200, { task });
+      } else {
+        manager.deleteTask(sid, tid);
+        json(res, 200, { ok: true });
+      }
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/:id/notes — create a note on this session.
+  const sessionNotesMatch = /^\/sessions\/([^/]+)\/notes$/.exec(path);
+  if (method === "POST" && sessionNotesMatch) {
+    const id = decodeURIComponent(sessionNotesMatch[1]!);
+    try {
+      const body = (await readJson(req)) as { text?: string; sourceMessageId?: string };
+      const note = manager.createNote(id, {
+        text: body.text ?? "",
+        sourceMessageId: body.sourceMessageId,
+      });
+      json(res, 201, { note });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // PATCH /sessions/:id/notes/:nid — update text.
+  // DELETE /sessions/:id/notes/:nid — remove.
+  const noteItemMatch = /^\/sessions\/([^/]+)\/notes\/([^/]+)$/.exec(path);
+  if (noteItemMatch && (method === "PATCH" || method === "DELETE")) {
+    const sid = decodeURIComponent(noteItemMatch[1]!);
+    const nid = decodeURIComponent(noteItemMatch[2]!);
+    try {
+      if (method === "PATCH") {
+        const body = (await readJson(req)) as { text?: string };
+        const note = manager.updateNote(sid, nid, body);
+        json(res, 200, { note });
+      } else {
+        manager.deleteNote(sid, nid);
+        json(res, 200, { ok: true });
+      }
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/:id/project — assign or detach a project.
+  // Body: { projectId: string | null }
+  const projectMoveMatch = /^\/sessions\/([^/]+)\/project$/.exec(path);
+  if (method === "POST" && projectMoveMatch) {
+    const id = decodeURIComponent(projectMoveMatch[1]!);
+    try {
+      const body = (await readJson(req)) as { projectId?: string | null };
+      const session = manager.setSessionProject(id, body?.projectId ?? null);
+      json(res, 200, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(id),
+          manager.getPendingQuestion(id),
+        ),
+        isLive: manager.isLive(id),
+      });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -462,6 +1364,79 @@ async function handleHttp(
           manager.getPendingQuestion(id),
         ),
         isLive: manager.isLive(id),
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/:id/transfer — move chat to another profile (FullScore → Personal, …)
+  const transferMatch = /^\/sessions\/([^/]+)\/transfer$/.exec(path);
+  if (method === "POST" && transferMatch) {
+    const id = decodeURIComponent(transferMatch[1]!);
+    const body = (await readJson(req)) as TransferProfileRequest;
+    try {
+      const session = await manager.transferProfile(id, body);
+      json(res, 200, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(id),
+          manager.getPendingQuestion(id),
+        ),
+        isLive: manager.isLive(id),
+        backend: session.backend ?? "grok",
+        claudeSessionId: session.claudeSessionId,
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/:id/reincarnate — archive old chat, fresh session with summary
+  const reincarnateMatch = /^\/sessions\/([^/]+)\/reincarnate$/.exec(path);
+  if (method === "POST" && reincarnateMatch) {
+    const id = decodeURIComponent(reincarnateMatch[1]!);
+    const body = (await readJson(req).catch(() => ({}))) as {
+      profileId?: string;
+      title?: string;
+      note?: string;
+    };
+    try {
+      const session = await manager.reincarnate(id, body ?? {});
+      json(res, 201, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(session.id),
+          manager.getPendingQuestion(session.id),
+        ),
+        isLive: manager.isLive(session.id),
+        backend: session.backend ?? "grok",
+        reincarnatedFrom: id,
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/:id/review — non-destructive critique of recent work (sibling session)
+  const reviewMatch = /^\/sessions\/([^/]+)\/review$/.exec(path);
+  if (method === "POST" && reviewMatch) {
+    const id = decodeURIComponent(reviewMatch[1]!);
+    const body = (await readJson(req).catch(() => ({}))) as ReviewWorkRequest;
+    try {
+      const session = await manager.reviewWork(id, body ?? {});
+      json(res, 201, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(session.id),
+          manager.getPendingQuestion(session.id),
+        ),
+        isLive: manager.isLive(session.id),
+        backend: session.backend ?? "grok",
+        reviewedFrom: id,
       });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -525,6 +1500,125 @@ function json(res: ServerResponse, status: number, body: unknown): void {
     "Content-Length": Buffer.byteLength(data),
   });
   res.end(data);
+}
+
+/**
+ * Derive a URL-safe id from a display name for user-created projects.
+ * Returns "" if the name has no ascii/word characters; caller then falls
+ * back to a UUID.
+ */
+function slugForId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function trimOrUndef(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+/**
+ * Coerce a raw env body into a clean string→string map. Skips non-string
+ * values and empty keys. Used when creating/editing profiles via the local
+ * Profiles manager so bad shapes don't blow up saveConfig.
+ */
+function sanitizeEnv(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k?.trim();
+    if (!key) continue;
+    if (typeof v !== "string") continue;
+    out[key] = v;
+  }
+  return out;
+}
+
+/**
+ * Write an uploaded attachment to the project's on-disk attachments dir
+ * and return the metadata record. Extension is derived from mimeType.
+ */
+function writeProjectAttachment(
+  config: HostConfigFile,
+  projectId: string,
+  body: {
+    data: string;
+    mimeType: string;
+    filename?: string;
+    originalName?: string;
+    note?: string;
+    fromSessionId?: string;
+  },
+): ProjectAttachment {
+  const id = randomUUID();
+  const ext = extForMime(body.mimeType);
+  const filename = body.filename?.trim() || `${id}${ext ? "." + ext : ""}`;
+  const bytes = Buffer.from(body.data, "base64");
+  const dir = projectAttachmentsDir(config.dataDir, projectId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, filename), bytes);
+  return {
+    id,
+    filename,
+    originalName: body.originalName,
+    mimeType: body.mimeType,
+    sizeBytes: bytes.length,
+    addedAt: new Date().toISOString(),
+    fromSessionId: body.fromSessionId,
+    note: body.note,
+  };
+}
+
+function extForMime(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes("png")) return "png";
+  if (m.includes("jpeg") || m.includes("jpg")) return "jpg";
+  if (m.includes("webp")) return "webp";
+  if (m.includes("gif")) return "gif";
+  if (m.includes("pdf")) return "pdf";
+  if (m.includes("json")) return "json";
+  if (m.includes("plain") || m.includes("text/")) return "txt";
+  return "";
+}
+
+/** Full-text match across title, path, and transcript/tool content (for `?q=`). */
+function sessionMatchesContentQuery(s: DispatchSession, q: string): boolean {
+  const parts: string[] = [
+    s.title,
+    s.prompt,
+    s.cwd,
+    s.model,
+    s.status,
+    s.error ?? "",
+    s.profileName ?? "",
+    s.profileId ?? "",
+    s.backend ?? "",
+    s.projectId ?? "",
+    s.grokSessionId ?? "",
+    s.claudeSessionId ?? "",
+    s.antigravityConversationId ?? "",
+  ];
+  for (const t of s.transcript ?? []) {
+    parts.push(t.role, t.text);
+  }
+  for (const t of s.toolCalls ?? []) {
+    parts.push(t.title, t.kind ?? "", t.status);
+  }
+  if (s.plan) {
+    for (const p of s.plan) parts.push(p.content, p.status ?? "");
+  }
+  const hay = parts.join("\n").toLowerCase();
+  // Multi-word: every token must appear (AND). Single phrase still works as one token.
+  const tokens = q
+    .split(/[^a-z0-9._-]+/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return hay.includes(q);
+  return tokens.every((t) => hay.includes(t));
 }
 
 function requestHost(req: IncomingMessage, config: HostConfigFile): string {

@@ -31,23 +31,54 @@ function knownWorkspaceProjects(): ProjectInfo[] {
   ];
   return catalog
     .filter((p) => existsSync(p.path) && isUsableCwd(p.path))
-    .map(({ id, name, path }) => ({ id, name, path }));
+    .map(({ id, name, path }) => normalizeProject({ id, name, path }));
+}
+
+/**
+ * Coerce a legacy project record (single `path`) into the current shape
+ * (multi-`paths` + mirrored `path`). Idempotent. Accepts loose input so
+ * legacy on-disk configs and API create bodies without `paths` typecheck.
+ */
+export function normalizeProject(
+  raw: Partial<ProjectInfo> & { id: string; name: string },
+): ProjectInfo {
+  const pathsFromArray = Array.isArray(raw.paths)
+    ? raw.paths.filter((p) => typeof p === "string" && p.trim().length > 0)
+    : [];
+  const legacyPath =
+    typeof raw.path === "string" && raw.path.trim().length > 0 ? raw.path : undefined;
+  const merged = pathsFromArray.length > 0 ? [...pathsFromArray] : (legacyPath ? [legacyPath] : []);
+  const seen = new Set<string>();
+  const paths = merged.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
+  return {
+    ...raw,
+    paths,
+    path: paths[0] ?? "",
+  };
+}
+
+/**
+ * Discover known workspaces on disk (used by the opt-in "Import" endpoint,
+ * no longer merged automatically at boot).
+ */
+export function discoverKnownProjects(): ProjectInfo[] {
+  return knownWorkspaceProjects();
 }
 
 function defaultProjects(): ProjectInfo[] {
-  // host/src → host root when running from dist is host/dist → one up is host, two is repo
-  // When compiled: dist/config.js → ../.. = host package root; we want monorepo root if present
+  // Retained for backwards compatibility / test fixtures. No longer called
+  // from loadConfig (fresh installs start with an empty project list).
   const hostRoot = resolve(__dirname, "..");
   const repoRoot = resolve(hostRoot, "..");
   const candidates: ProjectInfo[] = [...knownWorkspaceProjects()];
 
   if (existsSync(join(repoRoot, "host")) && isUsableCwd(repoRoot)) {
     if (!candidates.some((p) => p.path === repoRoot)) {
-      candidates.unshift({
+      candidates.unshift(normalizeProject({
         id: "clankerspanker",
         name: "ClankerSpanker",
         path: repoRoot,
-      });
+      }));
     }
   }
 
@@ -55,16 +86,16 @@ function defaultProjects(): ProjectInfo[] {
   for (const path of defaultProjectPathCandidates()) {
     if (!existsSync(path) || !isUsableCwd(path)) continue;
     if (candidates.some((p) => p.path === path)) continue;
-    candidates.push({
+    candidates.push(normalizeProject({
       id: i === 0 ? "projects-extra" : `projects-extra-${i}`,
       name: path.split(/[/\\]/).filter(Boolean).pop() ?? "Projects",
       path,
-    });
+    }));
     i += 1;
   }
   const seen = new Set<string>();
   return candidates.filter((p) => {
-    if (!existsSync(p.path) || seen.has(p.path)) return false;
+    if (!p.path || !existsSync(p.path) || seen.has(p.path)) return false;
     seen.add(p.path);
     return true;
   });
@@ -102,6 +133,42 @@ function findGrokBinary(): string {
   return firstExistingBinary(findGrokBinaryCandidates(), "grok");
 }
 
+/**
+ * Persist the in-memory config back to disk. Used by REST mutations
+ * (project CRUD, attachments, etc.). Non-fatal on I/O error — logs and
+ * moves on so the API stays responsive.
+ */
+export function saveConfig(
+  config: HostConfigFile,
+  configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFAULT_CONFIG_PATH,
+): boolean {
+  try {
+    mkdirSync(dirname(configPath), { recursive: true });
+    // Normalize projects so `path` always mirrors `paths[0]` on the wire
+    // for legacy clients still reading the old field.
+    const projects = (config.projects ?? []).map(normalizeProject);
+    const next = { ...config, projects };
+    writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+    return true;
+  } catch (err) {
+    console.warn("[config] saveConfig failed:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/** Directory holding per-project files (attachments, resources). Created on demand. */
+export function projectDir(dataDir: string, projectId: string): string {
+  const dir = join(dataDir, "projects", projectId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export function projectAttachmentsDir(dataDir: string, projectId: string): string {
+  const dir = join(projectDir(dataDir, projectId), "attachments");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFAULT_CONFIG_PATH): HostConfigFile {
   mkdirSync(dirname(configPath), { recursive: true });
 
@@ -111,7 +178,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
       bindHost: process.env.GROK_DISPATCH_HOST ?? "0.0.0.0",
       bindPort: Number(process.env.GROK_DISPATCH_PORT ?? 8787),
       grokBinary: findGrokBinary(),
-      projects: defaultProjects(),
+      // Projects start empty on a fresh install; the UI's Import action can
+      // opt in to filesystem discoveries via /projects/discover.
+      projects: [],
       allowCustomPaths: true,
       profiles: defaultProfiles(),
       autoApproveKinds: DEFAULT_AUTO_APPROVE,
@@ -126,6 +195,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     );
     console.log(
       `[config] Tip: set profiles[].env.ANTHROPIC_API_KEY (or claudeConfigDir) for each Claude account.`,
+    );
+    console.log(
+      `[config] Tip: add a profile with backend "antigravity" after installing agy (https://antigravity.google/docs/cli/install).`,
     );
     return created;
   }
@@ -152,15 +224,22 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     }
   }
 
-  const baseProjects = raw.projects?.length ? raw.projects : defaultProjects();
-  const projects = mergeKnownProjects(baseProjects);
+  // Projects are user-curated now: don't auto-append filesystem discoveries
+  // at boot. Coerce any legacy single-`path` entries into the multi-`paths`
+  // shape so older config.json files continue to work seamlessly.
+  const rawProjects: ProjectInfo[] = Array.isArray(raw.projects) ? raw.projects : [];
+  const projects = rawProjects.map(normalizeProject);
 
-  // Persist expanded project list when we discovered new known workspaces
-  if (projects.length !== baseProjects.length || projects.some((p, i) => p.path !== baseProjects[i]?.path)) {
+  // One-shot migration: if the on-disk file still has old single-`path`
+  // records but no `paths`, rewrite it so subsequent reads are stable.
+  const needsMigration = rawProjects.some(
+    (p) => !Array.isArray((p as ProjectInfo).paths),
+  );
+  if (needsMigration) {
     try {
       const next = { ...raw, profiles, projects };
       writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
-      console.log(`[config] Updated projects list (${projects.length}) in ${configPath}`);
+      console.log(`[config] Migrated ${projects.length} projects to paths[] shape`);
     } catch {
       /* non-fatal */
     }
@@ -206,8 +285,20 @@ export function resolveProjectPath(
   if (projectId) {
     const project = config.projects.find((p) => p.id === projectId);
     if (!project) throw new Error(`Unknown projectId: ${projectId}`);
-    assertUsableCwd(project.path, `project ${project.id}`);
-    return { path: resolve(project.path), projectId: project.id };
+    const projectPaths = (project.paths?.length ? project.paths : [project.path]).filter(Boolean);
+    // If the caller passed a cwd, honor it as long as it's one of the
+    // project's declared paths (multi-path projects need to pick one).
+    if (cwd && cwd.trim().length > 0) {
+      const wanted = resolve(cwd);
+      const match = projectPaths.find((p) => resolve(p) === wanted);
+      if (match) {
+        assertUsableCwd(match, `project ${project.id}`);
+        return { path: resolve(match), projectId: project.id };
+      }
+    }
+    const chosen = projectPaths[0] ?? project.path;
+    assertUsableCwd(chosen, `project ${project.id}`);
+    return { path: resolve(chosen), projectId: project.id };
   }
 
   if (cwd) {

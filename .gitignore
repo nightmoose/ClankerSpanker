@@ -39,6 +39,9 @@ xcuserdata/
 # Local build scratch (CLI installs)
 /tmp/
 
+# Claude screenshot copies dropped into the session cwd so Read isn't sandboxed
+.clankerspanker-attachments/
+
 # Secrets / local env — never commit host tokens or keys
 .env
 .env.*
@@ -51,6 +54,10 @@ config.local.json
 
 # Not part of ClankerSpanker product (move out of tree when you have a home for it)
 event-horizon/
+
+# Desktop screenshots dropped in the repo root
+Screenshot*.png
+/Screenshot *.png
 
 # OS / editor
 .DS_Store

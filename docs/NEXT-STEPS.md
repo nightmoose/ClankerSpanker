@@ -1,73 +1,84 @@
-# Next steps (post Mac + Linux client consolidation)
+# Next steps
 
-**Last updated:** 2026-08-07  
+**Last updated:** 2026-08-23 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
----
-
-## Done (this arc)
-
-- [x] Linux Electron command center in `desktop/` (committed)
-- [x] Client ownership docs (Mac native / Linux Electron / browser / phone deferred)
-- [x] Mac native command center (sessions, host panel, menu bar, icons)
-- [x] Host install path toward Application Support + LaunchAgent (Mac)
-- [x] Multi-folder project picker (Mac); message input at top of session detail
-- [x] Host config: usable cwd guards, known workspace merge, Claude plan/worktree flags
+This file is the in-repo status of play for ClankerSpanker. Snapshot:
+[PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
+`~/mercenary/STATUS-2026-08-23.md`.
 
 ---
 
-## Open / in question
+## Done — 2026-08-21 (approvals + original Mac/Linux UX)
+
+Host tests: **103 passing**. Typecheck + `npm run build` clean. Xcode project regenerated from `project.yml`.
+
+### Approvals (was stalling all other work)
+
+| Item | Where | Status |
+|------|--------|--------|
+| Approve after host restart dismissed the agent | `host/src/acp/session-manager.ts` `resolveApproval` | **Fixed.** Approve on an orphaned pending tool now auto-resumes with a continuation prompt. Reject still dismisses. |
+| Claude screenshot `Read` blocked (files outside cwd) | `claudeTurn` + `ClaudeRunner` | **Fixed.** Images are copied into `{cwd}/.clankerspanker-attachments/` (gitignored) and Claude is launched with `--add-dir` + a Read grant on host attachment dirs. |
+| `git status` still pinged the phone | `isSafeBashCommand` | **Fixed.** `"git"` was missing from the safe-command set; read-only git subcommands now auto-approve. |
+
+**Operator:** the running LaunchAgent still has to pick up `host/dist`:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.nightmoose.grok-dispatch-host"
+```
+
+Sessions that already received the old “agent has been dismissed” banner already had the pending tool cleared — those need one follow-up. After the kickstart, a later host bounce + Approve will resume instead of stalling.
+
+### Original three UX asks (Mac, then Linux)
+
+| # | Ask | Mac native | Linux Electron | Browser `/app/` |
+|---|-----|------------|----------------|-----------------|
+| 1 | Tool-call ellipsis → real input (command / path / payload) | **Done** — `⋯` on transcript + Tools tab, sheet via `GET /sessions/:id/tool-calls/:toolCallId` | **Done** — same `⋯` + modal | Not in the browser session UI (no tool rows) |
+| 2 | Image upload on New Session | **Done** — Mac compose pane + phone `TaskComposerView` | **Done** — compose “Attach images…” | Still follow-up only |
+| 3 | Hard-delete closing the main window | **Done** — macOS clears `macSelectedSessionId` instead of `dismiss()` | Already correct (clears `detail` / `selectedId`) | n/a |
+
+Host plumbing for 1–2: `DispatchRequest.images`, capped `rawInput`/`content` kept on disk (`slimSession`, 4 KB cap), list/detail responses still strip the blobs so the phone payload stays small.
+
+---
+
+### Profiles manager (2026-08-21 follow-up)
+
+The Mac **Host** toolbar panel had install/projects/logs and **no profiles UI**. The website Profiles tab existed but `?admin=1` only unlocked on `127.0.0.1`, so opening `/app/` via LAN or Tailscale on the *same Mac* was read-only.
+
+| Surface | Now |
+|---------|-----|
+| Mac Host panel | **Add profile** (backend picker includes Gemini) + Edit/Delete. Calls the local gateway at `http://127.0.0.1:8787`. |
+| Website `/app/` → Profiles | Same **Add profile** editor when the browser is on this machine (loopback **or** this Mac's own LAN/Tailscale address). |
+| Linux Electron → Profiles | Same **Add profile** editor once the host treats this machine as local. |
+
+`POST /profiles` is live in-process — no host restart required for the new chip to dispatch.
+
+---
+
+## Still open
 
 | Item | Status | Notes |
 |------|--------|--------|
-| **event-horizon/** | Untracked on purpose | Separate mini-game under repo root; not ClankerSpanker product. Commit separately or move out. |
-| **Host tests** | Env broken here | `npm test` failed on missing `@rollup/rollup-darwin-arm64` (node_modules). Re-run after `cd host && rm -rf node_modules && npm i`. Typecheck clean. |
-| **Linux AppImage/deb** | Not built | Must run `npm run dist:linux` **on Linux** / CI — not from this Mac. |
-| **Phone Run scheme** | Deferred | iOS target exists; no Run scheme until we resume phone work. |
-| **Host install from Mac** | Needs real-user soak | “Install / update host” + LaunchAgent not fully field-tested after Application Support copy. |
-| **Electron host install** | Gap | Mac can install to App Support; Linux Electron still points at sibling `host/` path (fine for dev; packaging needs install story). |
-| **ComposerViewModel / iOS shared** | Mac-focused | Shared Swift files changed for multiplatform; smoke phone build when scheme returns. |
-| **ConnectionDefaults hardcode** | Known defect | Still may ship a site IP — AGENTS.md; fix when touching iOS networking. |
+| **Host process restart** | Operator | Kickstart LaunchAgent (command above) so the new `host/dist` is live. |
+| **Browser `/app/` first-turn images** | Gap | Compose in `host/web` still has no screenshot picker. Follow-up images already work on Mac/Linux. |
+| **Linux AppImage/deb** | Not built | Must run `cd desktop && npm run dist:linux` **on Linux** / CI — not from this Mac. |
+| **Phone Run scheme** | Deferred | iOS target exists; New Session screenshots are in `TaskComposerView` but the phone scheme is not the daily driver. |
+| **Host install from Mac** | Needs soak | “Install / update host” + LaunchAgent not fully field-tested after Application Support copy. Running agent today is `com.nightmoose.grok-dispatch-host` → repo `host/dist`. |
+| **Electron host install** | Soak | Linux install to `~/.local/share/clankerspanker/host` + systemd exists in product code; soak-test on a real box still open. |
+| **ConnectionDefaults hardcode** | Known defect | Still may ship `http://192.168.50.9:8787` — AGENTS.md; fix when touching iOS networking. |
+| **Rename leftovers** | Hygiene | `GrokDispatch` directory names, `x-grok-dispatch-token` on the wire (do not rename casually). |
+| **event-horizon/** | Untracked on purpose | Separate mini-game; `.gitignore`d. |
+| **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. |
 
 ---
 
-## Recommended next steps (priority)
+## Recommended next steps
 
-### P0 — Ship what you use daily
-
-1. **Mac soak:** Clean run → menu bar icon → Install host → LaunchAgent reboot → sessions after reboot.  
-2. **Commit already done for Mac + host** (this push prep).  
-3. **Push** `main` when ready (`git push` — not done automatically).
-
-### P1 — Linux ship
-
-4. On a **Linux** machine (or Linux CI), build installable packages:
-   ```bash
-   cd desktop && npm ci && npm run dist:linux
-   ```
-   That produces `.AppImage` / `.deb` under `desktop/release/`.  
-   **You cannot reliably build those on this Mac** — electron-builder needs Linux for those targets.
-
-5. **Host install from Linux desktop (done in product code):**  
-   **Host → Install / update host** installs to `~/.local/share/clankerspanker/host` and enables systemd user service — same idea as Mac Application Support + LaunchAgent.  
-   You only need a monorepo `host/` **once** as the install *source*; day-to-day does not require the AppImage to live next to git.  
-   Soak-test on a real Linux box still open.
-
-6. **Standalone agent CLIs** (Grok + Claude) on all OSes — see [STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md). Optional future: one-click installer buttons in the desktop apps.
-
-### P2 — Product polish
-
-7. Session deep-link from notifications / menu bar into a specific session id.  
-8. Host API `POST /projects` hot-reload so adding folders doesn’t need host restart (today config is read at boot; custom paths still work if `allowCustomPaths`).  
-9. Restore **iOS scheme** only when phone work resumes; keep Mac scheme as default.  
-10. Fix `ConnectionDefaults` hardcoded LAN IP.
-
-### P3 — Hygiene
-
-11. **event-horizon/** — excluded via `.gitignore` until you move it (e.g. `~/Projects/event-horizon`). Not ClankerSpanker product.  
-12. **Host tests:** Gate is `cd host && npm test && npm run typecheck && npm run build`.  
-    Re-run after dependency surgery. (Restored here with `npm install` → **18 tests passed**.)
+1. **Kickstart the host** (above) and soak: Approve a Write on a live Claude session; attach a screenshot on New Session; click `⋯` on a Bash row; hard-delete a session on Mac and confirm the window stays open.
+2. On Linux, `cd desktop && npm start` and repeat 1 / 2 (delete already fine).
+3. This arc was committed and pushed 2026-08-23 (status inventory). Kickstart the host before assuming production picked it up.
+4. Browser compose screenshots only if you actually use `/app/` for dispatch.
 
 ---
 
@@ -75,8 +86,8 @@ Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 When using the products day-to-day:
 
-- **Mac laptop:** Xcode scheme **ClankerSpanker** → destination **My Mac** (never “Designed for iPad”).  
-- **Linux laptop:** Electron app in `desktop/`.  
-- **One gateway:** `host/` + config in `~/.grok-dispatch/`.  
+- **Mac laptop:** Xcode scheme **ClankerSpanker** → destination **My Mac** (never “Designed for iPad”).
+- **Linux laptop:** Electron app in `desktop/`.
+- **One gateway:** `host/` + config in `~/.grok-dispatch/`.
 
 Agents reading the repo should follow [CLIENTS.md](CLIENTS.md) and [AGENTS.md](../AGENTS.md).

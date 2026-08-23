@@ -36,16 +36,29 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  ATS: do NOT set NSAllowsLocalNetworking alongside NSAllowsArbitraryLoads.
+	  On iOS 10+, if NSAllowsLocalNetworking is present, NSAllowsArbitraryLoads is
+	  ignored — and Tailscale 100.64/10 is NOT treated as "local", so cleartext to
+	  http://100.x.x.x:8787 is blocked (CFNetwork -1022). Only arbitrary loads.
+	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
 	</dict>
+	<!-- Local Network privacy prompt (separate from ATS; needed for LAN probes). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ClankerSpanker connects to your Mac host on the local network and Tailscale to run agent sessions.</string>
+	<!-- Required: opening UIImagePickerController(.camera) without this crashes immediately. -->
+	<key>NSCameraUsageDescription</key>
+	<string>ClankerSpanker attaches camera photos to agent messages for debugging UI and app screens.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ClankerSpanker attaches screenshots and photos to agent messages for debugging.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>
 </plist>
+

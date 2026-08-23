@@ -116,7 +116,14 @@ struct MacSettingsPane: View {
 
                 GroupBox("About") {
                     VStack(alignment: .leading, spacing: 6) {
-                        LabeledContent("App", value: "ClankerSpanker 0.6.0")
+                        LabeledContent(
+                            "App",
+                            value: {
+                                let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                                let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+                                return "ClankerSpanker \(v) (\(b))"
+                            }()
+                        )
                         LabeledContent("Bundle", value: "com.nightmoose.clankerspanker.mac")
                         LabeledContent("Platform", value: "macOS (native)")
                         LabeledContent("Hosts", value: "\(appState.hosts.count)")

@@ -1,6 +1,31 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DispatchSession, PublicSessionDetail, PublicSessionSummary, PendingApproval } from "../types.js";
+import type { DispatchSession, PublicSessionDetail, PublicSessionSummary, PendingApproval, ToolCallRecord } from "../types.js";
+
+/** Cap for persisted tool rawInput/content JSON (chars). */
+export const MAX_TOOL_BLOB_CHARS = 4000;
+
+/** Keep tool payloads on disk, but bound a rogue Bash dump so session JSON stays small. */
+export function capToolBlob(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  try {
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    if (serialized.length <= MAX_TOOL_BLOB_CHARS) return value;
+    return { _truncated: true, preview: serialized.slice(0, MAX_TOOL_BLOB_CHARS) };
+  } catch {
+    return undefined;
+  }
+}
+
+export function toolBlobToJson(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 
 export class SessionStore {
   constructor(private readonly dataDir: string) {
@@ -66,10 +91,12 @@ export class SessionStore {
       archived: s.archived === true,
       archivedAt: s.archivedAt,
       backend: s.backend,
+      botId: s.botId,
       profileId: s.profileId,
       profileName: s.profileName,
       profileColor: s.profileColor,
       claudeSessionId: s.claudeSessionId,
+      antigravityConversationId: s.antigravityConversationId,
     };
   }
 
@@ -98,6 +125,9 @@ export class SessionStore {
       plan: slim.plan,
       pendingApproval: pending ?? null,
       pendingQuestion: pendingQuestion ?? slim.pendingQuestion ?? null,
+      tasks: slim.tasks,
+      notes: slim.notes,
+      usage: slim.usage,
     };
   }
 }
@@ -106,14 +136,15 @@ export class SessionStore {
 function slimSession(session: DispatchSession): DispatchSession {
   const events = (session.events ?? []).slice(-80);
   const transcript = (session.transcript ?? []).slice(-120);
-  const toolCalls = (session.toolCalls ?? []).slice(-80).map((t) => ({
+  const toolCalls = (session.toolCalls ?? []).slice(-80).map((t): ToolCallRecord => ({
     toolCallId: t.toolCallId,
     title: (t.title ?? "Tool").slice(0, 200),
     kind: t.kind,
     status: t.status,
     updatedAt: t.updatedAt,
     locations: t.locations?.slice(0, 5),
-    // omit rawInput / content blobs
+    rawInput: capToolBlob(t.rawInput),
+    content: capToolBlob(t.content),
   }));
   return {
     ...session,

@@ -71,6 +71,29 @@ export function findClaudeBinaryCandidates(): string[] {
   ].filter(Boolean) as string[];
 }
 
+/** Antigravity CLI (`agy`) — Google's agent CLI (successor to Gemini CLI). */
+export function findAgyBinaryCandidates(): string[] {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  const win = process.platform === "win32";
+  const name = win ? "agy.exe" : "agy";
+  return [
+    process.env.AGY_BINARY,
+    process.env.ANTIGRAVITY_BINARY,
+    join(home, ".local", "bin", name),
+    ...(win ? [join(home, "AppData", "Local", "agy", "bin", name)] : []),
+    ...(process.platform === "darwin"
+      ? ["/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+      : process.platform === "linux"
+        ? ["/usr/local/bin/agy", "/usr/bin/agy"]
+        : []),
+    name,
+  ].filter(Boolean) as string[];
+}
+
+export function findAgyBinary(): string {
+  return firstExistingBinary(findAgyBinaryCandidates(), "agy");
+}
+
 /**
  * Best-effort LAN / Tailscale hostname:port for phone/browser clients.
  * Never hardcodes a site-specific IP.

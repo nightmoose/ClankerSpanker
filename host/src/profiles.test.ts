@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   defaultModelForBackend,
@@ -109,15 +112,25 @@ describe("profileHasCredentials bot", () => {
     ).toBe(true);
   });
 
-  it("accepts Grok CLI login (~/.grok/auth.json) as bot credentials", () => {
-    expect(
-      profileHasCredentials({
-        id: "b",
-        name: "Bot",
-        backend: "bot",
-        color: "#E879F9",
-        env: {},
-      }),
-    ).toBe(true);
+  it("accepts Grok CLI login (GROK_HOME/auth.json) as bot credentials", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-grok-home-"));
+    writeFileSync(join(dir, "auth.json"), "{}");
+    const prev = process.env.GROK_HOME;
+    process.env.GROK_HOME = dir;
+    try {
+      expect(
+        profileHasCredentials({
+          id: "b",
+          name: "Bot",
+          backend: "bot",
+          color: "#E879F9",
+          env: {},
+        }),
+      ).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.GROK_HOME;
+      else process.env.GROK_HOME = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

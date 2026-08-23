@@ -6,6 +6,7 @@
 **Branch:** `main`
 
 Day-to-day play-by-play: [`docs/NEXT-STEPS.md`](docs/NEXT-STEPS.md).  
+How we work: [`docs/HOUSE-STYLE.md`](docs/HOUSE-STYLE.md) (ContractGate loop, RFC-000, `make check`).  
 Estate map: `~/mercenary/STATUS-2026-08-23.md`.
 
 ## What this is

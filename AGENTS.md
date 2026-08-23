@@ -55,10 +55,24 @@ Linux = Electron (`desktop/`). Do not dual-maintain full session UIs on Mac.
 - Tests are excluded from the build (`tsconfig` `exclude`) so `dist/` stays
   clean — keep it that way.
 
+## House style (ContractGate loop)
+
+Non-trivial work is RFC-first. Playbook: [`docs/HOUSE-STYLE.md`](docs/HOUSE-STYLE.md).
+Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Ledger: [`docs/STATUS.md`](docs/STATUS.md).
+
+```bash
+make check                 # house-style-check + host tests + typecheck + build
+make rfc SLUG=short-kebab  # next RFC number + template
+```
+
+CI runs `make check` on every push/PR to `main`. Do not land heavy changes
+without an RFC and a `MAINTENANCE_LOG.md` line.
+
 ## Gates
 
 ```bash
-cd host && npm test        # vitest — 103 tests as of 2026-08-21
+make check
+cd host && npm test        # vitest — ratcheted in host/test-baseline.txt (106 as of RFC-000)
 cd host && npm run typecheck
 cd host && npm run build
 ```

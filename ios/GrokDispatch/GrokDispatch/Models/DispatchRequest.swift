@@ -12,6 +12,7 @@ struct DispatchRequestBody: Codable, Sendable {
     var profileId: String?
     var botId: String?
     var images: [PromptImagePayload]?
+    var extraDirs: [String]?
 }
 
 struct PromptImagePayload: Codable, Sendable {
@@ -49,6 +50,8 @@ enum AppTab: Hashable {
     case sessions
     case projects
     case tasks
+    case bots
+    case terminal
     case compose
     /// macOS command center — local host process + config.
     case host

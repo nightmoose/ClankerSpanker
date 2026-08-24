@@ -1,6 +1,6 @@
 # Project Status — ClankerSpanker
 
-**As of:** 2026-08-23  
+**As of:** 2026-08-24  
 **GitHub:** https://github.com/nightmoose/ClankerSpanker (private)  
 **Local directory (name is stale):** `~/Projects/GrokDispatch`  
 **Branch:** `main`
@@ -43,9 +43,9 @@ Host tests were **103 passing** as of 2026-08-21; re-run after this commit
 
 ## Open / next
 
-1. **Operator:** `launchctl kickstart -k "gui/$(id -u)/com.nightmoose.grok-dispatch-host"`
-   so the LaunchAgent loads new `host/dist`.
-2. Browser `/app/` still has no first-turn screenshot picker.
+1. **Operator:** kickstart once so `host/dist` includes the terminal helper, then
+   use the in-app **Term** tab (`ws/terminal`) for later host-shell jobs.
+2. Browser `/app/` still has no first-turn screenshot picker, chat-only, or Files.
 3. Linux AppImage/deb must be built **on Linux**.
 4. Phone Run scheme is not the daily driver.
 5. `ConnectionDefaults` may still hardcode `http://192.168.50.9:8787`.

@@ -400,6 +400,7 @@ struct SessionDetail: Codable, Identifiable, Sendable {
     var title: String
     var prompt: String
     var cwd: String
+    var extraDirs: [String]?
     var projectId: String?
     var model: String
     var planMode: Bool
@@ -432,6 +433,36 @@ struct SessionDetail: Codable, Identifiable, Sendable {
     var usage: SessionUsage?
 
     var isArchived: Bool { archived == true }
+
+    var effectiveExtraDirs: [String] { extraDirs ?? [] }
+}
+
+struct SessionFileEntry: Codable, Identifiable, Hashable, Sendable {
+    var path: String
+    var kind: String
+    var title: String?
+    var updatedAt: String?
+
+    var id: String { path }
+
+    var isFolder: Bool { kind == "folder" }
+    var isAttachment: Bool { kind == "attachment" }
+}
+
+struct SessionFileContent: Codable, Identifiable, Sendable {
+    var path: String
+    var name: String
+    var mimeType: String
+    var size: Int
+    var encoding: String
+    var text: String?
+    var data: String?
+    var truncated: Bool?
+    var binary: Bool?
+
+    var isImage: Bool { mimeType.hasPrefix("image/") }
+
+    var id: String { path }
 }
 
 /// Cumulative token usage for a Claude session (from `message.usage` on the

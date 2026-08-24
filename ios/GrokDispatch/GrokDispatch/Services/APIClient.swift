@@ -446,6 +446,31 @@ actor APIClient {
         try await get("/sessions/\(id)/diff", host: host)
     }
 
+    struct SessionFilesResponse: Codable, Sendable { var files: [SessionFileEntry] }
+
+    func sessionFiles(id: String, host: HostEndpoint) async throws -> [SessionFileEntry] {
+        let res: SessionFilesResponse = try await get("/sessions/\(id)/files", host: host)
+        return res.files
+    }
+
+    func sessionFile(id: String, path: String, host: HostEndpoint) async throws -> SessionFileContent {
+        try await get(
+            "/sessions/\(id)/file",
+            host: host,
+            queryItems: [URLQueryItem(name: "path", value: path)]
+        )
+    }
+
+    func addExtraDirs(sessionId: String, extraDirs: [String], host: HostEndpoint) async throws -> SessionDetail {
+        struct Body: Codable { var extraDirs: [String] }
+        return try await request(
+            method: "PATCH",
+            path: "/sessions/\(sessionId)/extra-dirs",
+            body: Body(extraDirs: extraDirs),
+            host: host
+        )
+    }
+
     func toolCall(sessionId: String, toolCallId: String, host: HostEndpoint) async throws -> ToolCallDetail {
         try await get("/sessions/\(sessionId)/tool-calls/\(toolCallId)", host: host)
     }

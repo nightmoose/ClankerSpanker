@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Host terminal</title>
+  <link rel="stylesheet" href="./vendor/xterm.css" />
+  <style>
+    html, body { height: 100%; margin: 0; background: #0b0b10; color: #e8e8ee; font: 13px/1.4 system-ui, sans-serif; }
+    #bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-bottom: 1px solid #2a2a36;
+      font-size: 12px; color: #a1a1aa;
+    }
+    #bar strong { color: #f2f2f7; font-weight: 650; }
+    #status { margin-left: auto; }
+    #status.ok { color: #3dd68c; }
+    #status.bad { color: #ff6b6b; }
+    #term { height: calc(100% - 40px); padding: 8px; }
+    .xterm { height: 100%; }
+    .xterm-viewport { overflow-y: auto !important; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong>Host terminal</strong>
+    <span>login shell on the ClankerSpanker machine — same token as the app</span>
+    <span id="status">connecting…</span>
+  </div>
+  <div id="term"></div>
+  <script src="./vendor/xterm.min.js"></script>
+  <script>
+    (function () {
+      const statusEl = document.getElementById("status");
+      const termHost = document.getElementById("term");
+      const Terminal = window.Terminal;
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        theme: {
+          background: "#0b0b10",
+          foreground: "#e8e8ee",
+          cursor: "#73b8ff",
+          selectionBackground: "#73b8ff55",
+        },
+        convertEol: false,
+      });
+      term.open(termHost);
+
+      function setStatus(text, ok) {
+        statusEl.textContent = text;
+        statusEl.className = ok === true ? "ok" : ok === false ? "bad" : "";
+      }
+
+      function measure() {
+        const cw = term._core?._renderService?.dimensions?.css?.cell?.width;
+        const ch = term._core?._renderService?.dimensions?.css?.cell?.height;
+        const w = termHost.clientWidth - 8;
+        const h = termHost.clientHeight - 8;
+        if (cw && ch && w > 0 && h > 0) {
+          return {
+            cols: Math.max(20, Math.floor(w / cw)),
+            rows: Math.max(8, Math.floor(h / ch)),
+          };
+        }
+        return { cols: 80, rows: 24 };
+      }
+
+      function wsUrlFromPage(token, cols, rows) {
+        const loc = window.location;
+        const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+        const u = new URL("/ws/terminal", proto + "//" + loc.host);
+        if (token) u.searchParams.set("token", token);
+        u.searchParams.set("cols", String(cols));
+        u.searchParams.set("rows", String(rows));
+        return u.toString();
+      }
+
+      let socket = null;
+      let fitted = false;
+
+      function fitAndResize() {
+        const { cols, rows } = measure();
+        try { term.resize(cols, rows); } catch (e) { /* */ }
+        if (socket && socket.readyState === 1) {
+          socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        }
+      }
+
+      window.startClankerTerminal = function startClankerTerminal(cfg) {
+        cfg = cfg || {};
+        const hash = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+        const token = cfg.token || hash.get("token") || "";
+        const { cols, rows } = measure();
+        try { term.resize(cols, rows); } catch (e) { /* */ }
+        const url = cfg.wsUrl || wsUrlFromPage(token, term.cols, term.rows);
+        if (socket) {
+          try { socket.close(); } catch (e) { /* */ }
+        }
+        setStatus("connecting…");
+        const ws = new WebSocket(url);
+        socket = ws;
+        ws.onopen = function () {
+          setStatus("live", true);
+          fitted = true;
+          fitAndResize();
+        };
+        ws.onclose = function (ev) {
+          setStatus(ev.code === 4401 ? "unauthorized" : "disconnected", false);
+        };
+        ws.onerror = function () {
+          setStatus("error", false);
+        };
+        ws.onmessage = function (ev) {
+          let msg;
+          try { msg = JSON.parse(ev.data); } catch (e) { return; }
+          if (msg.type === "out" && typeof msg.data === "string") term.write(msg.data);
+          else if (msg.type === "error") {
+            term.writeln("\r\n\x1b[31m" + (msg.message || "error") + "\x1b[0m");
+            setStatus(msg.message || "error", false);
+          } else if (msg.type === "exit") {
+            term.writeln("\r\n\x1b[90m[shell exited " + msg.code + "]\x1b[0m");
+            setStatus("exited " + msg.code, false);
+          } else if (msg.type === "ready") {
+            setStatus((msg.shell || "shell") + " · " + (msg.cwd || ""), true);
+          }
+        };
+        term.onData(function (data) {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "in", data: data }));
+        });
+      };
+
+      window.sendClankerKey = function sendClankerKey(data) {
+        if (socket && socket.readyState === 1) {
+          socket.send(JSON.stringify({ type: "in", data: data }));
+        } else {
+          term.input ? term.input(data) : term.write("");
+        }
+      };
+
+      window.addEventListener("resize", function () {
+        if (fitted) fitAndResize();
+      });
+
+      const auto = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+      const stored = (function () {
+        try { return localStorage.getItem("clankerspanker.token") || ""; } catch (e) { return ""; }
+      })();
+      if (auto.get("token") || stored || auto.get("autostart") === "1") {
+        window.startClankerTerminal({ token: auto.get("token") || stored });
+      }
+    })();
+  </script>
+</body>
+</html>

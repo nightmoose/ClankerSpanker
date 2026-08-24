@@ -1,12 +1,39 @@
 # Next steps
 
-**Last updated:** 2026-08-23 (NightMoose)
+**Last updated:** 2026-08-24 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-08-24 (RFC-004 host terminal)
+
+You no longer need to “get back to the Mac” for `launchctl`, `git`, `agy`, etc.
+Open **Term** on the phone (or Mac ⌘⇧K / Linux Terminal). Same host token as
+the app; login shell on the host. Kickstart the host once so `pty-bridge.py` is
+on disk, then use Term for later kicks.
+
+---
+
+## Done — 2026-08-24 (RFC-003 phone bots)
+
+iPhone can **create** hunters and **Run now**. New **Bots** tab (between Tasks and Dispatch). Mac ⌘2 Bots tab unchanged. Host APIs were already there.
+
+---
+
+## Done — 2026-08-24 (RFC-002 chat / files / extra folders)
+
+| Ask | Where | Status |
+|---|---|---|
+| Chat-only Transcript (toggle, not a new tab) | Mac/iOS `TranscriptView`, Linux `mergedItems` | **Done.** Hides tools, thoughts, system. |
+| Files under Notes + view | `GET /sessions/:id/files` + `/file`, Notes tab | **Done.** Mac FileViewerPane; Linux viewer; iPhone sheet. |
+| Multi-folder picker at dispatch + add later | `extraDirs` on dispatch + `PATCH /sessions/:id/extra-dirs` | **Done.** Mac NSOpenPanel / Linux dialog; iPhone picks host project paths. Claude `--add-dir` on each turn. |
+
+**Operator:** kickstart the LaunchAgent so `host/dist` loads, then rebuild the Mac app.
 
 ---
 

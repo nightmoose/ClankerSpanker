@@ -28,7 +28,8 @@ import type {
   ReviewWorkRequest,
   TransferProfileRequest,
 } from "../types.js";
-import { resolveProjectPath, saveConfig } from "../config.js";
+import { normalizeExtraDirs, resolveProjectPath, saveConfig } from "../config.js";
+import { extraDirsAgentNote, listSessionFiles, readSessionFile } from "../sessions/files.js";
 import { SessionStore, toolBlobToJson } from "../sessions/store.js";
 import {
   extractClaudeContext,
@@ -720,6 +721,7 @@ export class SessionManager extends EventEmitter {
       title: isBotRun ? botTaggedTitle(rawTitle) : rawTitle,
       prompt: promptText,
       cwd,
+      extraDirs: normalizeExtraDirs(this.config, cwd, req.extraDirs),
       projectId,
       model,
       planMode,
@@ -852,6 +854,7 @@ export class SessionManager extends EventEmitter {
       live.session.transferHandoffPending = false;
       this.persist(live.session);
     }
+    agentText = extraDirsAgentNote(live.session.extraDirs) + agentText;
 
     // Run the ACP turn in the background; return the session snapshot with
     // the user's entry immediately so the phone doesn't hit URLSession's
@@ -2541,6 +2544,43 @@ export class SessionManager extends EventEmitter {
     return { cwd: s.cwd, diff };
   }
 
+  listFiles(sessionId: string) {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return listSessionFiles(s, this.config);
+  }
+
+  readFile(sessionId: string, path: string) {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return readSessionFile(s, this.config, path);
+  }
+
+  /** Merge extra workspace folders. Next Claude turn gets `--add-dir`; others see a prompt note. */
+  addExtraDirs(sessionId: string, extraDirs: string[]): DispatchSession {
+    const session = this.getMutableSession(sessionId);
+    const added = normalizeExtraDirs(this.config, session.cwd, extraDirs);
+    const existing = session.extraDirs ?? [];
+    const merged = [...existing];
+    for (const dir of added) {
+      if (!merged.includes(dir)) merged.push(dir);
+    }
+    session.extraDirs = merged;
+    session.updatedAt = now();
+    const newly = merged.filter((d) => !existing.includes(d));
+    if (newly.length) {
+      session.transcript.push({
+        id: randomUUID(),
+        role: "system",
+        text: `Added extra workspace folder${newly.length === 1 ? "" : "s"}:\n${newly.map((d) => `- ${d}`).join("\n")}`,
+        at: now(),
+      });
+    }
+    this.persist(session);
+    this.emitEvent(session, "session.updated", { extraDirs: session.extraDirs });
+    return session;
+  }
+
   // ── internals ──────────────────────────────────────────────
 
   /** One Claude Code turn: stream-json + optional phone tool approvals. */
@@ -2736,9 +2776,10 @@ export class SessionManager extends EventEmitter {
     const savedPaths = savePromptImagesForSession(this.config, session, images);
     const promptPaths = materializeImagesInCwd(session.cwd, savedPaths);
     let agentPrompt =
-      promptPaths.length === 0
+      extraDirsAgentNote(session.extraDirs) +
+      (promptPaths.length === 0
         ? prompt
-        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`;
+        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`);
 
     if (session.transferHandoffPending || (!session.antigravityConversationId && session.transcript.length > 1)) {
       if (session.transferHandoffPending) {
@@ -2897,6 +2938,9 @@ export class SessionManager extends EventEmitter {
     }
     if (session.subagents === false) {
       newParams._meta = { ...(newParams._meta as object), noSubagents: true };
+    }
+    if (session.extraDirs?.length) {
+      newParams._meta = { ...(newParams._meta as object), extraDirs: session.extraDirs };
     }
     const result = (await client.request("session/new", newParams)) as { sessionId?: string };
     session.grokSessionId = result.sessionId ?? randomUUID();
@@ -3242,6 +3286,9 @@ export class SessionManager extends EventEmitter {
       if (!session.subagents) {
         newParams._meta = { ...(newParams._meta as object), noSubagents: true };
       }
+      if (session.extraDirs?.length) {
+        newParams._meta = { ...(newParams._meta as object), extraDirs: session.extraDirs };
+      }
 
       const result = (await client.request("session/new", newParams)) as {
         sessionId?: string;
@@ -3258,6 +3305,7 @@ export class SessionManager extends EventEmitter {
           `[Plan mode] Explore the codebase and write a concrete implementation plan before making any file edits. ` +
           `Present the plan for approval before implementing.\n\n${session.prompt}`;
       }
+      promptText = extraDirsAgentNote(session.extraDirs) + promptText;
 
       await this.promptTurn(live, promptText, imgs);
     } catch (err) {
@@ -4025,6 +4073,9 @@ function ensureAttachmentDirs(config: HostConfigFile, session: DispatchSession):
     dirs.push(join(config.dataDir, "projects", session.projectId, "attachments"));
   }
   for (const dir of dirs) mkdirSync(dir, { recursive: true });
+  for (const extra of session.extraDirs ?? []) {
+    if (extra && !dirs.includes(extra)) dirs.push(extra);
+  }
   return dirs;
 }
 

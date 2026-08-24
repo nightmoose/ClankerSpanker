@@ -29,6 +29,94 @@ struct NewBotSheet: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        NavigationStack {
+            Form {
+                if let formError {
+                    Section {
+                        Text(formError)
+                            .foregroundStyle(DispatchColors.danger)
+                    }
+                }
+                Section("Bot") {
+                    TextField("Name", text: $name)
+                    TextEditor(text: $job)
+                        .frame(minHeight: 140)
+                    Text("Runs as this prompt each fire. Drafts go to .bot-outbox/. Nothing is sent until you approve.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Runs under") {
+                    if profiles.isEmpty {
+                        Text("No profile on this host yet — connect a host first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Profile", selection: $selectedProfileId) {
+                            ForEach(profiles) { bound in
+                                Text("\(bound.displayName) · \(bound.backendLabel)")
+                                    .tag(bound.profile.id)
+                            }
+                        }
+                    }
+                    Text("Hunter sessions show under this profile on Sessions — tagged in the title, not a separate chip.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Working directory") {
+                    if projects.isEmpty {
+                        Text("No projects on this host yet — add one from Projects first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Project", selection: $selectedProjectId) {
+                            Text("—").tag(Optional<String>.none)
+                            ForEach(projects) { p in
+                                Text("\(p.name) — \(p.primaryPath)").tag(Optional(p.id))
+                            }
+                        }
+                    }
+                    Text("cwd for each run. File writes stay in that project’s .bot-outbox/.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Schedule") {
+                    Picker("Interval", selection: $interval) {
+                        ForEach(intervalChoices, id: \.self) { value in
+                            Text(BotSchedule.label(value)).tag(value)
+                        }
+                    }
+                    Toggle("Enable schedule", isOn: $enabled)
+                    Text(enabled
+                         ? "Host fires this job on the interval (first run within ~30s). You can still Run now from the bot."
+                         : "Paused until you enable it. Run now still works from the bot.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("New bot")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        Task { await create() }
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(!canCreate)
+                }
+            }
+        }
+        .task { await loadProjects() }
+        #else
+        macBody
+        #endif
+    }
+
+    #if os(macOS)
+    private var macBody: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("New bot")
@@ -147,6 +235,7 @@ struct NewBotSheet: View {
         .frame(minWidth: 560, minHeight: 560)
         .task { await loadProjects() }
     }
+    #endif
 
     private var intervalChoices: [String] {
         BotSchedule.presets.contains(interval) ? BotSchedule.presets : BotSchedule.presets + [interval]

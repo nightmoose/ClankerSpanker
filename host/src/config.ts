@@ -322,6 +322,36 @@ export function resolveProjectPath(
   throw new Error("No project configured. Add projects to ~/.grok-dispatch/config.json");
 }
 
+/** Extra workspace folders besides cwd. Must exist; honors allowCustomPaths. */
+export function normalizeExtraDirs(
+  config: HostConfigFile,
+  cwd: string,
+  extraDirs?: string[],
+): string[] {
+  if (!extraDirs?.length) return [];
+  const cwdResolved = resolve(cwd);
+  const out: string[] = [];
+  for (const raw of extraDirs) {
+    const trimmed = String(raw ?? "").trim();
+    if (!trimmed) continue;
+    const dir = resolve(trimmed);
+    if (dir === cwdResolved) continue;
+    assertUsableCwd(dir, "extra folder");
+    if (!config.allowCustomPaths) {
+      const allowed = config.projects.some((p) => {
+        const paths = (p.paths?.length ? p.paths : [p.path]).filter(Boolean);
+        return paths.some((pp) => {
+          const r = resolve(pp);
+          return dir === r || dir.startsWith(r + "/") || dir.startsWith(r + "\\");
+        });
+      });
+      if (!allowed) throw new Error(`Extra folder not allowlisted: ${dir}`);
+    }
+    if (!out.includes(dir)) out.push(dir);
+  }
+  return out;
+}
+
 function assertUsableCwd(path: string, label: string): void {
   if (!isUsableCwd(path)) {
     throw new Error(

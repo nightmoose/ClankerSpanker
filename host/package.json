@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/terminal && cp src/terminal/pty-bridge.py dist/terminal/pty-bridge.py",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",

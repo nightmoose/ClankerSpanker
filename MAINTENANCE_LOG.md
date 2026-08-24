@@ -2,6 +2,51 @@
 
 ---
 
+## Run: 2026-08-24 — Host status pill flashing (RFC-004 follow-up)
+
+Two `WebSocketServer({ server, path })` instances both subscribed to HTTP
+`upgrade`. `ws` abortHandshake()s path mismatches, so `/ws/terminal` killed
+every `/ws` client. Status flipped Live ↔ Offline. Route upgrades by pathname
+with `noServer: true`.
+
+---
+
+## Run: 2026-08-24 — RFC-004 host terminal
+
+Authenticated PTY over `ws://host:8787/ws/terminal?token=` (same host token,
+`tokensMatch`). Login shell via Python `pty.fork` (no node-pty). Phone **Term**
+tab, Mac toolbar ⌘⇧K sheet, Linux nav Terminal, `/app/terminal.html`.
+
+**Soak:** phone Term → `hostname` / `launchctl`; Mac sheet; idle close.
+
+---
+
+## Run: 2026-08-24 — RFC-003 phone bots (create + run)
+
+iPhone chrome had no Bots tab (`AppTab` was Sessions/Projects/Tasks/Dispatch/Settings). Mac already had hunters (⌘2). Host `POST /bots` and `POST /bots/:id/run` were live; the phone never called them.
+
+Added **Bots** to the top strip. List + New bot sheet + Run now / last session / job / outbox. Same host APIs as Mac.
+
+**Soak:** iPhone Bots → New bot → Create; Run now opens the hunter session.
+
+---
+
+## Run: 2026-08-24 — RFC-002 session chat-only, Files, extra folders
+
+Transcript now has a **Chat only** toggle (Mac/iOS + Linux) that hides
+tool rows, thoughts, and system lines. Notes gained a **Files** section
+(cwd, extra dirs, tool locations, attachments) with view: Mac pane,
+Linux viewer (local disk, host API fallback), iPhone sheet via
+`GET /sessions/:id/file`. Dispatch accepts `extraDirs`; Mac/Linux use a
+real multi-folder picker (first = cwd, rest extra). iPhone picks extra
+folders from registered host projects. Mid-session `PATCH …/extra-dirs`
+merges more folders; Claude gets `--add-dir` on the next turn.
+
+**Soak:** Chat only on a noisy Claude session; Notes Files open a tool
+path; pick two folders on New Session; add a third from Notes.
+
+---
+
 ## Run: 2026-08-23 — RFC-001 markdown tables + todo jump to source
 
 Expanded-message `MarkdownParser` had no table block — GFM `| col |` rows

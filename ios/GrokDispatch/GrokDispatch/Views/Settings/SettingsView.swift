@@ -148,6 +148,18 @@ struct SettingsView: View {
                         .listRowBackground(DispatchColors.card)
                     }
 
+                    Section("Host terminal") {
+                        Button {
+                            appState.selectedTab = .terminal
+                        } label: {
+                            Label("Open host shell", systemImage: "terminal.fill")
+                        }
+                        Text("Login shell on the selected host over the same token as the app. Use it for launchctl, git, agy, and other “when you’re at the Mac” jobs.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(DispatchColors.card)
+
                     Section("Connection") {
                         HStack {
                             Text("WebSocket")

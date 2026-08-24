@@ -33,6 +33,11 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 | Session list / detail / approvals / follow-up | Yes | Yes | Yes |
 | Compose / dispatch | Yes | Yes | Yes |
 | First-turn screenshot attach on New Session | Yes | Yes | No |
+| Transcript Chat-only toggle | Yes | Yes | No |
+| Notes Files list + view | Yes | Yes | No |
+| Extra workspace folders (dispatch + mid-session) | Yes | Yes | No |
+| Create / run hunter bots | Yes (⌘2) | Yes | No |
+| Host terminal (login shell) | Yes (⌘⇧K) | Yes | `/app/terminal.html` |
 | Tool-call ellipsis (rawInput / command) | Yes | Yes | No (browser session UI has no tool rows) |
 | Grok / Claude disk attach | Yes (via host API) | Yes | Yes |
 | Multi-host registry | Yes | Remote mode + URL | URL in settings |
@@ -41,6 +46,8 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 | Menu bar / tray | Menu bar extra | System tray | No |
 | OS notifications | UNUserNotification + host `notify-send` | Electron Notification + host | Host only |
 | Multi-folder project picker | Yes (Mac panel) | Host config JSON / UI | Host config only |
+
+iPhone uses the same `ios/` sources as Mac. RFC-003 adds a **Bots** tab on the phone (create + Run now). Browser `/app/` still has no hunters UI.
 
 Gaps are product work on the **owning** client for that platform, not a reason to fork the host.
 

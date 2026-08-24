@@ -55,6 +55,7 @@ struct MacCommandCenter: View {
     @State private var showHost = false
     @State private var showProjects = false
     @State private var showTasks = false
+    @State private var showTerminal = false
     @State private var rootTab: MacRootTab = .sessions
     @State private var bootstrapMessage: String?
     @State private var isBootstrapping = false
@@ -141,6 +142,19 @@ struct MacCommandCenter: View {
                             .keyboardShortcut(.cancelAction)
                     }
                 }
+        }
+        .sheet(isPresented: $showTerminal) {
+            NavigationStack {
+                TerminalView()
+                    .environmentObject(appState)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showTerminal = false }
+                                .keyboardShortcut(.cancelAction)
+                        }
+                    }
+            }
+            .frame(minWidth: 780, minHeight: 520)
         }
         .sheet(isPresented: $showHost) {
             NavigationStack {
@@ -509,6 +523,14 @@ struct MacCommandCenter: View {
             }
             .help("Tasks")
             .keyboardShortcut("t", modifiers: [.command, .shift])
+
+            Button {
+                showTerminal = true
+            } label: {
+                Image(systemName: "terminal")
+            }
+            .help("Host terminal (login shell on this machine)")
+            .keyboardShortcut("k", modifiers: [.command, .shift])
 
             Button {
                 showHost = true

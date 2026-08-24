@@ -8,6 +8,8 @@ struct TranscriptView: View {
     var isRunning: Bool = false
     /// Display name for assistant bubbles (Claude / Grok / Antigravity).
     var agentLabel: String = "Agent"
+    /// When true, hide tool rows, thoughts, and system lines — chat messages only.
+    var chatOnly: Bool = false
 
     /// Long-press context-menu hooks. Set any or all to expose those actions
     /// on the bubble's long-press menu. Parent presents the corresponding
@@ -44,8 +46,14 @@ struct TranscriptView: View {
     }
 
     private var ordered: [Item] {
-        var items: [Item] = entries.map { .entry($0) }
-        items.append(contentsOf: toolCalls.map { .tool($0) })
+        let chatRoles: Set<String> = ["user", "assistant"]
+        let visibleEntries = chatOnly
+            ? entries.filter { chatRoles.contains($0.role) }
+            : entries
+        var items: [Item] = visibleEntries.map { .entry($0) }
+        if !chatOnly {
+            items.append(contentsOf: toolCalls.map { .tool($0) })
+        }
         return items.sorted { $0.timestamp < $1.timestamp }
     }
 

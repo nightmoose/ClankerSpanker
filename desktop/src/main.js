@@ -488,6 +488,15 @@ function registerIpc() {
     return res.filePaths[0];
   });
 
+  ipcMain.handle("dialog:pick-directories", async () => {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory", "createDirectory", "multiSelections"],
+    });
+    if (res.canceled || !res.filePaths.length) return [];
+    return res.filePaths;
+  });
+
   ipcMain.handle("dialog:pick-files", async (_e, opts) => {
     const win = BrowserWindow.getFocusedWindow() || mainWindow;
     const filters = opts?.images

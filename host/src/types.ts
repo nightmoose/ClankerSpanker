@@ -88,6 +88,12 @@ export interface DispatchRequest {
   botTools?: string[];
   /** Optional screenshots on the opening turn (same shape as follow-up images). */
   images?: PromptImage[];
+  /**
+   * Extra workspace folders besides `cwd`. Claude/Antigravity get `--add-dir`;
+   * Grok is told about them in-session. Validated like cwd (must exist; custom
+   * paths honor allowCustomPaths).
+   */
+  extraDirs?: string[];
 }
 
 export type SessionBackend = "grok" | "claude" | "antigravity" | "bot";
@@ -270,6 +276,8 @@ export interface DispatchSession {
   title: string;
   prompt: string;
   cwd: string;
+  /** Extra workspace folders besides cwd (Claude/Antigravity `--add-dir`). */
+  extraDirs?: string[];
   projectId?: string;
   model: string;
   planMode: boolean;
@@ -617,7 +625,27 @@ export interface PublicSessionSummary {
   antigravityConversationId?: string;
 }
 
+export interface SessionFileEntry {
+  path: string;
+  kind: "file" | "folder" | "attachment";
+  title?: string;
+  updatedAt?: string;
+}
+
+export interface SessionFileContent {
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  encoding: "utf8" | "base64";
+  text?: string;
+  data?: string;
+  truncated?: boolean;
+  binary?: boolean;
+}
+
 export interface PublicSessionDetail extends PublicSessionSummary {
+  extraDirs?: string[];
   subagents: boolean;
   worktree: boolean;
   stopReason?: string;

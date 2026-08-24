@@ -92,6 +92,14 @@ const Api = (() => {
     events: (id, since = 0) =>
       request(`/sessions/${enc(id)}/events?since=${encodeURIComponent(since)}`),
     diff: (id) => request(`/sessions/${enc(id)}/diff`),
+    sessionFiles: (id) => request(`/sessions/${enc(id)}/files`),
+    sessionFile: (id, filePath) =>
+      request(`/sessions/${enc(id)}/file?path=${encodeURIComponent(filePath)}`),
+    addExtraDirs: (id, extraDirs) =>
+      request(`/sessions/${enc(id)}/extra-dirs`, {
+        method: "PATCH",
+        body: jsonBody({ extraDirs }),
+      }),
 
     projects: () => request("/projects"),
     project: (id) => request(`/projects/${enc(id)}`),

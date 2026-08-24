@@ -24,7 +24,8 @@ import type {
   ReviewWorkRequest,
   TransferProfileRequest,
 } from "./types.js";
-import { isAuthorized, unauthorizedBody } from "./auth.js";
+import { isAuthorized, tokensMatch, unauthorizedBody } from "./auth.js";
+import { TerminalHub } from "./terminal/session.js";
 import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
 import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
@@ -80,9 +81,48 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     }
   });
 
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  // Two paths on one HTTP server. `ws` abortHandshake()s path mismatches, so a
+  // second WebSocketServer({ server, path }) would kill /ws clients (status pill
+  // flashing Live ↔ Offline). Route upgrades ourselves.
+  const wss = new WebSocketServer({ noServer: true });
+  const termWss = new WebSocketServer({ noServer: true });
+  const terminals = new TerminalHub();
   const clients = new Set<WsClient>();
   const localClients = new Set<WsClient>();
+
+  server.on("upgrade", (req, socket, head) => {
+    const pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname;
+    if (pathname === "/ws/terminal") {
+      termWss.handleUpgrade(req, socket, head, (ws) => {
+        termWss.emit("connection", ws, req);
+      });
+      return;
+    }
+    if (pathname === "/ws") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+      return;
+    }
+    socket.destroy();
+  });
+
+  function terminalAuthorized(req: IncomingMessage): boolean {
+    if (isAuthorized(req, config)) return true;
+    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
+    return tokensMatch(url.searchParams.get("token"), config.hostToken);
+  }
+
+  termWss.on("connection", (ws, req) => {
+    if (!terminalAuthorized(req)) {
+      ws.close(4401, "Unauthorized");
+      return;
+    }
+    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
+    const cols = Number(url.searchParams.get("cols") || "80");
+    const rows = Number(url.searchParams.get("rows") || "24");
+    terminals.attach(ws, { cols, rows });
+  });
 
   // Let SessionManager suppress its shell-based desktop notifications when
   // a loopback client (the Mac app) is present to post its own richer local
@@ -94,7 +134,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
     const qToken = url.searchParams.get("token");
     const headerOk = isAuthorized(req, config);
-    if (!headerOk && qToken !== config.hostToken) {
+    if (!headerOk && !tokensMatch(qToken, config.hostToken)) {
       ws.close(4401, "Unauthorized");
       return;
     }
@@ -156,6 +196,8 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
 
   const shutdown = async () => {
     clearInterval(heartbeat);
+    terminals.shutdown();
+    termWss.close();
     wss.close();
     server.close();
     await manager.shutdown();
@@ -995,6 +1037,51 @@ async function handleHttp(
       json(res, 200, result);
     } catch (err) {
       json(res, 404, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /sessions/:id/files — cwd, extra dirs, tool locations, attachments
+  const filesMatch = /^\/sessions\/([^/]+)\/files$/.exec(path);
+  if (method === "GET" && filesMatch) {
+    const id = decodeURIComponent(filesMatch[1]!);
+    try {
+      json(res, 200, { files: manager.listFiles(id) });
+    } catch (err) {
+      json(res, 404, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /sessions/:id/file?path= — read a workspace file (allowlisted roots only)
+  const fileMatch = /^\/sessions\/([^/]+)\/file$/.exec(path);
+  if (method === "GET" && fileMatch) {
+    const id = decodeURIComponent(fileMatch[1]!);
+    const filePath = url.searchParams.get("path") ?? "";
+    try {
+      json(res, 200, manager.readFile(id, filePath));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = /not found/i.test(msg) ? 404 : /outside/i.test(msg) ? 403 : 400;
+      json(res, code, { error: msg });
+    }
+    return;
+  }
+
+  // PATCH /sessions/:id/extra-dirs — add extra workspace folders mid-session
+  const extraDirsMatch = /^\/sessions\/([^/]+)\/extra-dirs$/.exec(path);
+  if (method === "PATCH" && extraDirsMatch) {
+    const id = decodeURIComponent(extraDirsMatch[1]!);
+    try {
+      const body = (await readJson(req)) as { extraDirs?: string[] };
+      const session = manager.addExtraDirs(id, body.extraDirs ?? []);
+      json(
+        res,
+        200,
+        manager.store.toDetail(session, manager.getPendingApproval(id), manager.getPendingQuestion(id)),
+      );
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }

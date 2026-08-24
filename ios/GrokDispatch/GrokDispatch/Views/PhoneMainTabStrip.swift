@@ -1,7 +1,7 @@
 import SwiftUI
 
 #if os(iOS)
-/// App-wide top navigation: Sessions / Projects / Tasks / Dispatch / Settings.
+/// App-wide top navigation: Sessions / Projects / Tasks / Bots / Dispatch / Settings.
 /// Sits above every phone page (including session detail) so the home-indicator
 /// zone stays free for content and the message field.
 struct PhoneMainTabStrip: View {
@@ -17,6 +17,8 @@ struct PhoneMainTabStrip: View {
             )
             tabButton(tab: .projects, title: "Projects", systemImage: "folder.fill")
             tabButton(tab: .tasks, title: "Tasks", systemImage: "checklist")
+            tabButton(tab: .bots, title: "Bots", systemImage: "scope")
+            tabButton(tab: .terminal, title: "Term", systemImage: "terminal.fill")
             tabButton(tab: .compose, title: "Dispatch", systemImage: "paperplane.fill")
             tabButton(tab: .settings, title: "Settings", systemImage: "gearshape.fill")
         }
@@ -39,7 +41,7 @@ struct PhoneMainTabStrip: View {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: systemImage)
-                        .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                        .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
                         .frame(height: 22)
                     if badge > 0 {
                         Text(badge > 9 ? "9+" : "\(badge)")
@@ -53,9 +55,9 @@ struct PhoneMainTabStrip: View {
                     }
                 }
                 Text(title)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 9, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.75)
             }
             .frame(maxWidth: .infinity)
             .foregroundStyle(isSelected ? DispatchColors.accent : Color.secondary)

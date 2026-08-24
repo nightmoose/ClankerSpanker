@@ -12,6 +12,7 @@ struct SessionDetailView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var vm: SessionDetailViewModel
     @State private var selectedTab = DetailTab.transcript
+    @State private var chatOnly = false
     @State private var isEditingTitle = false
     @State private var draftTitle = ""
     @State private var photoPickerItems: [PhotosPickerItem] = []
@@ -765,12 +766,22 @@ struct SessionDetailView: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Section", selection: $selectedTab) {
-            ForEach(DetailTab.allCases, id: \.self) { tab in
-                Text(tab.rawValue).tag(tab)
+        VStack(spacing: 6) {
+            Picker("Section", selection: $selectedTab) {
+                ForEach(DetailTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            if selectedTab == .transcript {
+                Toggle(isOn: $chatOnly) {
+                    Text("Chat only")
+                        .font(.caption.weight(.semibold))
+                }
+                .toggleStyle(.switch)
+                .accessibilityHint("Hide tool calls, thoughts, and system lines")
             }
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal)
         .padding(.top, 4)
         .padding(.bottom, 8)
@@ -787,6 +798,7 @@ struct SessionDetailView: View {
                 streaming: vm.streamingText,
                 isRunning: detail.status == .running,
                 agentLabel: agentLabel(for: detail),
+                chatOnly: chatOnly,
                 onSaveAsTodo: { entry in captureSheet = .saveAsTodo(entry) },
                 onScanForTodo: { entry in captureSheet = .scanForTodo(entry) },
                 onMakeNote: { entry in captureSheet = .makeNote(entry) },
@@ -851,6 +863,7 @@ struct SessionDetailView: View {
             SessionNotesTab(
                 detail: detail,
                 host: vm.host,
+                projects: projectChoices,
                 onJumpToMessage: { messageId in
                     // Switch tab first so the transcript's LazyVStack starts
                     // materializing its rows. The ScrollViewReader's onChange
@@ -859,6 +872,9 @@ struct SessionDetailView: View {
                     selectedTab = .transcript
                     pendingScrollToMessageId = messageId
                     expandMessageId = messageId
+                },
+                onOpenLocalFile: { path in
+                    openFileInViewer(path, cwd: detail.cwd)
                 }
             )
             .environmentObject(appState)
@@ -1368,6 +1384,18 @@ private struct SessionDetailsSheet: View {
                         Text(detail.cwd.isEmpty ? "—" : detail.cwd)
                             .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
+                    }
+                    if !detail.effectiveExtraDirs.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Extra folders")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.effectiveExtraDirs, id: \.self) { dir in
+                                Text(dir)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
                     if let projectId = detail.projectId, !projectId.isEmpty {
                         LabeledContent("Project id", value: projectId)

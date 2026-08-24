@@ -28,6 +28,18 @@ paths:
     get:
       summary: git diff in session cwd
       security: [{ bearerAuth: [] }]
+  /sessions/{id}/files:
+    get:
+      summary: Session-relevant files (cwd, extra dirs, tool locations, attachments)
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/file:
+    get:
+      summary: Read a workspace file (path query; must be under cwd/extraDirs/attachments)
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/extra-dirs:
+    patch:
+      summary: Add extra workspace folders mid-session
+      security: [{ bearerAuth: [] }]
   /bots:
     get:
       summary: List autonomous bots
@@ -74,6 +86,12 @@ paths:
   /ws:
     get:
       summary: WebSocket event stream (?token=)
+  /ws/terminal:
+    get:
+      summary: Interactive host PTY (login shell). Same host token as /ws (?token=). JSON frames in/out/resize.
+  /app/terminal.html:
+    get:
+      summary: xterm.js page for the host terminal (static; socket is the auth gate)
 components:
   securitySchemes:
     bearerAuth:

@@ -200,6 +200,8 @@ const Api = (() => {
     attachGrok: (body) => request("/sessions/attach", { method: "POST", body: jsonBody(body) }),
     attachClaude: (body) =>
       request("/sessions/attach-claude", { method: "POST", body: jsonBody(body) }),
+    attachAgy: (body) =>
+      request("/sessions/attach-agy", { method: "POST", body: jsonBody(body) }),
 
     listBots: () => request("/bots"),
     getBot: (id) => request(`/bots/${enc(id)}`),

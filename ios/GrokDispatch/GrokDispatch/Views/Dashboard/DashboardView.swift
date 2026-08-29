@@ -457,8 +457,10 @@ struct DashboardView: View {
         if let bound = appState.selectedBoundProfile {
             if bound.profile.isGrok {
                 diskSection(title: "Grok on disk", items: filteredGrokDisk, kind: .grok)
-            } else {
+            } else if bound.profile.isClaude {
                 diskSection(title: "Claude on disk", items: filteredClaudeDisk, kind: .claude)
+            } else if bound.profile.isAntigravity {
+                diskSection(title: "Gemini CLI on disk", items: filteredAgyDisk, kind: .agy)
             }
         } else if appState.showsAllProfiles {
             if !filteredGrokDisk.isEmpty {
@@ -467,10 +469,13 @@ struct DashboardView: View {
             if !filteredClaudeDisk.isEmpty {
                 diskSection(title: "Claude on disk", items: filteredClaudeDisk, kind: .claude)
             }
+            if !filteredAgyDisk.isEmpty {
+                diskSection(title: "Gemini CLI on disk", items: filteredAgyDisk, kind: .agy)
+            }
         }
     }
 
-    private enum DiskKind { case grok, claude }
+    private enum DiskKind { case grok, claude, agy }
 
     @ViewBuilder
     private func diskSection(title: String, items: [DiskSessionHint], kind: DiskKind) -> some View {
@@ -491,6 +496,17 @@ struct DashboardView: View {
                             }
                         } label: {
                             diskRow(disk, badge: "Grok", color: appState.selectedBoundProfile?.uiColor ?? DispatchColors.accent)
+                        }
+                        .listRowBackground(DispatchColors.card)
+                    } else if kind == .agy {
+                        Button {
+                            Task {
+                                if let route = await vm.attachAgy(disk: disk, appState: appState) {
+                                    pendingRoute = route
+                                }
+                            }
+                        } label: {
+                            diskRow(disk, badge: "Gemini", color: Color(hex: "#34A853") ?? DispatchColors.success)
                         }
                         .listRowBackground(DispatchColors.card)
                     } else {
@@ -528,7 +544,9 @@ struct DashboardView: View {
         } footer: {
             Text(kind == .grok
                  ? "Grok Build TUI sessions not yet in the managed list. Tap to open for remote control. Most sessions import automatically on refresh."
-                 : "Claude CLI history on this host. Tap to attach under the selected Claude profile.")
+                 : kind == .agy
+                    ? "agy / Gemini CLI conversations on this host. Tap to attach and resume with --conversation."
+                    : "Claude CLI history on this host. Tap to attach under the selected Claude profile.")
                 .font(.caption2)
         }
     }
@@ -562,6 +580,7 @@ struct DashboardView: View {
 
     private var filteredGrokDisk: [DiskSessionHint] { filterDisk(appState.diskSessions) }
     private var filteredClaudeDisk: [DiskSessionHint] { filterDisk(appState.claudeSessions) }
+    private var filteredAgyDisk: [DiskSessionHint] { filterDisk(appState.agySessions) }
 
     private func matchesSelectedProfile(_ s: SessionSummary) -> Bool {
         appState.sessionMatchesSelectedProfile(s)

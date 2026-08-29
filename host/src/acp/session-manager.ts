@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import type {
   AgentQuestion,
   AnswerQuestionsRequest,
+  AttachAgyRequest,
   AttachClaudeRequest,
   AttachRequest,
   Bot,
@@ -34,6 +35,7 @@ import { SessionStore, toolBlobToJson } from "../sessions/store.js";
 import {
   extractClaudeContext,
   gitDiff,
+  listAgySessions,
   listClaudeSessions,
   listDiskSessions,
   type DiskSessionHint,
@@ -351,6 +353,8 @@ export class SessionManager extends EventEmitter {
    *  hints on every list refresh. Persisted to
    *  <dataDir>/deleted-claude-sessions.json. */
   private forgottenClaude?: Set<string>;
+  /** Tombstone set of Antigravity conversation IDs the user deleted. */
+  private forgottenAgy?: Set<string>;
 
   constructor(private readonly config: HostConfigFile) {
     super();
@@ -451,6 +455,48 @@ export class SessionManager extends EventEmitter {
   isForgottenClaudeSession(claudeSessionId: string | undefined | null): boolean {
     if (!claudeSessionId) return false;
     return this.loadForgottenClaude().has(claudeSessionId);
+  }
+
+  private get forgottenAgyPath(): string {
+    return join(this.config.dataDir, "deleted-agy-sessions.json");
+  }
+
+  private loadForgottenAgy(): Set<string> {
+    if (this.forgottenAgy) return this.forgottenAgy;
+    const set = new Set<string>();
+    try {
+      if (existsSync(this.forgottenAgyPath)) {
+        const raw = JSON.parse(readFileSync(this.forgottenAgyPath, "utf8")) as
+          | { conversationId?: string }[]
+          | string[];
+        for (const entry of raw) {
+          const id = typeof entry === "string" ? entry : entry?.conversationId;
+          if (id) set.add(id);
+        }
+      }
+    } catch (err) {
+      console.warn("[sessions] failed to read deleted-agy-sessions.json:", err);
+    }
+    this.forgottenAgy = set;
+    return set;
+  }
+
+  private saveForgottenAgy(): void {
+    if (!this.forgottenAgy) return;
+    const entries = [...this.forgottenAgy].map((conversationId) => ({
+      conversationId,
+      deletedAt: now(),
+    }));
+    try {
+      writeFileSync(this.forgottenAgyPath, JSON.stringify(entries, null, 2) + "\n", "utf8");
+    } catch (err) {
+      console.warn("[sessions] failed to write deleted-agy-sessions.json:", err);
+    }
+  }
+
+  isForgottenAgySession(conversationId: string | undefined | null): boolean {
+    if (!conversationId) return false;
+    return this.loadForgottenAgy().has(conversationId);
   }
 
   /** For graceful shutdown / tests. */
@@ -1139,6 +1185,80 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
+  /**
+   * Open an Antigravity / Gemini CLI conversation (`agy --conversation <id>`).
+   * Does not parse the sqlite trajectory; the CLI holds history.
+   */
+  async attachAgy(req: AttachAgyRequest): Promise<DispatchSession> {
+    const agyId = req.conversationId?.trim();
+    if (!agyId) throw new Error("conversationId is required");
+    if (!req.cwd?.trim()) throw new Error("cwd is required");
+
+    const existing = this.list().find((s) => s.antigravityConversationId === agyId);
+    if (existing) {
+      if (req.prompt?.trim()) return this.followUp(existing.id, req.prompt.trim());
+      return existing;
+    }
+
+    let profile = req.profileId
+      ? resolveProfile(this.config, req.profileId)
+      : resolveProfile(this.config, undefined, "antigravity");
+    if (profile.backend !== "antigravity") {
+      profile = resolveProfile(this.config, undefined, "antigravity");
+    }
+    if (profile.backend !== "antigravity") {
+      throw new Error("No Antigravity / Gemini profile on this host — add one in Profiles.");
+    }
+
+    const hint = listAgySessions(200).find((s) => s.id === agyId);
+    const id = randomUUID();
+    const createdAt = now();
+    const title =
+      req.title?.trim() ||
+      hint?.title ||
+      `Gemini ${agyId.slice(0, 8)}`;
+    const session: DispatchSession = {
+      id,
+      backend: "antigravity",
+      profileId: profile.id,
+      profileName: profile.name,
+      profileColor: profile.color,
+      antigravityConversationId: agyId,
+      title: shortTitle(req.prompt ?? title, req.title ?? title),
+      prompt: req.prompt?.trim() || `(Gemini CLI conversation ${agyId.slice(0, 8)})`,
+      cwd: req.cwd.trim(),
+      model: profile.model ?? "antigravity",
+      planMode: false,
+      subagents: false,
+      worktree: false,
+      status: "idle",
+      createdAt,
+      updatedAt: createdAt,
+      transcript: [
+        {
+          id: randomUUID(),
+          role: "system",
+          text:
+            `Attached Gemini CLI conversation ${agyId} as ${profile.name}. ` +
+            `Follow-ups resume with agy --conversation. History stays in the CLI.`,
+          at: createdAt,
+        },
+      ],
+      toolCalls: [],
+      events: [],
+    };
+    this.store.save(session);
+    this.emitEvent(session, "session.created", {
+      session: this.store.toSummary(session),
+      attached: true,
+      backend: "antigravity",
+    });
+    if (req.prompt?.trim()) {
+      return this.antigravityTurn(id, req.prompt.trim());
+    }
+    return session;
+  }
+
   /** Create a Claude tool approval and park the session (called by PreToolUse hook). */
   createClaudeApproval(body: {
     sessionId: string;
@@ -1460,6 +1580,13 @@ export class SessionManager extends EventEmitter {
       if (!set.has(s.claudeSessionId)) {
         set.add(s.claudeSessionId);
         this.saveForgottenClaude();
+      }
+    }
+    if (s.antigravityConversationId) {
+      const set = this.loadForgottenAgy();
+      if (!set.has(s.antigravityConversationId)) {
+        set.add(s.antigravityConversationId);
+        this.saveForgottenAgy();
       }
     }
     // Emit a terminal event so open clients drop it from their lists.

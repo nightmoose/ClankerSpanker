@@ -507,6 +507,34 @@ actor APIClient {
         )
     }
 
+    func attachAgy(
+        conversationId: String,
+        cwd: String,
+        title: String?,
+        prompt: String?,
+        profileId: String?,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
+        struct Body: Codable {
+            var conversationId: String
+            var cwd: String
+            var title: String?
+            var prompt: String?
+            var profileId: String?
+        }
+        return try await post(
+            "/sessions/attach-agy",
+            body: Body(
+                conversationId: conversationId,
+                cwd: cwd,
+                title: title,
+                prompt: prompt,
+                profileId: profileId
+            ),
+            host: host
+        )
+    }
+
     func attachClaude(
         claudeSessionId: String,
         cwd: String,

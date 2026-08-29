@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-08-24 — RFC-005 attach Gemini CLI conversations
+
+`GET /sessions` now returns `agySessions` from
+`~/.gemini/antigravity-cli`. `POST /sessions/attach-agy` wraps them as
+Antigravity Dispatch sessions (`agy --conversation`). Mac/iPhone disk lists
+and Linux Gemini disk nav. Not the consumer Gemini app.
+
+**Soak:** Gemini chip → on-disk row → attach → follow-up.
+
+---
+
 ## Run: 2026-08-24 — Host status pill flashing (RFC-004 follow-up)
 
 Two `WebSocketServer({ server, path })` instances both subscribed to HTTP

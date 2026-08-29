@@ -10,6 +10,14 @@ This file is the in-repo status of play for ClankerSpanker. Snapshot:
 
 ---
 
+## Done — 2026-08-24 (RFC-005 attach Gemini CLI)
+
+agy TUI/CLI chats on the host can be attached like Claude/Grok disk sessions.
+Gemini chip → **Gemini CLI on disk**. Resume uses `--conversation`. Consumer
+Gemini app chats still cannot be imported.
+
+---
+
 ## Done — 2026-08-24 (RFC-004 host terminal)
 
 You no longer need to “get back to the Mac” for `launchctl`, `git`, `agy`, etc.

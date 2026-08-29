@@ -68,6 +68,37 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    func attachAgy(disk: DiskSessionHint, appState: AppState) async -> SessionRoute? {
+        guard let cwd = disk.cwd, !cwd.isEmpty else {
+            errorMessage = "Could not resolve project path for that Gemini CLI session."
+            return nil
+        }
+        guard let host = appState.selectedHost else {
+            errorMessage = "No host selected"
+            return nil
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let geminiProfile = appState.selectedBoundProfile?.profile.isAntigravity == true
+                ? appState.selectedBoundProfile?.profile.id
+                : appState.boundProfiles.first(where: { $0.profile.isAntigravity })?.profile.id
+            let detail = try await appState.api.attachAgy(
+                conversationId: disk.id,
+                cwd: cwd,
+                title: disk.title,
+                prompt: nil,
+                profileId: geminiProfile,
+                host: host
+            )
+            await load(appState: appState)
+            return SessionRoute(hostId: host.id, sessionId: detail.id)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func attachClaude(disk: DiskSessionHint, mode: String, appState: AppState) async -> SessionRoute? {
         guard let cwd = disk.cwd, !cwd.isEmpty else {
             errorMessage = "Could not resolve project path for that Claude session."

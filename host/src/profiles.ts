@@ -195,14 +195,51 @@ export function defaultModelForBackend(backend: SessionBackend): string {
 /**
  * Model strings that mean "let the CLI pick its own default." When the
  * session model matches one of these, runners should NOT pass `--model` —
- * the CLI's own default (usually the newest Sonnet / Opus for the account
- * plan) is preferable to pinning an old slug.
+ * the CLI's own default is preferable to pinning a stale slug.
  */
-const CLAUDE_MODEL_SENTINELS: ReadonlySet<string> = new Set(["claude", "default", ""]);
+const MODEL_SENTINELS: Record<Exclude<SessionBackend, "bot">, ReadonlySet<string>> = {
+  claude: new Set(["claude", "default", ""]),
+  antigravity: new Set(["antigravity", "agy", "gemini", "default", ""]),
+  grok: new Set(["grok", "grok-build", "default", ""]),
+};
+
+/** True when `model` is a placeholder and this backend should omit `--model`. Bot has no CLI flag. */
+export function isModelSentinel(backend: SessionBackend, model?: string | null): boolean {
+  if (backend === "bot") return false;
+  return MODEL_SENTINELS[backend].has((model ?? "").trim().toLowerCase());
+}
 
 /** True when the given model string is a placeholder that should not be passed to `claude --model`. */
 export function isClaudeModelSentinel(model?: string | null): boolean {
-  return CLAUDE_MODEL_SENTINELS.has((model ?? "").trim().toLowerCase());
+  return isModelSentinel("claude", model);
+}
+
+/**
+ * `grok agent` flags that belong before the `stdio` subcommand.
+ * Sentinels skip `--model` so the CLI's account default applies.
+ */
+export function grokAgentModelArgs(model?: string | null): string[] {
+  const m = model?.trim();
+  if (!m || isModelSentinel("grok", m)) return [];
+  return ["--model", m];
+}
+
+/**
+ * Prepend `profile.systemPrompt` to a user turn on backends with no native
+ * append-system-prompt flag (Grok ACP, Antigravity). Claude uses
+ * `--append-system-prompt` instead.
+ *
+ * Only inject on a fresh session start. Skip resume / follow-up so the
+ * persona is not restated on every turn.
+ */
+export function wrapWithProfileSystemPrompt(
+  userText: string,
+  systemPrompt: string | undefined,
+  opts: { fresh: boolean },
+): string {
+  const persona = systemPrompt?.trim();
+  if (!persona || !opts.fresh) return userText;
+  return `[Profile instructions]\n${persona}\n\n${userText}`;
 }
 
 /** Grok ACP meta (plan mode / worktree / subagents) — not used by CLI backends. */

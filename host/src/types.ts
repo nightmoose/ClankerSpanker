@@ -132,9 +132,10 @@ export interface AgentProfile {
   /** Default model id when dispatching with this profile. */
   model?: string;
   /**
-   * Optional persona / project-context text appended to the agent's system
-   * prompt (Claude: `--append-system-prompt`). Keeps recurring instructions
-   * out of every dispatch and shrinks the user prompt.
+   * Optional persona / project-context text. Claude: `--append-system-prompt`.
+   * Grok ACP and Antigravity: prepended once on a fresh session start.
+   * Bot: folded into `buildMessages`. Keeps recurring instructions out of
+   * every dispatch.
    */
   systemPrompt?: string;
   /**
@@ -155,7 +156,7 @@ export interface PublicAgentProfile {
   model?: string;
   /** True when a non-empty API key / env is configured for this profile. */
   hasCredentials: boolean;
-  /** Persona / append-system-prompt configured for this profile (Claude only). */
+  /** Persona / system-prompt fragment configured for this profile. */
   systemPrompt?: string;
   /** Auto-approve signatures for this profile (persist across sessions). */
   toolAllowlist?: string[];

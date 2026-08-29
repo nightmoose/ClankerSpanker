@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   SessionManager,
   buildOrphanedApprovalResumePrompt,
+  composeGrokOpeningPrompt,
   isSafeBashCommand,
   lastUserTextIs,
   materializeImagesInCwd,
@@ -80,6 +81,29 @@ describe("lastUserTextIs", () => {
     expect(lastUserTextIs({ transcript: [{ id: "1", role: "user", text: "hi", at: "" }] }, "hi")).toBe(true);
     expect(lastUserTextIs({ transcript: [{ id: "1", role: "user", text: "hi", at: "" }] }, "bye")).toBe(false);
     expect(lastUserTextIs({ transcript: [] }, "hi")).toBe(false);
+  });
+});
+
+describe("composeGrokOpeningPrompt", () => {
+  it("injects profile.systemPrompt once on a fresh session", () => {
+    const text = composeGrokOpeningPrompt({
+      prompt: "ship rfc-006",
+      systemPrompt: "You are NightMoose.",
+    });
+    expect(text).toMatch(/^\[Profile instructions\]\nYou are NightMoose\.\n\nship rfc-006$/);
+  });
+
+  it("keeps plan-mode and extra-dirs notes under the persona", () => {
+    const text = composeGrokOpeningPrompt({
+      prompt: "plan the fix",
+      planMode: true,
+      extraDirs: ["/tmp/extra"],
+      systemPrompt: "Stay terse.",
+    });
+    expect(text.startsWith("[Profile instructions]\nStay terse.\n\n")).toBe(true);
+    expect(text).toContain("[Plan mode]");
+    expect(text).toContain("/tmp/extra");
+    expect(text).toContain("plan the fix");
   });
 });
 

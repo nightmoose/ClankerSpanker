@@ -14,8 +14,7 @@ Adding a line requires an RFC (new untested surface is the failure mode).
 | `host/src/login.ts` | Interactive CLI login |
 | `host/src/server.ts` | HTTP+WS monolith — **highest-value follow-up** |
 | `host/src/acp/client.ts` | Agent stdio client |
-| `host/src/acp/session-manager.ts` | Partial: `session-manager.approvals.test.ts` covers resume-after-restart only |
-| `host/src/antigravity/runner.ts` | External `agy` CLI |
+| `host/src/acp/session-manager.ts` | Partial: `session-manager.approvals.test.ts` covers resume-after-restart + opening prompt |
 | `host/src/bot/index.ts` | Barrel |
 | `host/src/bot/protocol.ts` | Types / constants |
 | `host/src/bot/seed.ts` | One-shot hunter seed |

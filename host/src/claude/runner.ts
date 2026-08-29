@@ -38,6 +38,12 @@ export interface ClaudeRunnerOptions {
    * Passed as `--add-dir` and `permissions.additionalDirectories`.
    */
   extraDirs?: string[];
+  /**
+   * Pre-flight tool names (`--tools`). Empty/omit leaves the CLI default set.
+   * Claude's `--allowedTools` is a permission allow, not availability — we
+   * use `--tools` so a list of `Read,Grep` cannot fire `Write`.
+   */
+  toolAllowlist?: string[];
 }
 
 export interface ClaudeUsageDelta {
@@ -106,6 +112,8 @@ export class ClaudeRunner extends EventEmitter {
     if (persona) {
       args.push("--append-system-prompt", persona);
     }
+
+    args.push(...claudeToolRestrictArgs(this.opts.toolAllowlist));
 
     if (this.opts.requirePhoneApproval) {
       // default mode + hook gate for write/execute tools
@@ -471,6 +479,13 @@ export function buildPreToolUseDecision(
  * Node hook: blocks Edit/Bash until ClankerSpanker host + phone approve.
  * Must emit hookSpecificOutput.permissionDecision (not flat decision/reason).
  */
+/** `--tools Read,Grep` so a pre-flight allowlist actually removes other tools. */
+export function claudeToolRestrictArgs(allowlist?: string[]): string[] {
+  const tools = (allowlist ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
+  if (!tools.length) return [];
+  return ["--tools", tools.join(",")];
+}
+
 /** Directories that actually exist, for `--add-dir` / settings. */
 export function extraDirsForClaude(dirs?: string[]): string[] {
   if (!dirs?.length) return [];

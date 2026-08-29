@@ -28,6 +28,11 @@ export interface AntigravityRunnerOptions {
    * prepended to the first `-p` turn of a fresh conversation only.
    */
   systemPrompt?: string;
+  /**
+   * Pre-flight tool names. `agy` has no `--tools` flag — this is prepended
+   * as an instruction on a fresh conversation (advisory, not enforced).
+   */
+  toolAllowlist?: string[];
 }
 
 /**
@@ -41,9 +46,19 @@ export function buildAntigravityArgs(opts: {
   skipPermissions: boolean;
   printTimeout?: string;
   systemPrompt?: string;
+  toolAllowlist?: string[];
 }): string[] {
   const fresh = !opts.conversationId?.trim();
-  const prompt = wrapWithProfileSystemPrompt(opts.prompt, opts.systemPrompt, { fresh });
+  const tools = (opts.toolAllowlist ?? []).map((s) => s.trim()).filter(Boolean);
+  const toolNote =
+    fresh && tools.length
+      ? `[Profile tool allowlist — you may only use: ${tools.join(", ")}. Do not attempt other tools.]\n\n`
+      : "";
+  const prompt = wrapWithProfileSystemPrompt(
+    toolNote + opts.prompt,
+    opts.systemPrompt,
+    { fresh },
+  );
   const args = [
     "-p",
     prompt,
@@ -94,6 +109,7 @@ export class AntigravityRunner extends EventEmitter {
       skipPermissions: this.opts.skipPermissions,
       printTimeout: this.opts.printTimeout,
       systemPrompt: this.opts.systemPrompt,
+      toolAllowlist: this.opts.toolAllowlist,
     });
 
     this.proc = spawn(bin, args, {

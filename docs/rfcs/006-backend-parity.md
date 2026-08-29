@@ -88,8 +88,11 @@ independently useful; land in order.
    Post-hoc auto-approval keeps working under a renamed field
    `autoApprovalSignatures` (`AgentProfile`), backfilled from
    `toolAllowlist` on load for one release.
-2. Claude runner: pass `--allowedTools` from the list.
-3. Antigravity runner: pass the equivalent (verify flag).
+2. Claude runner: pass `--tools` (availability) from the list.
+   `--allowedTools` is a permission allow, not pre-flight — using it
+   would collapse the two fields. `agy` has no equivalent flag; we
+   prepend an advisory instruction on a fresh conversation only.
+3. Antigravity runner: advisory prompt note (no CLI flag exists).
 4. Grok ACP: translate the list to auto-approve rules server-side and
    reject tool calls whose name isn't on the list.
 5. Bot runner: merge `profile.env` into runtime env before
@@ -117,10 +120,10 @@ Per phase:
       and each sentinel string.
 
 **Phase C**
-- [ ] Claude runner: `--allowedTools` present when `toolAllowlist`
+- [x] Claude runner: `--tools` present when `toolAllowlist`
       set, absent when empty.
-- [ ] Bot runner: `profile.env` values reach `pickProvider` (spy on
-      env snapshot).
+- [x] Bot runner: `profile.env` values reach `pickProvider` (spy on
+      env snapshot). `GROK_HOME` from `grokHome` is in the same merge.
 - [ ] Manual: profile with `toolAllowlist=[Read, Grep]` cannot fire
       `Write` on any backend.
 

@@ -8,10 +8,12 @@ import {
   isClaudeModelSentinel,
   isGrokBackend,
   isModelSentinel,
+  isToolOnAllowlist,
   normalizeBackend,
   normalizeProfiles,
   profileHasCredentials,
   profileProcessEnv,
+  splitProfileToolFields,
   wrapWithProfileSystemPrompt,
 } from "./profiles.js";
 import type { SessionBackend } from "./types.js";
@@ -273,5 +275,36 @@ describe("wrapWithProfileSystemPrompt", () => {
   it("is a no-op when systemPrompt is empty", () => {
     expect(wrapWithProfileSystemPrompt("hi", "  ", { fresh: true })).toBe("hi");
     expect(wrapWithProfileSystemPrompt("hi", undefined, { fresh: true })).toBe("hi");
+  });
+});
+
+describe("splitProfileToolFields", () => {
+  it("migrates signature-shaped toolAllowlist entries to autoApprovalSignatures", () => {
+    const split = splitProfileToolFields({
+      toolAllowlist: ["claude:bash:git status", "Read", "Grep", "claude:read"],
+    });
+    expect(split.toolAllowlist).toEqual(["Read", "Grep"]);
+    expect(split.autoApprovalSignatures).toEqual(["claude:bash:git status", "claude:read"]);
+  });
+
+  it("keeps explicit autoApprovalSignatures and still strips signatures from toolAllowlist", () => {
+    const split = splitProfileToolFields({
+      toolAllowlist: ["Write", "claude:write"],
+      autoApprovalSignatures: ["claude:bash"],
+    });
+    expect(split.toolAllowlist).toEqual(["Write"]);
+    expect(split.autoApprovalSignatures).toEqual(["claude:bash", "claude:write"]);
+  });
+});
+
+describe("isToolOnAllowlist", () => {
+  it("treats an empty list as unrestricted", () => {
+    expect(isToolOnAllowlist(undefined, "Write")).toBe(true);
+    expect(isToolOnAllowlist([], "Write")).toBe(true);
+  });
+
+  it("matches bare tool names case-insensitively", () => {
+    expect(isToolOnAllowlist(["Read", "Grep"], "read")).toBe(true);
+    expect(isToolOnAllowlist(["Read", "Grep"], "Write")).toBe(false);
   });
 });

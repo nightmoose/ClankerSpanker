@@ -155,6 +155,35 @@ describe("SessionManager approvals", () => {
     expect(result.transcript.map((t) => t.text).join("\n")).not.toMatch(/dismissed/i);
   });
 
+  it("rejects Claude tools that are not on profile.toolAllowlist", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    const cfg = testConfig(dataDir);
+    cfg.profiles = [
+      {
+        id: "fullscore",
+        name: "FullScore",
+        backend: "claude",
+        color: "#F97316",
+        toolAllowlist: ["Read", "Grep"],
+      },
+    ];
+    manager = new SessionManager(cfg);
+    const session = claudeSession(cwd);
+    session.status = "running";
+    manager.store.save(session);
+
+    const approval = manager.createClaudeApproval({
+      sessionId: session.id,
+      toolName: "Write",
+      title: "Write: /tmp/foo.md",
+      toolInput: { file_path: "/tmp/foo.md", contents: "hi" },
+    });
+    expect(approval.status).toBe("rejected");
+    expect(manager.get(session.id)?.status).toBe("running");
+    expect(manager.get(session.id)?.pendingApproval).toBeFalsy();
+  });
+
   it("orphaned approve resumes the session instead of dismissing", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
     const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));

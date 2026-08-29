@@ -31,7 +31,7 @@ import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
 import { listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
-import { normalizeBackend, publicProfiles, resolveProfile } from "./profiles.js";
+import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
 import { profilesWithUsage } from "./usage.js";
 import { startProfileLogin } from "./login.js";
 import {
@@ -569,9 +569,12 @@ async function handleHttp(
         grokHome: trimOrUndef(body.grokHome),
         model: trimOrUndef(body.model),
         systemPrompt: trimOrUndef(body.systemPrompt),
-        toolAllowlist: Array.isArray(body.toolAllowlist)
-          ? body.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
-          : undefined,
+        ...splitProfileToolFields({
+          toolAllowlist: Array.isArray(body.toolAllowlist) ? body.toolAllowlist : undefined,
+          autoApprovalSignatures: Array.isArray(body.autoApprovalSignatures)
+            ? body.autoApprovalSignatures
+            : undefined,
+        }),
       };
       config.profiles = [...existing, created];
       saveConfig(config);
@@ -597,6 +600,7 @@ async function handleHttp(
         model?: string | null;
         systemPrompt?: string | null;
         toolAllowlist?: string[] | null;
+        autoApprovalSignatures?: string[] | null;
         // this-machine-only
         name?: string;
         backend?: string;
@@ -631,10 +635,20 @@ async function handleHttp(
       if (body.toolAllowlist === null) {
         next.toolAllowlist = undefined;
       } else if (Array.isArray(body.toolAllowlist)) {
-        const cleaned = body.toolAllowlist
-          .map((s) => String(s).trim())
-          .filter((s) => s.length > 0);
-        next.toolAllowlist = cleaned.length ? cleaned : undefined;
+        next.toolAllowlist = body.toolAllowlist;
+      }
+      if (body.autoApprovalSignatures === null) {
+        next.autoApprovalSignatures = undefined;
+      } else if (Array.isArray(body.autoApprovalSignatures)) {
+        next.autoApprovalSignatures = body.autoApprovalSignatures;
+      }
+      if (
+        body.toolAllowlist !== undefined ||
+        body.autoApprovalSignatures !== undefined
+      ) {
+        const split = splitProfileToolFields(next);
+        next.toolAllowlist = split.toolAllowlist;
+        next.autoApprovalSignatures = split.autoApprovalSignatures;
       }
       // This-machine-only fields: secrets + identity. Silently ignored from other devices.
       if (isLocalMachineReq(req)) {

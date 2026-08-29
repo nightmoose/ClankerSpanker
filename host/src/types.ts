@@ -123,6 +123,12 @@ export interface AgentProfile {
    * Reserved for multi-account isolation when the CLI grows support.
    */
   antigravityConfigDir?: string;
+  /**
+   * Optional per-profile Grok home dir. Threaded to `GROK_HOME` when spawning
+   * Grok CLI / ACP so multiple Grok profiles don't share `~/.grok/auth.json`,
+   * sessions, or MCP credentials.
+   */
+  grokHome?: string;
   /** Default model id when dispatching with this profile. */
   model?: string;
   /**

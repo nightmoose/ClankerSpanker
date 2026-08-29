@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectProviderKind, pickProvider } from "./providers/index.js";
+import { selectProviderKind, pickProvider, envFromProfile } from "./providers/index.js";
 import { remapBotModel } from "./providers/openai-compat.js";
 
 describe("selectProviderKind", () => {
@@ -48,6 +48,22 @@ describe("remapBotModel", () => {
   it("does not send grok-build to the HTTP chat API", () => {
     expect(remapBotModel("grok-build")).toBe("grok-4");
     expect(remapBotModel("grok-4")).toBe("grok-4");
+  });
+});
+
+describe("envFromProfile", () => {
+  it("merges profile.env and sets GROK_HOME from grokHome", () => {
+    const env = envFromProfile({
+      id: "b",
+      name: "B",
+      backend: "bot",
+      color: "#fff",
+      grokHome: "/tmp/nightmoose-2",
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: "http://127.0.0.1:11434/v1" },
+    });
+    expect(env.GROK_HOME).toBe("/tmp/nightmoose-2");
+    expect(env.OPENAI_API_KEY).toBe("sk-test");
+    expect(env.OPENAI_BASE_URL).toBe("http://127.0.0.1:11434/v1");
   });
 });
 

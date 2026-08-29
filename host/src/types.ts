@@ -139,12 +139,18 @@ export interface AgentProfile {
    */
   systemPrompt?: string;
   /**
-   * Per-profile auto-approve allowlist. Each entry is a Claude approval
-   * signature (see claudeApprovalSignature) that skips the phone gate for
-   * this account. Example: `"claude:bash:git status"`, `"claude:read"`.
-   * Broader than session-scoped auto-approve — persists across sessions.
+   * Pre-flight tool names this profile may invoke (Bot-style). Empty/omit
+   * means no extra restriction. Example: `["Read", "Grep"]` cannot fire
+   * `Write`. Distinct from `autoApprovalSignatures`.
    */
   toolAllowlist?: string[];
+  /**
+   * Post-hoc auto-approve signatures that skip the phone gate. Example:
+   * `"claude:bash:git status"`, `"claude:read"`, `"grok:edit:Edit foo.ts"`.
+   * On load, signature-shaped entries still sitting in `toolAllowlist` are
+   * migrated here for one release.
+   */
+  autoApprovalSignatures?: string[];
 }
 
 /** Safe profile for wire format (no secrets). */
@@ -158,8 +164,10 @@ export interface PublicAgentProfile {
   hasCredentials: boolean;
   /** Persona / system-prompt fragment configured for this profile. */
   systemPrompt?: string;
-  /** Auto-approve signatures for this profile (persist across sessions). */
+  /** Pre-flight tool names this profile may invoke. */
   toolAllowlist?: string[];
+  /** Post-hoc auto-approve signatures (persist across sessions). */
+  autoApprovalSignatures?: string[];
   /**
    * Live quota / readiness. Populated by GET /profiles?usage=1 (Claude OAuth
    * 5h + weekly windows, Grok weekly credits, Gemini Cloud Code remainingFraction).

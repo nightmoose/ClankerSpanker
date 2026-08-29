@@ -2,6 +2,22 @@
 
 ---
 
+## Run: 2026-08-29 — RFC-006 Phase C: toolAllowlist + Bot env
+
+`toolAllowlist` is now a pre-flight tool-name list (Claude `--tools`,
+Grok/Claude hook deny, Bot `toolsForAllowlist`). Signature-shaped
+entries (`claude:bash:…`) migrate to `autoApprovalSignatures` on
+load so existing auto-approve configs keep skipping the phone.
+`agy` has no restrict flag — fresh turns get an advisory note.
+Bot `pickProvider` uses `profileProcessEnv` so `profile.env` and
+`grokHome` → `GROK_HOME` reach the HTTP clients.
+
+**Soak:** profile with `toolAllowlist=["Read","Grep"]` cannot Write
+on Claude/Grok; a leftover `toolAllowlist: ["claude:bash"]` still
+auto-approves bash after reload.
+
+---
+
 ## Run: 2026-08-29 — RFC-006 Phase B: prompt + model sentinel parity
 
 `systemPrompt` now reaches Grok (first-turn preamble) and Antigravity

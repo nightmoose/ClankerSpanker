@@ -42,6 +42,7 @@ import {
 } from "../sessions/reader.js";
 import { notifyDesktop } from "../notify/local.js";
 import {
+  allowlistAllowsTool,
   defaultModelForBackend,
   grokAgentModelArgs,
   isGrokBackend,
@@ -1303,6 +1304,23 @@ export class SessionManager extends EventEmitter {
     };
     this.claudeApprovals.set(id, approval);
 
+    const profile = this.profileFor(session);
+
+    // Pre-flight: profile.toolAllowlist names the only tools this account may
+    // invoke. Deny in the hook so Write never reaches the phone.
+    if (
+      profile?.toolAllowlist?.length &&
+      !allowlistAllowsTool(profile.toolAllowlist, { toolName: body.toolName })
+    ) {
+      approval.status = "rejected";
+      approval.comment = `${body.toolName} is not on this profile's toolAllowlist`;
+      console.log(
+        `[approvals] deny toolAllowlist session=${body.sessionId.slice(0, 8)} ` +
+          `profile=${profile.id} tool=${body.toolName}`,
+      );
+      return approval;
+    }
+
     // Fast-path #1: Safe bash commands (git status, ls, cat, etc.) never
     // need to bother the phone.
     if (body.toolName.toLowerCase() === "bash") {
@@ -1326,11 +1344,13 @@ export class SessionManager extends EventEmitter {
       return approval;
     }
 
-    // Fast-path #3: profile-scoped allowlist (persists across sessions).
+    // Fast-path #3: profile-scoped auto-approve signatures (persist across sessions).
     // Entries are either exact signatures (e.g. `claude:bash:git status`) or a
     // shorthand tool prefix (`claude:bash` matches every bash invocation).
-    const profile = this.profileFor(session);
-    if (profile?.toolAllowlist?.length && matchesProfileAllowlist(sig, profile.toolAllowlist)) {
+    if (
+      profile?.autoApprovalSignatures?.length &&
+      matchesProfileAllowlist(sig, profile.autoApprovalSignatures)
+    ) {
       approval.status = "approved";
       console.log(
         `[approvals] auto-approve profile-allowlist session=${body.sessionId.slice(0, 8)} ` +
@@ -2793,6 +2813,7 @@ export class SessionManager extends EventEmitter {
       model: session.model,
       appendSystemPrompt: profile?.systemPrompt,
       extraDirs,
+      toolAllowlist: profile?.toolAllowlist,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -2971,6 +2992,7 @@ export class SessionManager extends EventEmitter {
       skipPermissions: !requirePerms,
       profileEnv,
       systemPrompt: profile?.systemPrompt,
+      toolAllowlist: profile?.toolAllowlist,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -3372,7 +3394,7 @@ export class SessionManager extends EventEmitter {
         prompt,
         isFollowUp,
         maxTurns: maxTurns ?? 20,
-        toolsAllowlist: botTools,
+        toolsAllowlist: botTools?.length ? botTools : owner.toolAllowlist,
         promptMaxMs: this.config.promptMaxMs,
         autoApproveKinds: (this.config.autoApproveKinds ?? []).map((k) => k.toLowerCase()),
         callbacks: {
@@ -3920,6 +3942,29 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
+    const grokProfile = this.profileFor(live.session);
+    if (
+      grokProfile?.toolAllowlist?.length &&
+      !allowlistAllowsTool(grokProfile.toolAllowlist, {
+        toolName: toolCall.title,
+        kind: toolCall.kind,
+        title: toolCall.title,
+      })
+    ) {
+      const reject =
+        options.find((o) => o.kind === "reject_once" || o.kind === "reject_always") ?? options[1];
+      if (reject) {
+        console.log(
+          `[approvals] deny toolAllowlist session=${live.session.id.slice(0, 8)} ` +
+            `profile=${grokProfile.id} tool="${(toolCall.title ?? toolCall.kind ?? "").slice(0, 80)}"`,
+        );
+        live.client.respond(rpcId, {
+          outcome: { outcome: "selected", optionId: reject.optionId },
+        });
+      }
+      return;
+    }
+
     // Auto-approve safe kinds (reads/searches). Do NOT include "other" if it masks questionnaires —
     // still allow configured kinds except we already special-cased AskUser.
     if (this.config.autoApproveKinds.map((k) => k.toLowerCase()).includes(kind)) {
@@ -3937,6 +3982,21 @@ export class SessionManager extends EventEmitter {
       const allow = options.find((o) => o.kind === "allow_once" || o.kind === "allow_always") ?? options[0];
       console.log(
         `[approvals] auto-approve session-allowlist session=${live.session.id.slice(0, 8)} sig="${grokSig}"`,
+      );
+      live.client.respond(rpcId, {
+        outcome: { outcome: "selected", optionId: allow.optionId },
+      });
+      return;
+    }
+
+    if (
+      grokProfile?.autoApprovalSignatures?.length &&
+      matchesProfileAllowlist(grokSig, grokProfile.autoApprovalSignatures)
+    ) {
+      const allow = options.find((o) => o.kind === "allow_once" || o.kind === "allow_always") ?? options[0];
+      console.log(
+        `[approvals] auto-approve profile-allowlist session=${live.session.id.slice(0, 8)} ` +
+          `profile=${grokProfile.id} sig="${grokSig}"`,
       );
       live.client.respond(rpcId, {
         outcome: { outcome: "selected", optionId: allow.optionId },

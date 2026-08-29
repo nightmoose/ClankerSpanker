@@ -44,4 +44,14 @@ describe("buildAntigravityArgs", () => {
       expect.arrayContaining(["--model", "gemini-2.5-flash", "--dangerously-skip-permissions"]),
     );
   });
+
+  it("prepends an advisory tool allowlist on a fresh conversation", () => {
+    const args = buildAntigravityArgs({
+      prompt: "do the thing",
+      skipPermissions: false,
+      toolAllowlist: ["Read", "Grep"],
+    });
+    expect(args[1]).toContain("Read, Grep");
+    expect(args[1]).toContain("do the thing");
+  });
 });

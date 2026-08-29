@@ -52,6 +52,69 @@ function defaultColorForBackend(backend: SessionBackend): string {
   return "#73B8FF";
 }
 
+function cleanStringList(raw?: string[] | null): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s) => String(s).trim()).filter((s) => s.length > 0);
+}
+
+/** Signatures look like `claude:bash:git status`; pre-flight tools are bare names. */
+export function looksLikeApprovalSignature(entry: string): boolean {
+  return entry.includes(":");
+}
+
+/**
+ * Split the old dual-use `toolAllowlist` into pre-flight tool names vs
+ * post-hoc auto-approve signatures. Signature-shaped entries migrate to
+ * `autoApprovalSignatures` for one release.
+ */
+export function splitProfileToolFields(p: {
+  toolAllowlist?: string[] | null;
+  autoApprovalSignatures?: string[] | null;
+}): { toolAllowlist?: string[]; autoApprovalSignatures?: string[] } {
+  const rawAllow = cleanStringList(p.toolAllowlist);
+  const rawAuto = cleanStringList(p.autoApprovalSignatures);
+  const signatures = rawAllow.filter(looksLikeApprovalSignature);
+  const tools = rawAllow.filter((s) => !looksLikeApprovalSignature(s));
+  const auto = [...new Set([...rawAuto, ...signatures])];
+  return {
+    toolAllowlist: tools.length ? tools : undefined,
+    autoApprovalSignatures: auto.length ? auto : undefined,
+  };
+}
+
+/** Empty allowlist means no extra restriction. Matching is case-insensitive. */
+export function isToolOnAllowlist(
+  allowlist: readonly string[] | undefined,
+  toolName: string,
+): boolean {
+  if (!allowlist?.length) return true;
+  const n = toolName.trim().toLowerCase();
+  if (!n) return true;
+  return allowlist.some((raw) => {
+    const e = raw.trim().toLowerCase();
+    return e === n || n.startsWith(e) || e.startsWith(n);
+  });
+}
+
+/** Whether a permission request is allowed by a pre-flight toolAllowlist. */
+export function allowlistAllowsTool(
+  allowlist: readonly string[] | undefined,
+  opts: { toolName?: string; kind?: string; title?: string },
+): boolean {
+  if (!allowlist?.length) return true;
+  const names: string[] = [];
+  if (opts.toolName?.trim()) names.push(opts.toolName.trim());
+  if (opts.title?.trim()) names.push(opts.title.trim().split(/[\s:]+/)[0]!);
+  const kind = opts.kind?.trim().toLowerCase();
+  if (kind) {
+    names.push(kind);
+    if (kind === "execute") names.push("Bash");
+    if (kind === "edit") names.push("Edit", "Write");
+    if (kind === "read") names.push("Read");
+  }
+  return names.some((n) => isToolOnAllowlist(allowlist, n));
+}
+
 export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
   if (!raw?.length) return defaultProfiles();
   const seen = new Set<string>();
@@ -73,9 +136,7 @@ export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
       grokHome: p.grokHome?.trim() || undefined,
       model: p.model?.trim() || undefined,
       systemPrompt: p.systemPrompt?.trim() || undefined,
-      toolAllowlist: Array.isArray(p.toolAllowlist)
-        ? p.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
-        : undefined,
+      ...splitProfileToolFields(p),
     });
   }
   return out.length ? out : defaultProfiles();
@@ -90,6 +151,7 @@ export function publicProfiles(config: HostConfigFile): PublicAgentProfile[] {
     model: p.model,
     systemPrompt: p.systemPrompt,
     toolAllowlist: p.toolAllowlist,
+    autoApprovalSignatures: p.autoApprovalSignatures,
     hasCredentials: profileHasCredentials(p),
   }));
 }

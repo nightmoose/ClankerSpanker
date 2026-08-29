@@ -2,6 +2,19 @@
 
 ---
 
+## Run: 2026-08-29 — Claude approvals never reached the phone
+
+Claude turns are not in the ACP `live` map, so `get()` loaded a fresh
+disk copy per call. `createClaudeApproval` parked `pendingApproval` on
+copy A; `claudeTurn`'s `runner.on("tool")` then persisted copy B and
+wiped it. The hook waited 10 minutes, denied, and the user never saw
+Approve. `get()` now returns one hydrated object per session.
+
+**Soak:** FullScore session → Edit a new file → Approve bar on phone/Mac
+before the tool runs.
+
+---
+
 ## Run: 2026-08-29 — RFC-006 Phase C: toolAllowlist + Bot env
 
 `toolAllowlist` is now a pre-flight tool-name list (Claude `--tools`,

@@ -39,6 +39,7 @@ struct TerminalView: View {
     private var keyBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                keyCap("Paste") { session.pasteClipboard() }
                 keyCap("Esc") { session.sendKey("\u{1b}") }
                 keyCap("Tab") { session.sendKey("\t") }
                 keyCap("⌃C") { session.sendKey("\u{3}") }

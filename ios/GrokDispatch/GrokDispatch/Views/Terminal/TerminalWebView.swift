@@ -7,6 +7,11 @@ final class TerminalSession: ObservableObject {
     func sendKey(_ data: String) {
         coordinator?.sendKey(data)
     }
+
+    func pasteClipboard() {
+        guard let text = DispatchClipboard.pasteString(), !text.isEmpty else { return }
+        coordinator?.paste(text)
+    }
 }
 
 final class TerminalWebCoordinator: NSObject, WKNavigationDelegate {
@@ -42,6 +47,16 @@ final class TerminalWebCoordinator: NSObject, WKNavigationDelegate {
         else { return }
         webView?.evaluateJavaScript(
             "window.sendClankerKey && sendClankerKey(\(json));",
+            completionHandler: nil
+        )
+    }
+
+    func paste(_ text: String) {
+        guard let encoded = try? JSONEncoder().encode(text),
+              let json = String(data: encoded, encoding: .utf8)
+        else { return }
+        webView?.evaluateJavaScript(
+            "window.pasteClankerText && pasteClankerText(\(json));",
             completionHandler: nil
         )
     }

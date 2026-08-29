@@ -66,3 +66,4 @@ commands in that shell.
 
 - OpenSSH transport as an optional alternate.
 - Persist tmux sessions across reconnect.
+- Phone paste + session copy: **RFC-007**.

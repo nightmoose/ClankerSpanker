@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct TranscriptView: View {
     let entries: [TranscriptEntry]
@@ -66,6 +69,11 @@ struct TranscriptView: View {
                         .id(entry.id)
                         .transition(.opacity)
                         .contextMenu {
+                            Button {
+                                DispatchClipboard.copy(entry.text)
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
                             if let onSaveAsTodo {
                                 Button {
                                     onSaveAsTodo(entry)
@@ -323,15 +331,38 @@ struct ExpandedMessage: Identifiable, Hashable {
 struct ExpandedMessageView: View {
     let item: ExpandedMessage
     var onDismiss: () -> Void
+    #if os(iOS)
+    private enum Mode: String, CaseIterable {
+        case rendered = "Read"
+        case select = "Select"
+    }
+    @State private var mode: Mode = .rendered
+    #endif
+    @State private var didCopy = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 DispatchBackground()
-                ScrollView {
-                    MarkdownView(text: item.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+                VStack(spacing: 0) {
+                    #if os(iOS)
+                    Picker("View", selection: $mode) {
+                        ForEach(Mode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    if mode == .select {
+                        SelectableMessageText(text: item.text)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        renderedScroll
+                    }
+                    #else
+                    renderedScroll
+                    #endif
                 }
             }
             .navigationTitle(item.title)
@@ -343,15 +374,65 @@ struct ExpandedMessageView: View {
                     Button("Done") { onDismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ShareLink(item: item.text) {
-                        Image(systemName: "square.and.arrow.up")
+                    HStack(spacing: 16) {
+                        Button {
+                            DispatchClipboard.copy(item.text)
+                            didCopy = true
+                        } label: {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                        }
+                        .accessibilityLabel("Copy message")
+                        ShareLink(item: item.text) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
                     }
                 }
             }
         }
         .preferredColorScheme(.dark)
     }
+
+    private var renderedScroll: some View {
+        ScrollView {
+            MarkdownView(text: item.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+    }
 }
+
+#if os(iOS)
+/// System text view so iPhone can select a span and Copy (SwiftUI Text
+/// `.textSelection` is unreliable inside this sheet).
+private struct SelectableMessageText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.backgroundColor = .clear
+        tv.textColor = UIColor(white: 0.92, alpha: 1)
+        tv.tintColor = UIColor(red: 0.45, green: 0.72, blue: 1, alpha: 1)
+        tv.font = UIFont.preferredFont(forTextStyle: .body)
+        tv.adjustsFontForContentSizeCategory = true
+        tv.textContainerInset = UIEdgeInsets(top: 16, left: 14, bottom: 24, right: 14)
+        tv.alwaysBounceVertical = true
+        tv.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.defaultLow, for: .vertical)
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        tv.text = text
+        return tv
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+}
+#endif
 
 // MARK: - Markdown rendering
 
@@ -383,12 +464,24 @@ struct MarkdownView: View {
                 .font(.body)
                 .textSelection(.enabled)
         case .code(let body):
-            Text(body)
-                .font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .trailing, spacing: 0) {
+                Button {
+                    DispatchClipboard.copy(body)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy code block")
+                Text(body)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
         case .quote(let content):
             HStack(alignment: .top, spacing: 8) {
                 RoundedRectangle(cornerRadius: 1.5)

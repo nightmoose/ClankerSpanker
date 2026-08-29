@@ -1,12 +1,18 @@
 # Next steps
 
-**Last updated:** 2026-08-24 (NightMoose)
+**Last updated:** 2026-08-29 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-08-29 (RFC-007 phone copy/paste)
+
+iPhone Term has a **Paste** key. Expanded session messages: **Copy**, **Read / Select** (select a span), code-block Copy, bubble long-press Copy. Rebuild the phone app.
 
 ---
 

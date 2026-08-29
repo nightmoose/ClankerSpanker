@@ -12,3 +12,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 004 | [Host terminal from the phone](rfcs/004-host-terminal.md) | Accepted | `nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders` |
 | 005 | [Attach Antigravity / Gemini CLI conversations](rfcs/005-attach-agy.md) | Accepted | `nightly-maintenance-2026-08-24-rfc005-attach-agy` |
 | 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](rfcs/006-backend-parity.md) | Draft | `nightly-maintenance-2026-08-28-rfc006-backend-parity` |
+| 007 | [Phone copy/paste: Term paste + session message selection](rfcs/007-ios-term-copy-paste.md) | Accepted | `nightly-maintenance-2026-08-29-rfc007-ios-term-copy-paste` |

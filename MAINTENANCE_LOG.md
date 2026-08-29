@@ -2,6 +2,18 @@
 
 ---
 
+## Run: 2026-08-29 — RFC-007 iPhone Term paste + session copy
+
+Term accessory bar has **Paste** (clipboard → xterm `term.paste` → PTY).
+Expanded message popup: **Copy** toolbar, **Read / Select** (Select is a
+real `UITextView` so you can highlight a command), code-block Copy chip,
+bubble long-press Copy. Path: session → copy → Term → Paste.
+
+**Soak:** Expand an agent reply → Select → copy a `launchctl` line → Term
+Paste → it runs.
+
+---
+
 ## Run: 2026-08-29 — Claude approvals never reached the phone
 
 Claude turns are not in the ACP `live` map, so `get()` loaded a fresh

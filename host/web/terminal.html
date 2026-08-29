@@ -139,6 +139,24 @@
         }
       };
 
+      // Phone accessory Paste + long-press Paste in WKWebView / browser.
+      // term.paste() uses bracketed paste when the shell has it enabled.
+      window.pasteClankerText = function pasteClankerText(text) {
+        if (typeof text !== "string" || !text) return;
+        try { term.focus(); } catch (e) { /* */ }
+        if (typeof term.paste === "function") term.paste(text);
+        else if (socket && socket.readyState === 1) {
+          socket.send(JSON.stringify({ type: "in", data: text }));
+        }
+      };
+
+      document.addEventListener("paste", function (e) {
+        var t = e.clipboardData && e.clipboardData.getData("text");
+        if (!t) return;
+        e.preventDefault();
+        window.pasteClankerText(t);
+      });
+
       window.addEventListener("resize", function () {
         if (fitted) fitAndResize();
       });

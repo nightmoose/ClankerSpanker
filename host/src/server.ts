@@ -566,6 +566,7 @@ async function handleHttp(
         env: sanitizeEnv(body.env),
         claudeConfigDir: trimOrUndef(body.claudeConfigDir),
         antigravityConfigDir: trimOrUndef(body.antigravityConfigDir),
+        grokHome: trimOrUndef(body.grokHome),
         model: trimOrUndef(body.model),
         systemPrompt: trimOrUndef(body.systemPrompt),
         toolAllowlist: Array.isArray(body.toolAllowlist)
@@ -586,7 +587,7 @@ async function handleHttp(
 
   // PATCH /profiles/:id — safe partial update over any origin: color, model,
   // systemPrompt, toolAllowlist. On this machine also accepts name/backend/env/
-  // claudeConfigDir/antigravityConfigDir (Profiles manager on the host).
+  // claudeConfigDir/antigravityConfigDir/grokHome (Profiles manager on the host).
   const profilePatchMatch = path.match(/^\/profiles\/([^/]+)$/);
   if (method === "PATCH" && profilePatchMatch) {
     const profileId = decodeURIComponent(profilePatchMatch[1] ?? "");
@@ -602,6 +603,7 @@ async function handleHttp(
         env?: Record<string, string> | null;
         claudeConfigDir?: string | null;
         antigravityConfigDir?: string | null;
+        grokHome?: string | null;
       };
       const profiles = config.profiles ?? [];
       const idx = profiles.findIndex((p) => p.id === profileId);
@@ -656,6 +658,11 @@ async function handleHttp(
           next.antigravityConfigDir = undefined;
         } else if (typeof body.antigravityConfigDir === "string") {
           next.antigravityConfigDir = trimOrUndef(body.antigravityConfigDir);
+        }
+        if (body.grokHome === null) {
+          next.grokHome = undefined;
+        } else if (typeof body.grokHome === "string") {
+          next.grokHome = trimOrUndef(body.grokHome);
         }
       }
       profiles[idx] = next;

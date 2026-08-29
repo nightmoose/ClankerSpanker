@@ -11,3 +11,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 003 | [Create and run bots from the iPhone app](rfcs/003-phone-bots.md) | Accepted | `nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders` |
 | 004 | [Host terminal from the phone](rfcs/004-host-terminal.md) | Accepted | `nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders` |
 | 005 | [Attach Antigravity / Gemini CLI conversations](rfcs/005-attach-agy.md) | Accepted | `nightly-maintenance-2026-08-24-rfc005-attach-agy` |
+| 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](rfcs/006-backend-parity.md) | Draft | `nightly-maintenance-2026-08-28-rfc006-backend-parity` |

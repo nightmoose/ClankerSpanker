@@ -34,6 +34,8 @@ In `~/.grok-dispatch/config.json`:
 
 The host sets `CLAUDE_CONFIG_DIR` from `claudeConfigDir` when spawning Claude (see `profileProcessEnv` in `host/src/profiles.ts`).
 
+Grok profiles use the same isolation idea with `grokHome` → `GROK_HOME`. Without it, every Grok chip shares `~/.grok/auth.json`, sessions, and MCP credentials. Point a second Grok profile at its own dir (e.g. `~/.grok-work`) so sign-in does not stomp NightMoose.
+
 ## After editing profiles
 
 Restart the host process (or LaunchAgent/systemd) so it reloads config:

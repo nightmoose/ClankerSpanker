@@ -2,6 +2,20 @@
 
 ---
 
+## Run: 2026-08-28 — RFC-006 Phase A: Grok home dir isolation
+
+`AgentProfile.grokHome` is now honored by `profileProcessEnv` (sets
+`GROK_HOME`) and by `profileHasCredentials` for grok/bot backends. Two
+Grok profiles can point at distinct `~/.grok`-style dirs and sign in
+independently instead of trampling one `auth.json`. POST/PATCH
+`/profiles` accept the field on this-machine requests.
+
+**Soak:** create a second grok profile with `grokHome=/tmp/nightmoose-2`,
+`grok mcp login` inside it, confirm the shared `~/.grok/auth.json` is
+untouched.
+
+---
+
 ## Run: 2026-08-24 — RFC-005 attach Gemini CLI conversations
 
 `GET /sessions` now returns `agySessions` from

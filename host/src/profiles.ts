@@ -70,6 +70,7 @@ export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
       env: p.env && typeof p.env === "object" ? { ...p.env } : {},
       claudeConfigDir: p.claudeConfigDir?.trim() || undefined,
       antigravityConfigDir: p.antigravityConfigDir?.trim() || undefined,
+      grokHome: p.grokHome?.trim() || undefined,
       model: p.model?.trim() || undefined,
       systemPrompt: p.systemPrompt?.trim() || undefined,
       toolAllowlist: Array.isArray(p.toolAllowlist)
@@ -131,7 +132,8 @@ export function profileHasCredentials(p: AgentProfile): boolean {
     if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || env.GOOGLE_GENAI_API_KEY?.trim()) {
       return true;
     }
-    // Same Grok CLI login NightMoose uses for ACP.
+    // Per-profile Grok home wins over the shared login when set.
+    if (p.grokHome?.trim() && existsSync(join(p.grokHome.trim(), "auth.json"))) return true;
     const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
     if (existsSync(join(grokHome, "auth.json"))) return true;
     if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
@@ -139,6 +141,7 @@ export function profileHasCredentials(p: AgentProfile): boolean {
   }
   // Grok: API key env OR CLI login (~/.grok/auth.json from `grok` sign-in)
   if (process.env.XAI_API_KEY?.trim() || p.env?.XAI_API_KEY?.trim()) return true;
+  if (p.grokHome?.trim() && existsSync(join(p.grokHome.trim(), "auth.json"))) return true;
   const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
   if (existsSync(join(grokHome, "auth.json"))) return true;
   if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
@@ -173,6 +176,10 @@ export function profileProcessEnv(profile: AgentProfile): NodeJS.ProcessEnv {
   if (profile.antigravityConfigDir) {
     // Hint for future multi-login; also set XDG-style home override if useful
     env.ANTIGRAVITY_CONFIG_DIR = profile.antigravityConfigDir;
+  }
+  if (profile.grokHome) {
+    // Grok CLI + ACP read GROK_HOME for auth.json, sessions, MCP creds
+    env.GROK_HOME = profile.grokHome;
   }
   return env;
 }

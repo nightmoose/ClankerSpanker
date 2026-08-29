@@ -8,6 +8,7 @@ import {
   normalizeBackend,
   normalizeProfiles,
   profileHasCredentials,
+  profileProcessEnv,
 } from "./profiles.js";
 
 describe("normalizeProfiles", () => {
@@ -131,6 +132,76 @@ describe("profileHasCredentials bot", () => {
       if (prev === undefined) delete process.env.GROK_HOME;
       else process.env.GROK_HOME = prev;
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("profile grokHome isolation", () => {
+  it("normalizeProfiles trims and preserves grokHome", () => {
+    const [p] = normalizeProfiles([
+      {
+        id: "g",
+        name: "Grok",
+        backend: "grok",
+        color: "#73B8FF",
+        grokHome: "  /tmp/some/grok-home  ",
+      },
+    ]);
+    expect(p!.grokHome).toBe("/tmp/some/grok-home");
+  });
+
+  it("profileProcessEnv exposes GROK_HOME when profile.grokHome is set", () => {
+    const env = profileProcessEnv({
+      id: "g",
+      name: "Grok",
+      backend: "grok",
+      color: "#73B8FF",
+      grokHome: "/tmp/nightmoose-grok",
+    });
+    expect(env.GROK_HOME).toBe("/tmp/nightmoose-grok");
+  });
+
+  it("profileProcessEnv leaves GROK_HOME untouched when profile.grokHome is unset", () => {
+    const prev = process.env.GROK_HOME;
+    delete process.env.GROK_HOME;
+    try {
+      const env = profileProcessEnv({
+        id: "g",
+        name: "Grok",
+        backend: "grok",
+        color: "#73B8FF",
+      });
+      expect(env.GROK_HOME).toBeUndefined();
+    } finally {
+      if (prev !== undefined) process.env.GROK_HOME = prev;
+    }
+  });
+
+  it("profileHasCredentials(grok) accepts profile.grokHome/auth.json even without shared login", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-profile-grok-home-"));
+    writeFileSync(join(dir, "auth.json"), "{}");
+    const prevGrokHome = process.env.GROK_HOME;
+    const prevXai = process.env.XAI_API_KEY;
+    // Point ambient GROK_HOME at an empty dir so the shared-login fallback fails.
+    const emptyShared = mkdtempSync(join(tmpdir(), "cs-empty-shared-grok-"));
+    process.env.GROK_HOME = emptyShared;
+    delete process.env.XAI_API_KEY;
+    try {
+      expect(
+        profileHasCredentials({
+          id: "g",
+          name: "Grok",
+          backend: "grok",
+          color: "#73B8FF",
+          grokHome: dir,
+        }),
+      ).toBe(true);
+    } finally {
+      if (prevGrokHome === undefined) delete process.env.GROK_HOME;
+      else process.env.GROK_HOME = prevGrokHome;
+      if (prevXai !== undefined) process.env.XAI_API_KEY = prevXai;
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(emptyShared, { recursive: true, force: true });
     }
   });
 });

@@ -66,6 +66,7 @@ final class AppState: ObservableObject {
     @Published var archivedSessions: [SessionSummary] = []
     @Published var diskSessions: [DiskSessionHint] = []
     @Published var claudeSessions: [DiskSessionHint] = []
+    @Published var agySessions: [DiskSessionHint] = []
     @Published var lastRefreshError: String?
 
     private var cancellables = Set<AnyCancellable>()
@@ -655,6 +656,7 @@ final class AppState: ObservableObject {
             archivedSessions = Self.dedupeSessions(response.archivedSessions ?? [])
             diskSessions = response.diskSessions ?? []
             claudeSessions = response.claudeSessions ?? []
+            agySessions = response.agySessions ?? []
             hostAPIReachable = true
             lastRefreshError = errors.isEmpty ? nil : errors.joined(separator: " · ")
             socket.connect(host: host)
@@ -675,6 +677,7 @@ final class AppState: ObservableObject {
         var seenIds = Set<String>()
         var seenGrok = Set<String>()
         var seenClaude = Set<String>()
+        var seenAgy = Set<String>()
         var out: [SessionSummary] = []
         // Newest first so we keep the freshest wrapper
         let sorted = items.sorted {
@@ -689,6 +692,10 @@ final class AppState: ObservableObject {
             if let c = s.claudeSessionId, !c.isEmpty {
                 if seenClaude.contains(c) { continue }
                 seenClaude.insert(c)
+            }
+            if let a = s.antigravityConversationId, !a.isEmpty {
+                if seenAgy.contains(a) { continue }
+                seenAgy.insert(a)
             }
             seenIds.insert(s.id)
             out.append(s)

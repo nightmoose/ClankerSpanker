@@ -271,6 +271,7 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     var profileName: String?
     var profileColor: String?
     var claudeSessionId: String?
+    var antigravityConversationId: String?
 
     var isArchived: Bool { archived == true }
 
@@ -513,6 +514,7 @@ struct DiskSessionHint: Codable, Identifiable, Sendable {
     var transcriptPath: String?
 
     var isClaude: Bool { source == "claude" }
+    var isAntigravity: Bool { source == "antigravity" || source == "agy" || source == "gemini" }
 }
 
 struct SessionsResponse: Codable, Sendable {
@@ -521,6 +523,7 @@ struct SessionsResponse: Codable, Sendable {
     var archivedSessions: [SessionSummary]?
     var diskSessions: [DiskSessionHint]?
     var claudeSessions: [DiskSessionHint]?
+    var agySessions: [DiskSessionHint]?
     /// Echo of `?q=` when the host ran a content search.
     var query: String?
 }

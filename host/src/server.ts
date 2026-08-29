@@ -10,6 +10,7 @@ import type { AgentProfile, HostConfigFile, SessionBackend } from "./types.js";
 import type {
   AnswerQuestionsRequest,
   ApproveRequest,
+  AttachAgyRequest,
   AttachClaudeRequest,
   AttachRequest,
   Bot,
@@ -28,7 +29,7 @@ import { isAuthorized, tokensMatch, unauthorizedBody } from "./auth.js";
 import { TerminalHub } from "./terminal/session.js";
 import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
-import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
+import { listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile } from "./profiles.js";
 import { profilesWithUsage } from "./usage.js";
@@ -939,6 +940,7 @@ async function handleHttp(
         isLive: manager.isLive(s.id),
         backend: summary.backend ?? s.backend ?? "grok",
         claudeSessionId: s.claudeSessionId,
+        antigravityConversationId: s.antigravityConversationId,
       };
     });
     const active = all.filter((s) => !s.archived);
@@ -957,6 +959,12 @@ async function handleHttp(
     let claude = listClaudeSessions(100).filter(
       (d) => !linkedClaude.has(d.id) && !manager.isForgottenClaudeSession(d.id),
     );
+    const linkedAgy = new Set(
+      all.map((s) => s.antigravityConversationId).filter((id): id is string => Boolean(id)),
+    );
+    let agy = listAgySessions(100).filter(
+      (d) => !linkedAgy.has(d.id) && !manager.isForgottenAgySession(d.id),
+    );
     if (contentQuery) {
       disk = disk.filter(
         (d) =>
@@ -970,12 +978,19 @@ async function handleHttp(
           (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
           d.id.toLowerCase().includes(contentQuery),
       );
+      agy = agy.filter(
+        (d) =>
+          (d.title ?? "").toLowerCase().includes(contentQuery) ||
+          (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
+          d.id.toLowerCase().includes(contentQuery),
+      );
     }
     json(res, 200, {
       sessions: includeArchived ? all : active,
       archivedSessions: archived,
       diskSessions: disk,
       claudeSessions: claude,
+      agySessions: agy,
       query: contentQuery || undefined,
     });
     return;
@@ -1122,6 +1137,27 @@ async function handleHttp(
       json(res, 201, {
         ...manager.store.toDetail(session, manager.getPendingApproval(session.id)),
         isLive: manager.isLive(session.id),
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/attach-agy — resume an Antigravity / Gemini CLI conversation
+  if (method === "POST" && path === "/sessions/attach-agy") {
+    const body = (await readJson(req)) as AttachAgyRequest;
+    try {
+      const session = await manager.attachAgy(body);
+      json(res, 201, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(session.id),
+          manager.getPendingQuestion(session.id),
+        ),
+        isLive: manager.isLive(session.id),
+        backend: session.backend ?? "antigravity",
+        antigravityConversationId: session.antigravityConversationId,
       });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });

@@ -21,6 +21,7 @@ const state = {
   archived: [],
   disk: [],
   claude: [],
+  agy: [],
   projects: [],
   profiles: [],
   profileId: null,
@@ -322,6 +323,7 @@ function setNav(nav) {
     compose: "Compose",
     grok: "Grok disk",
     claude: "Claude disk",
+    agy: "Gemini disk",
     profiles: "Profiles",
     host: "Host",
     settings: "Desktop",
@@ -347,7 +349,7 @@ function setNav(nav) {
   $("#view-bots")?.classList.toggle("hidden", nav !== "bots");
   $("#view-terminal")?.classList.toggle("hidden", nav !== "terminal");
   $("#view-compose").classList.toggle("hidden", nav !== "compose");
-  $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude");
+  $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude" && nav !== "agy");
   $("#view-host").classList.toggle("hidden", nav !== "host");
   $("#view-profiles")?.classList.toggle("hidden", nav !== "profiles");
   $("#view-settings").classList.toggle("hidden", nav !== "settings");
@@ -362,7 +364,7 @@ function setNav(nav) {
   else if (nav === "bots") renderBots();
   else if (nav === "terminal") renderTerminal();
   else if (nav === "compose") renderCompose();
-  else if (nav === "grok" || nav === "claude") renderDisk(nav);
+  else if (nav === "grok" || nav === "claude" || nav === "agy") renderDisk(nav);
   else if (nav === "profiles") renderProfilesAdmin();
   else if (nav === "host") renderHost();
   else if (nav === "settings") renderDesktopSettings();
@@ -1316,6 +1318,7 @@ async function refreshSessions() {
     state.archived = sessions.archivedSessions || [];
     state.disk = sessions.diskSessions || [];
     state.claude = sessions.claudeSessions || [];
+    state.agy = sessions.agySessions || [];
     state.projects = projects.projects || [];
     state.profiles = profiles.profiles || [];
     state.admin = profiles.admin === true;
@@ -2051,13 +2054,23 @@ function renderCompose() {
 
 function renderDisk(kind) {
   const root = $("#view-disk");
-  const rows = kind === "claude" ? state.claude : state.disk;
+  const rows = kind === "claude" ? state.claude : kind === "agy" ? state.agy || [] : state.disk;
   if (!rows.length) {
-    root.innerHTML = `<div class="list-empty">No ${kind === "claude" ? "Claude" : "Grok"} sessions on disk.</div>`;
+    const label = kind === "claude" ? "Claude" : kind === "agy" ? "Gemini CLI" : "Grok";
+    root.innerHTML = `<div class="list-empty">No ${label} sessions on disk.</div>`;
     return;
   }
   root.innerHTML = `<div class="stack-gap" style="max-width:720px">${rows
     .map((d) => {
+      if (kind === "agy") {
+        return `<article class="card">
+          <h3>${escapeHtml(d.title || d.id.slice(0, 8))}</h3>
+          <div class="meta"><span>${escapeHtml(shortPath(d.cwd || ""))}</span></div>
+          <div class="inline-actions">
+            <button type="button" class="primary" data-attach-agy="${escapeAttr(d.id)}" data-cwd="${escapeAttr(d.cwd || "")}" data-title="${escapeAttr(d.title || "")}">Resume Gemini CLI</button>
+          </div>
+        </article>`;
+      }
       if (kind === "claude") {
         return `<article class="card">
           <h3>${escapeHtml(d.title || d.id.slice(0, 8))}</h3>
@@ -2087,6 +2100,24 @@ function renderDisk(kind) {
           title: el.getAttribute("data-title") || undefined,
         });
         banner("Attached Grok session");
+        await refreshSessions();
+        setNav("sessions");
+        openSession(detail.id);
+      } catch (e) {
+        banner(e.message, true);
+      }
+    });
+  });
+  root.querySelectorAll("[data-attach-agy]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      try {
+        const detail = await Api.attachAgy({
+          conversationId: el.getAttribute("data-attach-agy"),
+          cwd: el.getAttribute("data-cwd"),
+          title: el.getAttribute("data-title") || undefined,
+          profileId: state.profileId || undefined,
+        });
+        banner("Attached Gemini CLI conversation");
         await refreshSessions();
         setNav("sessions");
         openSession(detail.id);

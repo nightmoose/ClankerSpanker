@@ -63,6 +63,10 @@ paths:
     post:
       summary: Create and start a task
       security: [{ bearerAuth: [] }]
+  /sessions/attach-agy:
+    post:
+      summary: Attach an Antigravity / Gemini CLI conversation (agy --conversation)
+      security: [{ bearerAuth: [] }]
   /sessions/{id}/tool-calls/{toolCallId}:
     get:
       summary: Full tool-call payload (rawInput/content JSON) for the ellipsis detail sheet

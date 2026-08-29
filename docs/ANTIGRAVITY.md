@@ -106,6 +106,20 @@ cd host && npm start
 
 Refresh the Mac/phone client — you should see an **Antigravity** chip.
 
+## Attach CLI conversations
+
+`agy` TUI/CLI chats live on the host at
+`~/.gemini/antigravity-cli/conversations/<id>.db`. ClankerSpanker lists them
+as **Gemini CLI on disk** (Mac/phone when the Gemini chip is selected; Linux
+**Gemini disk** nav). Tap to attach — follow-ups resume with
+`agy --conversation <id>`.
+
+This is **not** the consumer Gemini app (gemini.google.com). Those chats stay
+in Google’s cloud.
+
+Hard-delete of an attached session tombstones that conversation id so it does
+not reappear on the next refresh.
+
 ## How it works
 
 | Piece | Behavior |

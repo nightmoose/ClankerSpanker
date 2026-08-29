@@ -564,6 +564,16 @@ export interface AttachClaudeRequest {
   profileId?: string;
 }
 
+/** Open an Antigravity / Gemini CLI conversation (`agy --conversation`). */
+export interface AttachAgyRequest {
+  conversationId: string;
+  cwd: string;
+  title?: string;
+  /** Optional first message after attach. */
+  prompt?: string;
+  profileId?: string;
+}
+
 export interface HostConfigFile {
   hostToken: string;
   bindHost: string;

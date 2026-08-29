@@ -344,7 +344,7 @@ struct MacCommandCenter: View {
                         } header: {
                             Text(diskSectionTitle)
                         } footer: {
-                            Text("Started in Grok Build / Claude CLI but not yet opened from ClankerSpanker. Tap to attach for remote control.")
+                            Text("Started in Grok Build / Claude / Gemini CLI but not yet opened from ClankerSpanker. Tap to attach for remote control.")
                                 .font(.caption2)
                         }
                     }
@@ -616,11 +616,13 @@ struct MacCommandCenter: View {
         let bound = appState.selectedBoundProfile
         let raw: [DiskSessionHint]
         if appState.showsAllProfiles {
-            raw = appState.diskSessions + appState.claudeSessions
+            raw = appState.diskSessions + appState.claudeSessions + appState.agySessions
         } else if bound?.profile.isGrok == true {
             raw = appState.diskSessions
         } else if bound?.profile.isClaude == true {
             raw = appState.claudeSessions
+        } else if bound?.profile.isAntigravity == true {
+            raw = appState.agySessions
         } else {
             raw = []
         }
@@ -637,7 +639,7 @@ struct MacCommandCenter: View {
         if appState.showsAllProfiles { return "On disk (tap to attach)" }
         if appState.selectedBoundProfile?.profile.isClaude == true { return "Claude on disk" }
         if appState.selectedBoundProfile?.profile.isAntigravity == true {
-            return "Antigravity (dispatch only)"
+            return "Gemini CLI on disk"
         }
         return "Grok Build on disk"
     }
@@ -649,6 +651,10 @@ struct MacCommandCenter: View {
     private func attachDisk(_ disk: DiskSessionHint) async {
         if disk.isClaude {
             if let route = await listVM.attachClaude(disk: disk, mode: "resume-claude", appState: appState) {
+                appState.macSelectedSessionId = route.sessionId
+            }
+        } else if disk.isAntigravity {
+            if let route = await listVM.attachAgy(disk: disk, appState: appState) {
                 appState.macSelectedSessionId = route.sessionId
             }
         } else if let route = await listVM.attach(disk: disk, appState: appState) {
@@ -921,12 +927,12 @@ private struct MacDiskSessionRow: View {
                     .font(.body.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Text(disk.isClaude ? "Claude disk" : "Grok disk")
+                Text(disk.isClaude ? "Claude disk" : disk.isAntigravity ? "Gemini disk" : "Grok disk")
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .foregroundStyle(disk.isClaude ? Color.orange : DispatchColors.accent)
-                    .background((disk.isClaude ? Color.orange : DispatchColors.accent).opacity(0.15))
+                    .foregroundStyle(disk.isClaude ? Color.orange : disk.isAntigravity ? (Color(hex: "#34A853") ?? DispatchColors.success) : DispatchColors.accent)
+                    .background((disk.isClaude ? Color.orange : disk.isAntigravity ? (Color(hex: "#34A853") ?? DispatchColors.success) : DispatchColors.accent).opacity(0.15))
                     .clipShape(Capsule())
             }
             Text(shortPath(disk.cwd ?? disk.id))

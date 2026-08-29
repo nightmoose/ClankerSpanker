@@ -16,7 +16,6 @@ Adding a line requires an RFC (new untested surface is the failure mode).
 | `host/src/acp/client.ts` | Agent stdio client |
 | `host/src/acp/session-manager.ts` | Partial: `session-manager.approvals.test.ts` covers resume-after-restart only |
 | `host/src/antigravity/runner.ts` | External `agy` CLI |
-| `host/src/sessions/reader.ts` | Reads `~/.grok` / `~/.claude` on disk |
 | `host/src/bot/index.ts` | Barrel |
 | `host/src/bot/protocol.ts` | Types / constants |
 | `host/src/bot/seed.ts` | One-shot hunter seed |

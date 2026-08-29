@@ -109,11 +109,11 @@ Per phase:
       surfaces it in the normalized shape.
 
 **Phase B**
-- [ ] Antigravity runner spawn test: args include system-prompt when
+- [x] Antigravity runner spawn test: args include system-prompt when
       `profile.systemPrompt` set.
-- [ ] Grok ACP session-manager test asserts synthetic preamble
+- [x] Grok ACP session-manager test asserts synthetic preamble
       emitted once per fresh session; not on resume.
-- [ ] `isModelSentinel` table-driven test covering all four backends
+- [x] `isModelSentinel` table-driven test covering all four backends
       and each sentinel string.
 
 **Phase C**

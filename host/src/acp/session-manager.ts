@@ -43,9 +43,11 @@ import {
 import { notifyDesktop } from "../notify/local.js";
 import {
   defaultModelForBackend,
+  grokAgentModelArgs,
   isGrokBackend,
   profileProcessEnv,
   resolveProfile,
+  wrapWithProfileSystemPrompt,
 } from "../profiles.js";
 import { isAuthFailureMessage } from "../login.js";
 import { AcpClient } from "./client.js";
@@ -291,6 +293,26 @@ function shortTitle(prompt: string, explicit?: string): string {
 export function lastUserTextIs(session: { transcript?: TranscriptEntry[] }, text: string): boolean {
   const last = session.transcript?.at(-1);
   return last?.role === "user" && last.text === text;
+}
+
+/**
+ * First-turn Grok ACP prompt. Profile instructions are injected here (ACP has
+ * no systemPrompt field) and skipped on resume / follow-up.
+ */
+export function composeGrokOpeningPrompt(opts: {
+  prompt: string;
+  planMode?: boolean;
+  extraDirs?: string[];
+  systemPrompt?: string;
+}): string {
+  let promptText = opts.prompt;
+  if (opts.planMode) {
+    promptText =
+      `[Plan mode] Explore the codebase and write a concrete implementation plan before making any file edits. ` +
+      `Present the plan for approval before implementing.\n\n${opts.prompt}`;
+  }
+  promptText = extraDirsAgentNote(opts.extraDirs) + promptText;
+  return wrapWithProfileSystemPrompt(promptText, opts.systemPrompt, { fresh: true });
 }
 
 interface LiveSession {
@@ -2940,6 +2962,7 @@ export class SessionManager extends EventEmitter {
       profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "1" ||
       profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "true";
 
+    const profile = this.profileFor(session);
     const runner = new AntigravityRunner({
       cwd: session.cwd,
       conversationId: session.antigravityConversationId,
@@ -2947,6 +2970,7 @@ export class SessionManager extends EventEmitter {
       model: session.model,
       skipPermissions: !requirePerms,
       profileEnv,
+      systemPrompt: profile?.systemPrompt,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -3181,12 +3205,15 @@ export class SessionManager extends EventEmitter {
   }
 
   private newAcpClient(session: DispatchSession): AcpClient {
-    const agentArgs: string[] = [];
-    if (session.model) agentArgs.push("--model", session.model);
-    return new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session), {
-      promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
-      promptMaxMs: this.config.promptMaxMs,
-    });
+    return new AcpClient(
+      this.config.grokBinary,
+      grokAgentModelArgs(session.model),
+      this.profileEnvFor(session),
+      {
+        promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
+        promptMaxMs: this.config.promptMaxMs,
+      },
+    );
   }
 
   /** True while a prompt is parked on the human (do not idle-fail). */
@@ -3426,13 +3453,13 @@ export class SessionManager extends EventEmitter {
       this.persist(session);
       this.emitEvent(session, "session.updated", { grokSessionId: session.grokSessionId, status: "running" });
 
-      let promptText = session.prompt;
-      if (session.planMode) {
-        promptText =
-          `[Plan mode] Explore the codebase and write a concrete implementation plan before making any file edits. ` +
-          `Present the plan for approval before implementing.\n\n${session.prompt}`;
-      }
-      promptText = extraDirsAgentNote(session.extraDirs) + promptText;
+      const profile = this.profileFor(session);
+      const promptText = composeGrokOpeningPrompt({
+        prompt: session.prompt,
+        planMode: session.planMode,
+        extraDirs: session.extraDirs,
+        systemPrompt: profile?.systemPrompt,
+      });
 
       await this.promptTurn(live, promptText, imgs);
     } catch (err) {

@@ -2,6 +2,21 @@
 
 ---
 
+## Run: 2026-08-29 — RFC-006 Phase B: prompt + model sentinel parity
+
+`systemPrompt` now reaches Grok (first-turn preamble) and Antigravity
+(prepended to a fresh `agy -p`; skipped on `--conversation` resume).
+Claude still uses `--append-system-prompt`. `isModelSentinel(backend,
+model)` replaces the Claude-only helper plus the hardcoded agy/Grok
+`--model` exclusions so sentinel slugs (`claude`, `grok-build`,
+`gemini`, `default`, empty) let each CLI pick its account default.
+
+**Soak:** dispatch a Grok profile with a persona set; confirm the
+opening ACP prompt carries `[Profile instructions]` and a follow-up
+does not. Same for a fresh vs resumed agy conversation.
+
+---
+
 ## Run: 2026-08-28 — RFC-006 Phase A: Grok home dir isolation
 
 `AgentProfile.grokHome` is now honored by `profileProcessEnv` (sets

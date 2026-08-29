@@ -1,4 +1,4 @@
 # Host vitest count ratchet (RFC-000 / ContractGate RFC-071 analog).
 # Fail CI if `npm test` reports fewer tests than this integer.
 # Bump it in the same PR when you add tests. Never lower it to land a change.
-127
+137

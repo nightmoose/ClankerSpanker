@@ -4,12 +4,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   defaultModelForBackend,
+  grokAgentModelArgs,
+  isClaudeModelSentinel,
   isGrokBackend,
+  isModelSentinel,
   normalizeBackend,
   normalizeProfiles,
   profileHasCredentials,
   profileProcessEnv,
+  wrapWithProfileSystemPrompt,
 } from "./profiles.js";
+import type { SessionBackend } from "./types.js";
 
 describe("normalizeProfiles", () => {
   it("accepts antigravity backend and aliases", () => {
@@ -203,5 +208,70 @@ describe("profile grokHome isolation", () => {
       rmSync(dir, { recursive: true, force: true });
       rmSync(emptyShared, { recursive: true, force: true });
     }
+  });
+});
+
+describe("isModelSentinel", () => {
+  it("covers sentinels for every backend", () => {
+    const rows: Array<[SessionBackend, string, boolean]> = [
+      ["claude", "claude", true],
+      ["claude", "default", true],
+      ["claude", "", true],
+      ["claude", "  CLAUDE  ", true],
+      ["claude", "claude-sonnet-4-6", false],
+      ["antigravity", "antigravity", true],
+      ["antigravity", "agy", true],
+      ["antigravity", "gemini", true],
+      ["antigravity", "default", true],
+      ["antigravity", "", true],
+      ["antigravity", "gemini-2.5-flash", false],
+      ["grok", "grok", true],
+      ["grok", "grok-build", true],
+      ["grok", "default", true],
+      ["grok", "", true],
+      ["grok", "grok-4", false],
+      ["bot", "grok-4", false],
+      ["bot", "default", false],
+    ];
+    for (const [backend, model, expected] of rows) {
+      expect({
+        backend,
+        model,
+        sentinel: isModelSentinel(backend, model),
+      }).toEqual({ backend, model, sentinel: expected });
+    }
+    expect(isClaudeModelSentinel("claude")).toBe(true);
+    expect(isClaudeModelSentinel("claude-opus-4-7")).toBe(false);
+  });
+});
+
+describe("grokAgentModelArgs", () => {
+  it("omits --model for sentinels and pins real slugs", () => {
+    expect(grokAgentModelArgs("grok-build")).toEqual([]);
+    expect(grokAgentModelArgs("grok")).toEqual([]);
+    expect(grokAgentModelArgs("default")).toEqual([]);
+    expect(grokAgentModelArgs("")).toEqual([]);
+    expect(grokAgentModelArgs(undefined)).toEqual([]);
+    expect(grokAgentModelArgs("grok-4")).toEqual(["--model", "grok-4"]);
+  });
+});
+
+describe("wrapWithProfileSystemPrompt", () => {
+  it("prepends the persona on a fresh session only", () => {
+    const out = wrapWithProfileSystemPrompt("do the thing", "You are NightMoose.", { fresh: true });
+    expect(out).toContain("[Profile instructions]");
+    expect(out).toContain("You are NightMoose.");
+    expect(out).toContain("do the thing");
+  });
+
+  it("does not restate the persona on resume or follow-up", () => {
+    expect(
+      wrapWithProfileSystemPrompt("follow up", "You are NightMoose.", { fresh: false }),
+    ).toBe("follow up");
+  });
+
+  it("is a no-op when systemPrompt is empty", () => {
+    expect(wrapWithProfileSystemPrompt("hi", "  ", { fresh: true })).toBe("hi");
+    expect(wrapWithProfileSystemPrompt("hi", undefined, { fresh: true })).toBe("hi");
   });
 });

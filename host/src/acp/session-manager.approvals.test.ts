@@ -184,6 +184,44 @@ describe("SessionManager approvals", () => {
     expect(manager.get(session.id)?.pendingApproval).toBeFalsy();
   });
 
+  it("keeps a parked Claude approval when the in-flight turn persists again", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
+    const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));
+    manager = new SessionManager(testConfig(dataDir));
+    const session = claudeSession(cwd);
+    session.status = "running";
+    manager.store.save(session);
+
+    // claudeTurn holds this object and persist()s it on every tool event.
+    const held = manager.get(session.id)!;
+    const approval = manager.createClaudeApproval({
+      sessionId: session.id,
+      toolName: "Write",
+      title: "Write: MAINTENANCE_LOG.md",
+      toolInput: { file_path: "MAINTENANCE_LOG.md", contents: "hi" },
+    });
+    expect(approval.status).toBe("pending");
+    expect(held).toBe(manager.get(session.id));
+    expect(held.pendingApproval?.id).toBe(approval.id);
+    expect(held.status).toBe("awaiting_approval");
+
+    held.toolCalls.push({
+      toolCallId: "t1",
+      title: "Write",
+      kind: "edit",
+      status: "pending",
+      updatedAt: new Date().toISOString(),
+    });
+    manager.store.save(held);
+
+    const disk = JSON.parse(
+      readFileSync(join(dataDir, "sessions", `${session.id}.json`), "utf8"),
+    ) as DispatchSession;
+    expect(disk.pendingApproval?.id).toBe(approval.id);
+    expect(disk.status).toBe("awaiting_approval");
+    expect(manager.getPendingApproval(session.id)?.id).toBe(approval.id);
+  });
+
   it("orphaned approve resumes the session instead of dismissing", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "cs-appr-"));
     const cwd = mkdtempSync(join(tmpdir(), "cs-cwd-"));

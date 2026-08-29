@@ -352,6 +352,15 @@ interface BotRunState {
  */
 export class SessionManager extends EventEmitter {
   private live = new Map<string, LiveSession>();
+  /**
+   * Canonical in-memory session objects. Claude/Antigravity turns are not in
+   * `live` (that's ACP), so `get()` used to `store.load()` a fresh copy every
+   * call. `createClaudeApproval` would park pendingApproval on copy A, then
+   * `claudeTurn`'s `runner.on("tool")` persist of copy B would wipe it — the
+   * phone never saw Approve, the hook timed out after 10m, and the model
+   * reported the tool as denied.
+   */
+  private hydrated = new Map<string, DispatchSession>();
   /** Claude PreToolUse hook approvals (polled by hook process). */
   private claudeApprovals = new Map<string, ClaudeHookApproval>();
   /** Active headless CLI runners (Claude / Antigravity) so cancel can SIGTERM them. */
@@ -673,13 +682,25 @@ export class SessionManager extends EventEmitter {
 
   list(): DispatchSession[] {
     const disk = this.store.list();
-    // Overlay live status
-    return disk.map((s) => this.live.get(s.id)?.session ?? s);
+    // Overlay the in-memory object (ACP live, or hydrated Claude/agy turn).
+    return disk.map((s) => this.live.get(s.id)?.session ?? this.hydrated.get(s.id) ?? s);
   }
 
   get(id: string): DispatchSession | null {
-    const s = this.live.get(id)?.session ?? this.store.load(id);
-    if (!s) return null;
+    const live = this.live.get(id)?.session;
+    if (live) {
+      this.hydrated.set(id, live);
+      return this.rehydrateQuestionUi(live);
+    }
+    const cached = this.hydrated.get(id);
+    if (cached) return this.rehydrateQuestionUi(cached);
+    const loaded = this.store.load(id);
+    if (!loaded) return null;
+    this.hydrated.set(id, loaded);
+    return this.rehydrateQuestionUi(loaded);
+  }
+
+  private rehydrateQuestionUi(s: DispatchSession): DispatchSession {
     // Rehydrate questionnaire UI from a pending AskUserQuestion tool call
     if (!s.pendingQuestion) {
       const parked = findPendingAskUserTool(s);
@@ -694,9 +715,11 @@ export class SessionManager extends EventEmitter {
 
   getPendingApproval(sessionId: string): PendingApproval | null {
     const live = this.live.get(sessionId);
-    const session = live?.session ?? this.store.load(sessionId);
+    const session = this.get(sessionId);
     const id = session?.pendingApprovalId;
-    if (!id) return null;
+    if (!id) {
+      return this.pendingClaudeHookApproval(sessionId);
+    }
 
     if (live) {
       const full = live.pendingApprovals.get(id);
@@ -728,7 +751,30 @@ export class SessionManager extends EventEmitter {
     if (session?.pendingApproval && session.pendingApproval.id === id) {
       return session.pendingApproval;
     }
-    return null;
+    return this.pendingClaudeHookApproval(sessionId);
+  }
+
+  /** Last-resort: in-memory hook still pending even if disk lost pendingApprovalId. */
+  private pendingClaudeHookApproval(sessionId: string): PendingApproval | null {
+    let found: ClaudeHookApproval | undefined;
+    for (const hook of this.claudeApprovals.values()) {
+      if (hook.sessionId === sessionId && hook.status === "pending") {
+        if (!found || hook.createdAt > found.createdAt) found = hook;
+      }
+    }
+    if (!found) return null;
+    return {
+      id: found.id,
+      sessionId: found.sessionId,
+      title: found.title,
+      kind: found.toolName.toLowerCase().includes("bash") ? "execute" : "edit",
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+      ],
+      createdAt: found.createdAt,
+      rawInput: found.toolInput,
+    };
   }
 
   getPendingQuestion(sessionId: string): PendingQuestion | null {
@@ -1386,7 +1432,11 @@ export class SessionManager extends EventEmitter {
       live.pendingApprovals.set(id, { ...publicApproval, source: "claude" });
     }
 
+    console.log(
+      `[approvals] park claude session=${body.sessionId.slice(0, 8)} tool=${body.toolName} title="${approval.title.slice(0, 80)}"`,
+    );
     this.emitEvent(session, "approval.needed", publicApproval);
+    this.emitEvent(session, "session.updated", { status: "awaiting_approval" });
     this.maybeNotify("Claude needs approval", `${session.title}: ${approval.title}`);
     return approval;
   }
@@ -4051,6 +4101,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private persist(session: DispatchSession): void {
+    this.hydrated.set(session.id, session);
     this.store.save(session);
   }
 

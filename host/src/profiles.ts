@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AgentProfile, HostConfigFile, PublicAgentProfile, SessionBackend } from "./types.js";
+import { normalizeMcpServers, publicMcpServers } from "./mcp.js";
 
 /** Built-in defaults until the user customizes ~/.grok-dispatch/config.json */
 export function defaultProfiles(): AgentProfile[] {
@@ -137,6 +138,7 @@ export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
       model: p.model?.trim() || undefined,
       systemPrompt: p.systemPrompt?.trim() || undefined,
       ...splitProfileToolFields(p),
+      mcpServers: normalizeMcpServers(p.mcpServers),
     });
   }
   return out.length ? out : defaultProfiles();
@@ -152,6 +154,7 @@ export function publicProfiles(config: HostConfigFile): PublicAgentProfile[] {
     systemPrompt: p.systemPrompt,
     toolAllowlist: p.toolAllowlist,
     autoApprovalSignatures: p.autoApprovalSignatures,
+    mcpServers: publicMcpServers(p.mcpServers),
     hasCredentials: profileHasCredentials(p),
   }));
 }

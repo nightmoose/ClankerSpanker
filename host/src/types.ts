@@ -151,6 +151,24 @@ export interface AgentProfile {
    * migrated here for one release.
    */
   autoApprovalSignatures?: string[];
+  /**
+   * MCP servers billed to this profile. Claude: `--mcp-config`. Grok ACP:
+   * `session/new` mcpServers. Secrets in env/headers never go on the wire
+   * (public profile lists names only).
+   */
+  mcpServers?: ProfileMcpServer[];
+}
+
+/** One MCP server attached to an AgentProfile (stdio or HTTP/SSE). */
+export interface ProfileMcpServer {
+  name: string;
+  enabled?: boolean;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  transport?: "stdio" | "http" | "sse";
 }
 
 /** Safe profile for wire format (no secrets). */
@@ -168,6 +186,14 @@ export interface PublicAgentProfile {
   toolAllowlist?: string[];
   /** Post-hoc auto-approve signatures (persist across sessions). */
   autoApprovalSignatures?: string[];
+  /** MCP server names (no env/headers). */
+  mcpServers?: Array<{
+    name: string;
+    enabled?: boolean;
+    command?: string;
+    url?: string;
+    transport?: string;
+  }>;
   /**
    * Live quota / readiness. Populated by GET /profiles?usage=1 (Claude OAuth
    * 5h + weekly windows, Grok weekly credits, Gemini Cloud Code remainingFraction).

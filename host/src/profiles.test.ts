@@ -44,6 +44,21 @@ describe("normalizeProfiles", () => {
     expect(profiles[0]!.backend).toBe("grok");
   });
 
+  it("preserves named mcpServers", () => {
+    const [p] = normalizeProfiles([
+      {
+        id: "g",
+        name: "Grok",
+        backend: "grok",
+        color: "#73B8FF",
+        mcpServers: [{ name: "databricks", command: "npx", args: ["-y", "databricks-mcp"] }],
+      },
+    ]);
+    expect(p!.mcpServers).toEqual([
+      { name: "databricks", command: "npx", args: ["-y", "databricks-mcp"], transport: "stdio" },
+    ]);
+  });
+
   it("preserves bot backend (must not become grok)", () => {
     const profiles = normalizeProfiles([
       { id: "h", name: "Hunter", backend: "bot", color: "#E879F9" },

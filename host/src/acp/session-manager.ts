@@ -51,6 +51,7 @@ import {
   wrapWithProfileSystemPrompt,
 } from "../profiles.js";
 import { isAuthFailureMessage } from "../login.js";
+import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { AcpClient } from "./client.js";
 import {
   buildQuestionAnswers,
@@ -2864,6 +2865,9 @@ export class SessionManager extends EventEmitter {
       appendSystemPrompt: profile?.systemPrompt,
       extraDirs,
       toolAllowlist: profile?.toolAllowlist,
+      mcpConfigPath: profile
+        ? writeProfileMcpJson(this.config.dataDir, profile, mcpEnvFor(profile))
+        : undefined,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -3154,7 +3158,7 @@ export class SessionManager extends EventEmitter {
     await client.start();
     const newParams: Record<string, unknown> = {
       cwd: session.cwd,
-      mcpServers: [],
+      mcpServers: this.acpMcpServersFor(session),
     };
     if (session.worktree) {
       newParams._meta = { ...(newParams._meta as object), worktree: true };
@@ -3276,6 +3280,12 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  private acpMcpServersFor(session: DispatchSession) {
+    const profile = this.profileFor(session);
+    if (!profile) return [];
+    return toAcpMcpServers(profile.mcpServers, mcpEnvFor(profile));
+  }
+
   private newAcpClient(session: DispatchSession): AcpClient {
     return new AcpClient(
       this.config.grokBinary,
@@ -3358,7 +3368,7 @@ export class SessionManager extends EventEmitter {
       await client.request("session/load", {
         sessionId: grokSessionId,
         cwd: session.cwd,
-        mcpServers: [],
+        mcpServers: this.acpMcpServersFor(session),
       });
       session.grokSessionId = grokSessionId;
       session.updatedAt = now();
@@ -3501,7 +3511,7 @@ export class SessionManager extends EventEmitter {
 
       const newParams: Record<string, unknown> = {
         cwd: session.cwd,
-        mcpServers: [],
+        mcpServers: this.acpMcpServersFor(session),
       };
       if (session.worktree) {
         newParams._meta = { ...(newParams._meta as object), worktree: true };

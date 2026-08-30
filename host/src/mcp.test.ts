@@ -6,13 +6,35 @@ import {
   claudeMcpConfigArgs,
   enabledMcpServers,
   normalizeMcpServers,
+  publicMcpServers,
   toAcpMcpServers,
   toMcpJson,
   writeProfileMcpJson,
 } from "./mcp.js";
+import { writeOAuthTokens } from "./mcp-oauth.js";
 import type { AgentProfile } from "./types.js";
 
 describe("normalizeMcpServers", () => {
+  it("keeps oauthClientId and drops runtime oauthConnected", () => {
+    const out = normalizeMcpServers([
+      {
+        name: "gmail",
+        url: "https://mcp.gmail.example/mcp",
+        oauthClientId: "cid",
+        oauthScope: "openid email",
+        oauthConnected: true,
+      } as { name: string; url: string; oauthClientId: string; oauthScope: string; oauthConnected: boolean },
+    ]);
+    expect(out![0]).toMatchObject({
+      name: "gmail",
+      url: "https://mcp.gmail.example/mcp",
+      oauthClientId: "cid",
+      oauthScope: "openid email",
+      transport: "http",
+    });
+    expect(out![0]).not.toHaveProperty("oauthConnected");
+  });
+
   it("keeps a named stdio server and drops nameless/invalid", () => {
     const out = normalizeMcpServers([
       { name: "github", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
@@ -111,5 +133,46 @@ describe("writeProfileMcpJson", () => {
       writeProfileMcpJson(dir, { ...profile, mcpServers: [] }, {}),
     ).toBeUndefined();
     expect(enabledMcpServers([{ name: "x", command: "c", enabled: false }])).toEqual([]);
+  });
+
+  it("injects a stored OAuth bearer into the Claude mcp json", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-mcp-"));
+    writeOAuthTokens(dir, "nightmoose", "gmail", {
+      accessToken: "atk",
+      clientId: "cid",
+      tokenEndpoint: "https://auth.example.com/token",
+      resource: "https://mcp.example.com/mcp",
+      obtainedAt: Date.now(),
+    });
+    const profile: AgentProfile = {
+      id: "nightmoose",
+      name: "NightMoose",
+      backend: "grok",
+      color: "#73B8FF",
+      mcpServers: [{ name: "gmail", url: "https://mcp.example.com/mcp", transport: "http" }],
+    };
+    const path = writeProfileMcpJson(dir, profile, {});
+    const body = JSON.parse(readFileSync(path!, "utf8")) as {
+      mcpServers: { gmail: { headers: { Authorization: string } } };
+    };
+    expect(body.mcpServers.gmail.headers.Authorization).toBe("Bearer atk");
+  });
+});
+
+describe("publicMcpServers", () => {
+  it("lists names only — no env, headers, or oauth secrets", () => {
+    expect(
+      publicMcpServers([
+        {
+          name: "gmail",
+          url: "https://mcp.example.com/mcp",
+          headers: { Authorization: "Bearer secret" },
+          oauthClientSecret: "shh",
+          env: { TOKEN: "x" },
+        },
+      ]),
+    ).toEqual([
+      { name: "gmail", enabled: undefined, command: undefined, url: "https://mcp.example.com/mcp", transport: undefined },
+    ]);
   });
 });

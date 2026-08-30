@@ -52,6 +52,7 @@ import {
 } from "../profiles.js";
 import { isAuthFailureMessage } from "../login.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
+import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { AcpClient } from "./client.js";
 import {
   buildQuestionAnswers,
@@ -2851,6 +2852,9 @@ export class SessionManager extends EventEmitter {
 
     const hostBase = `http://127.0.0.1:${this.config.bindPort}`;
     const profile = this.profileFor(session);
+    if (profile) {
+      await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
+    }
     const runner = new ClaudeRunner({
       cwd: session.cwd,
       resumeSessionId: session.claudeSessionId,
@@ -3158,7 +3162,7 @@ export class SessionManager extends EventEmitter {
     await client.start();
     const newParams: Record<string, unknown> = {
       cwd: session.cwd,
-      mcpServers: this.acpMcpServersFor(session),
+      mcpServers: await this.acpMcpServersFor(session),
     };
     if (session.worktree) {
       newParams._meta = { ...(newParams._meta as object), worktree: true };
@@ -3280,10 +3284,15 @@ export class SessionManager extends EventEmitter {
     });
   }
 
-  private acpMcpServersFor(session: DispatchSession) {
+  private async acpMcpServersFor(session: DispatchSession) {
     const profile = this.profileFor(session);
     if (!profile) return [];
-    return toAcpMcpServers(profile.mcpServers, mcpEnvFor(profile));
+    await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
+    return toAcpMcpServers(
+      profile.mcpServers,
+      mcpEnvFor(profile),
+      oauthHeaderMap(this.config.dataDir, profile.id, profile.mcpServers),
+    );
   }
 
   private newAcpClient(session: DispatchSession): AcpClient {
@@ -3368,7 +3377,7 @@ export class SessionManager extends EventEmitter {
       await client.request("session/load", {
         sessionId: grokSessionId,
         cwd: session.cwd,
-        mcpServers: this.acpMcpServersFor(session),
+        mcpServers: await this.acpMcpServersFor(session),
       });
       session.grokSessionId = grokSessionId;
       session.updatedAt = now();
@@ -3511,7 +3520,7 @@ export class SessionManager extends EventEmitter {
 
       const newParams: Record<string, unknown> = {
         cwd: session.cwd,
-        mcpServers: this.acpMcpServersFor(session),
+        mcpServers: await this.acpMcpServersFor(session),
       };
       if (session.worktree) {
         newParams._meta = { ...(newParams._meta as object), worktree: true };

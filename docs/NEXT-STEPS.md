@@ -1,12 +1,21 @@
 # Next steps
 
-**Last updated:** 2026-08-29 (NightMoose)
+**Last updated:** 2026-08-30 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-08-30 (RFC-009 remote MCP OAuth)
+
+HTTP MCP servers on a profile can **Sign in** from `/app/` Profiles (this
+machine). PKCE + loopback callback; tokens in
+`~/.grok-dispatch/mcp-oauth/`. Kick the host after deploy. See
+[MCP.md](MCP.md).
 
 ---
 

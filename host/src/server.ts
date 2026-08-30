@@ -32,7 +32,14 @@ import type { BotRuntime } from "./bot/index.js";
 import { listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
-import { normalizeMcpServers } from "./mcp.js";
+import { mcpEnvFor, normalizeMcpServers } from "./mcp.js";
+import {
+  completeMcpOAuth,
+  logoutMcpOAuth,
+  mcpOAuthRedirectUri,
+  mcpOAuthStatusMap,
+  startMcpOAuth,
+} from "./mcp-oauth.js";
 import { profilesWithUsage } from "./usage.js";
 import { startProfileLogin } from "./login.js";
 import {
@@ -254,6 +261,45 @@ async function handleHttp(
 
   if (method === "GET" && path === "/connect.json") {
     json(res, 200, connectPayload(config, req));
+    return;
+  }
+
+  // OAuth browser redirect — loopback only, no host token (the AS cannot send one).
+  if (method === "GET" && path === "/mcp/oauth/callback") {
+    if (!isLocalMachineReq(req)) {
+      htmlPage(res, 403, "MCP OAuth callback is only accepted from this machine.");
+      return;
+    }
+    const err = url.searchParams.get("error");
+    const errDesc = url.searchParams.get("error_description");
+    if (err) {
+      htmlPage(
+        res,
+        400,
+        `Sign-in was not completed (${escapeHtml(err)}${errDesc ? `: ${escapeHtml(errDesc)}` : ""}). Close this tab and try Sign in again.`,
+      );
+      return;
+    }
+    const code = url.searchParams.get("code") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    if (!code || !state) {
+      htmlPage(res, 400, "Missing code or state. Close this tab and try Sign in again.");
+      return;
+    }
+    try {
+      const done = await completeMcpOAuth({ dataDir: config.dataDir, state, code });
+      htmlPage(
+        res,
+        200,
+        `Signed in to <strong>${escapeHtml(done.serverName)}</strong> for profile <strong>${escapeHtml(done.profileId)}</strong>. You can close this tab.`,
+      );
+    } catch (e) {
+      htmlPage(
+        res,
+        400,
+        `Could not finish MCP sign-in: ${escapeHtml(e instanceof Error ? e.message : String(e))}`,
+      );
+    }
     return;
   }
 
@@ -503,7 +549,24 @@ async function handleHttp(
     const wantAdmin = url.searchParams.get("admin") === "1";
     const localAdmin = isLocalMachineReq(req);
     const adminPayload = wantAdmin && localAdmin
-      ? { admin: true as const, adminProfiles: config.profiles ?? [] }
+      ? {
+          admin: true as const,
+          adminProfiles: (config.profiles ?? []).map((p) => ({
+            ...p,
+            mcpOAuth: Object.fromEntries(
+              Object.entries(mcpOAuthStatusMap(config.dataDir, p.id, p.mcpServers)).map(
+                ([name, st]) => [
+                  name,
+                  {
+                    connected: st.connected,
+                    expired: st.expired,
+                    expiresAt: st.expiresAt ? new Date(st.expiresAt).toISOString() : undefined,
+                  },
+                ],
+              ),
+            ),
+          })),
+        }
       : { admin: false as const };
     if (!wantUsage) {
       json(res, 200, { profiles: publicProfiles(config), ...adminPayload });
@@ -735,6 +798,60 @@ async function handleHttp(
     config.profiles = profiles.filter((_, i) => i !== idx);
     saveConfig(config);
     json(res, 200, { ok: true, deleted: profileId });
+    return;
+  }
+
+  // POST /profiles/:id/mcp/:name/oauth/start — this machine only.
+  const mcpOAuthStartMatch = path.match(/^\/profiles\/([^/]+)\/mcp\/([^/]+)\/oauth\/start$/);
+  if (method === "POST" && mcpOAuthStartMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, { error: "MCP OAuth is only allowed from the host machine" });
+      return;
+    }
+    const profileId = decodeURIComponent(mcpOAuthStartMatch[1] ?? "");
+    const serverName = decodeURIComponent(mcpOAuthStartMatch[2] ?? "");
+    try {
+      const profile = resolveProfile(config, profileId);
+      const server = (profile.mcpServers ?? []).find((s) => s.name === serverName);
+      if (!server?.url) {
+        json(res, 404, { error: `HTTP MCP server "${serverName}" not found on this profile` });
+        return;
+      }
+      const env = mcpEnvFor(profile);
+      const mcpUrl = server.url.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, key: string) => env[key] ?? "");
+      const result = await startMcpOAuth({
+        dataDir: config.dataDir,
+        profileId: profile.id,
+        serverName: server.name,
+        mcpUrl,
+        redirectUri: mcpOAuthRedirectUri(config.bindPort),
+        clientId: server.oauthClientId,
+        clientSecret: server.oauthClientSecret,
+        scope: server.oauthScope,
+      });
+      json(res, 200, result);
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /profiles/:id/mcp/:name/oauth/logout — this machine only.
+  const mcpOAuthLogoutMatch = path.match(/^\/profiles\/([^/]+)\/mcp\/([^/]+)\/oauth\/logout$/);
+  if (method === "POST" && mcpOAuthLogoutMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, { error: "MCP OAuth is only allowed from the host machine" });
+      return;
+    }
+    const profileId = decodeURIComponent(mcpOAuthLogoutMatch[1] ?? "");
+    const serverName = decodeURIComponent(mcpOAuthLogoutMatch[2] ?? "");
+    try {
+      resolveProfile(config, profileId);
+      logoutMcpOAuth(config.dataDir, profileId, serverName);
+      json(res, 200, { ok: true });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
 
@@ -1652,6 +1769,21 @@ function json(res: ServerResponse, status: number, body: unknown): void {
     "Content-Length": Buffer.byteLength(data),
   });
   res.end(data);
+}
+
+function htmlPage(res: ServerResponse, status: number, message: string): void {
+  const body = `<!doctype html>
+<html><head><meta charset="utf-8"><title>ClankerSpanker MCP</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0b0b10; color: #f2f2f7;
+    max-width: 32rem; margin: 12vh auto; padding: 0 16px; line-height: 1.45; }
+  a { color: #73b8ff; }
+</style></head>
+<body>
+  <p>${message}</p>
+</body></html>`;
+  res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(body);
 }
 
 /**

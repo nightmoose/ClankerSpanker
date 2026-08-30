@@ -169,6 +169,10 @@ export interface ProfileMcpServer {
   url?: string;
   headers?: Record<string, string>;
   transport?: "stdio" | "http" | "sse";
+  /** Pre-registered OAuth client (skips DCR). */
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  oauthScope?: string;
 }
 
 /** Safe profile for wire format (no secrets). */

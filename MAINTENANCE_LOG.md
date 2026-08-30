@@ -2,6 +2,20 @@
 
 ---
 
+## Run: 2026-08-30 — RFC-009 remote MCP OAuth
+
+HTTP MCP servers on a profile can Sign in with OAuth 2.1 + PKCE
+(`host/src/mcp-oauth.ts`). Tokens live in
+`{dataDir}/mcp-oauth/{profileId}/{serverName}.json` (0600), not
+`config.json`. `toMcpJson` / ACP `mcpServers` inject `Authorization:
+Bearer` when fresh. Three local-only routes: start, loopback callback,
+logout. Host Profiles editor has per-server Sign in/out.
+
+**Soak:** NightMoose HTTP MCP → Sign in on `/app/` (this Mac) → dispatch
+→ tools appear; FullScore must not see that token.
+
+---
+
 ## Run: 2026-08-29 — RFC-008 per-profile MCP servers
 
 `AgentProfile.mcpServers` is the payer-owned connector list. Dispatch

@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { oauthHeaderMap } from "./mcp-oauth.js";
 import type { AgentProfile, ProfileMcpServer } from "./types.js";
 
 const NAME_RE = /^[A-Za-z0-9_-]+$/;
@@ -29,6 +30,19 @@ function pairsToRecord(pairs: Array<{ name: string; value: string }>): Record<st
   const rec: Record<string, string> = {};
   for (const p of pairs) rec[p.name] = p.value;
   return rec;
+}
+
+function mergeHeaders(
+  configured: Record<string, string>,
+  oauth?: Record<string, string>,
+): Record<string, string> {
+  const out = { ...configured };
+  if (!oauth) return out;
+  for (const [k, v] of Object.entries(oauth)) {
+    const clash = Object.keys(out).some((h) => h.toLowerCase() === k.toLowerCase());
+    if (!clash) out[k] = v;
+  }
+  return out;
 }
 
 export function normalizeMcpServers(raw?: ProfileMcpServer[] | null): ProfileMcpServer[] | undefined {
@@ -68,7 +82,7 @@ export function normalizeMcpServers(raw?: ProfileMcpServer[] | null): ProfileMcp
               .map(([k, v]) => [k.trim(), String(v ?? "")]),
           )
         : undefined;
-    out.push({
+    const entry: ProfileMcpServer = {
       name,
       enabled: s.enabled === false ? false : undefined,
       command,
@@ -77,7 +91,14 @@ export function normalizeMcpServers(raw?: ProfileMcpServer[] | null): ProfileMcp
       url,
       headers: headers && Object.keys(headers).length ? headers : undefined,
       transport,
-    });
+    };
+    const oauthClientId = s.oauthClientId?.trim();
+    const oauthClientSecret = s.oauthClientSecret?.trim();
+    const oauthScope = s.oauthScope?.trim();
+    if (oauthClientId) entry.oauthClientId = oauthClientId;
+    if (oauthClientSecret) entry.oauthClientSecret = oauthClientSecret;
+    if (oauthScope) entry.oauthScope = oauthScope;
+    out.push(entry);
   }
   return out.length ? out : undefined;
 }
@@ -102,14 +123,15 @@ export function publicMcpServers(
 export function toMcpJson(
   servers: ProfileMcpServer[] | undefined,
   env: Record<string, string | undefined>,
+  oauthHeaders?: Record<string, Record<string, string>>,
 ): { mcpServers: Record<string, Record<string, unknown>> } {
   const mcpServers: Record<string, Record<string, unknown>> = {};
   for (const s of enabledMcpServers(servers)) {
     const entry: Record<string, unknown> = {};
     if (s.url) {
       entry.url = expandVars(s.url, env);
-      const headers = recordToPairs(s.headers, env);
-      if (headers.length) entry.headers = pairsToRecord(headers);
+      const merged = mergeHeaders(pairsToRecord(recordToPairs(s.headers, env)), oauthHeaders?.[s.name]);
+      if (Object.keys(merged).length) entry.headers = merged;
       if (s.transport === "sse") entry.transport = "sse";
       else if (s.transport === "http") entry.transport = "http";
     } else if (s.command) {
@@ -143,15 +165,17 @@ export type AcpMcpServer =
 export function toAcpMcpServers(
   servers: ProfileMcpServer[] | undefined,
   env: Record<string, string | undefined>,
+  oauthHeaders?: Record<string, Record<string, string>>,
 ): AcpMcpServer[] {
   const out: AcpMcpServer[] = [];
   for (const s of enabledMcpServers(servers)) {
     if (s.url) {
+      const merged = mergeHeaders(pairsToRecord(recordToPairs(s.headers, env)), oauthHeaders?.[s.name]);
       out.push({
         type: s.transport === "sse" ? "sse" : "http",
         name: s.name,
         url: expandVars(s.url, env),
-        headers: recordToPairs(s.headers, env),
+        headers: Object.entries(merged).map(([name, value]) => ({ name, value })),
       });
     } else if (s.command) {
       out.push({
@@ -175,7 +199,11 @@ export function writeProfileMcpJson(
   const dir = join(dataDir, "mcp");
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${profile.id}.mcp.json`);
-  const body = toMcpJson(profile.mcpServers, env);
+  const body = toMcpJson(
+    profile.mcpServers,
+    env,
+    oauthHeaderMap(dataDir, profile.id, profile.mcpServers),
+  );
   writeFileSync(path, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
   return path;
 }

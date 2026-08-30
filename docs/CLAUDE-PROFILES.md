@@ -36,6 +36,8 @@ The host sets `CLAUDE_CONFIG_DIR` from `claudeConfigDir` when spawning Claude (s
 
 Grok profiles use the same isolation idea with `grokHome` → `GROK_HOME`. Without it, every Grok chip shares `~/.grok/auth.json`, sessions, and MCP credentials. Point a second Grok profile at its own dir (e.g. `~/.grok-work`) so sign-in does not stomp NightMoose.
 
+Per-profile MCP servers (RFC-008) live on `AgentProfile.mcpServers`. Claude Dispatch passes `--mcp-config`; Grok ACP gets them on `session/new`. Edit the JSON on the host Profiles tab (this machine). Do not put Gmail connectors on NightMoose or Databricks on FullScore.
+
 ## After editing profiles
 
 Restart the host process (or LaunchAgent/systemd) so it reloads config:

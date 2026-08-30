@@ -6,7 +6,7 @@ import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync as fsReadFileSync, unlinkSync, writeFileSync } from "node:fs";
-import type { AgentProfile, HostConfigFile, SessionBackend } from "./types.js";
+import type { AgentProfile, HostConfigFile, ProfileMcpServer, SessionBackend } from "./types.js";
 import type {
   AnswerQuestionsRequest,
   ApproveRequest,
@@ -32,6 +32,7 @@ import type { BotRuntime } from "./bot/index.js";
 import { listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
+import { normalizeMcpServers } from "./mcp.js";
 import { profilesWithUsage } from "./usage.js";
 import { startProfileLogin } from "./login.js";
 import {
@@ -575,6 +576,7 @@ async function handleHttp(
             ? body.autoApprovalSignatures
             : undefined,
         }),
+        mcpServers: normalizeMcpServers(body.mcpServers),
       };
       config.profiles = [...existing, created];
       saveConfig(config);
@@ -608,6 +610,7 @@ async function handleHttp(
         claudeConfigDir?: string | null;
         antigravityConfigDir?: string | null;
         grokHome?: string | null;
+        mcpServers?: ProfileMcpServer[] | null;
       };
       const profiles = config.profiles ?? [];
       const idx = profiles.findIndex((p) => p.id === profileId);
@@ -677,6 +680,11 @@ async function handleHttp(
           next.grokHome = undefined;
         } else if (typeof body.grokHome === "string") {
           next.grokHome = trimOrUndef(body.grokHome);
+        }
+        if (body.mcpServers === null) {
+          next.mcpServers = undefined;
+        } else if (Array.isArray(body.mcpServers)) {
+          next.mcpServers = normalizeMcpServers(body.mcpServers);
         }
       }
       profiles[idx] = next;

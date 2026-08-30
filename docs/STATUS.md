@@ -13,3 +13,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 005 | [Attach Antigravity / Gemini CLI conversations](rfcs/005-attach-agy.md) | Accepted | `nightly-maintenance-2026-08-24-rfc005-attach-agy` |
 | 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](rfcs/006-backend-parity.md) | Draft | `nightly-maintenance-2026-08-28-rfc006-backend-parity` |
 | 007 | [Phone copy/paste: Term paste + session message selection](rfcs/007-ios-term-copy-paste.md) | Accepted | `nightly-maintenance-2026-08-29-rfc007-ios-term-copy-paste` |
+| 008 | [Per-profile MCP servers (payer isolation)](rfcs/008-profile-mcp.md) | Accepted | `nightly-maintenance-2026-08-29-rfc008-profile-mcp` |

@@ -138,10 +138,7 @@ Per phase (three separate commits, one merge):
 
 ## Follow-ups
 
-- **Per-profile MCP servers RFC** — extend `AgentProfile` with
-  `mcpServers[]`, materialize `.mcp.json` at spawn, use
-  `--mcp-config` for Claude and Grok's compat loader for free.
-  Depends on Phase A.
+- **Per-profile MCP servers RFC** — **RFC-008**.
 - ACP protocol PR upstream for a real `systemPrompt` field, replacing
   Phase B's first-message workaround.
 - Collapse `profileHasCredentials`'s four branches into one table

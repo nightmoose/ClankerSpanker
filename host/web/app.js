@@ -665,6 +665,7 @@ function openProfileEditor(id, draftOverride) {
     claudeConfigDir: source.claudeConfigDir || "",
     antigravityConfigDir: source.antigravityConfigDir || "",
     envText: envToText(source.env || {}),
+    mcpText: mcpToText(source.mcpServers),
   };
   state.profileEditor = { id: id || null, draft };
 
@@ -712,6 +713,9 @@ function openProfileEditor(id, draftOverride) {
       <p class="preview">${escapeHtml(envHint)}</p>
       <label class="field">System prompt (Claude persona — appended)</label>
       <textarea id="pe-sysprompt" rows="3">${escapeHtml(draft.systemPrompt)}</textarea>
+      <label class="field">MCP servers (JSON array — billed to this profile)</label>
+      <textarea id="pe-mcp" rows="6" spellcheck="false" placeholder='[{"name":"databricks","command":"npx","args":["-y","databricks-mcp"]}]'>${escapeHtml(draft.mcpText || "")}</textarea>
+      <p class="preview">stdio: command/args/env. HTTP: url/headers/transport. Use \${VAR} from Environment above. Secrets stay on this machine.</p>
       <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
         <button type="button" class="secondary" id="pe-cancel">Cancel</button>
         <button type="button" class="primary" id="pe-save">${isNew ? "Create profile" : "Save changes"}</button>
@@ -725,6 +729,7 @@ function openProfileEditor(id, draftOverride) {
     color: $("#pe-color").value.trim(),
     model: $("#pe-model").value.trim(),
     systemPrompt: $("#pe-sysprompt").value.trim(),
+    mcpText: $("#pe-mcp")?.value ?? "",
     claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : source.claudeConfigDir || "",
     antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : source.antigravityConfigDir || "",
     envText: $("#pe-env").value,
@@ -750,6 +755,13 @@ function openProfileEditor(id, draftOverride) {
       return;
     }
     const env = envFromText(d.envText);
+    let mcpServers;
+    try {
+      mcpServers = parseMcpText(d.mcpText);
+    } catch (err) {
+      banner(err instanceof Error ? err.message : String(err), true);
+      return;
+    }
     const payload = {
       name: d.name,
       backend: d.backend,
@@ -759,6 +771,7 @@ function openProfileEditor(id, draftOverride) {
       claudeConfigDir: d.claudeConfigDir || null,
       antigravityConfigDir: d.antigravityConfigDir || null,
       env,
+      mcpServers,
     };
     try {
       if (isNew) {
@@ -813,6 +826,28 @@ function envToText(env) {
     .filter(([k]) => k && k.trim())
     .map(([k, v]) => `${k}=${v ?? ""}`)
     .join("\n");
+}
+
+function mcpToText(servers) {
+  if (!Array.isArray(servers) || !servers.length) return "";
+  try {
+    return JSON.stringify(servers, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+function parseMcpText(text) {
+  const t = String(text || "").trim();
+  if (!t) return [];
+  let v;
+  try {
+    v = JSON.parse(t);
+  } catch {
+    throw new Error("MCP servers must be valid JSON");
+  }
+  if (!Array.isArray(v)) throw new Error("MCP servers must be a JSON array");
+  return v;
 }
 
 function envFromText(text) {

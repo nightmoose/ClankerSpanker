@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import { findClaudeBinary } from "../sessions/reader.js";
 import { agentPathEnv } from "../platform.js";
 import { isClaudeModelSentinel } from "../profiles.js";
+import { claudeMcpConfigArgs } from "../mcp.js";
 
 export interface ClaudeRunnerOptions {
   cwd: string;
@@ -44,6 +45,8 @@ export interface ClaudeRunnerOptions {
    * use `--tools` so a list of `Read,Grep` cannot fire `Write`.
    */
   toolAllowlist?: string[];
+  /** Per-profile MCP JSON path (`--mcp-config`). */
+  mcpConfigPath?: string;
 }
 
 export interface ClaudeUsageDelta {
@@ -114,6 +117,7 @@ export class ClaudeRunner extends EventEmitter {
     }
 
     args.push(...claudeToolRestrictArgs(this.opts.toolAllowlist));
+    args.push(...claudeMcpConfigArgs(this.opts.mcpConfigPath));
 
     if (this.opts.requirePhoneApproval) {
       // default mode + hook gate for write/execute tools

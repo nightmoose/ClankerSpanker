@@ -10,6 +10,12 @@ This file is the in-repo status of play for ClankerSpanker. Snapshot:
 
 ---
 
+## Done — 2026-08-29 (RFC-008 per-profile MCP)
+
+Host Profiles (this machine) JSON `mcpServers` on each chip. Claude `--mcp-config`; Grok ACP `session/new`. Kick the host after deploy.
+
+---
+
 ## Done — 2026-08-29 (RFC-007 phone copy/paste)
 
 iPhone Term has a **Paste** key. Expanded session messages: **Copy**, **Read / Select** (select a span), code-block Copy, bubble long-press Copy. Rebuild the phone app.

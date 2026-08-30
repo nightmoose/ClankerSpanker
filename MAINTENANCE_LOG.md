@@ -2,6 +2,19 @@
 
 ---
 
+## Run: 2026-08-29 — RFC-008 per-profile MCP servers
+
+`AgentProfile.mcpServers` is the payer-owned connector list. Dispatch
+writes `{dataDir}/mcp/{profileId}.mcp.json` and passes `--mcp-config` to
+Claude; Grok ACP `session/new` / `session/load` get the ACP-shaped
+array. Host Profiles editor (this machine) has a JSON textarea.
+`${VAR}` expands from profile env. Public GET lists names only.
+
+**Soak:** add a stdio server on NightMoose, dispatch, confirm the tools
+show; FullScore turn must not see them.
+
+---
+
 ## Run: 2026-08-29 — RFC-007 iPhone Term paste + session copy
 
 Term accessory bar has **Paste** (clipboard → xterm `term.paste` → PTY).

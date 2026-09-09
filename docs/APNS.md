@@ -36,15 +36,13 @@ RFC: [rfcs/011-apns.md](rfcs/011-apns.md). Daily driver: **Deez Nutz**.
    `keyPath` is relative to `dataDir` (`~/.grok-dispatch`) or absolute.
    `environment: auto` tries sandbox (Xcode Debug) then production.
 
-4. Rebuild host and bounce the **Application Support** agent
-   (`com.nightmoose.clankerspanker-host`), not the old repo
-   `grok-dispatch-host` LaunchAgent:
+4. Rebuild host and kick the **standalone repo** LaunchAgent
+   (`com.nightmoose.grok-dispatch-host`). Do not copy into Application
+   Support and do not load `com.nightmoose.clankerspanker-host`.
 
    ```bash
    cd ~/Projects/GrokDispatch/host && npm run build
-   rsync -a --delete dist/ "$HOME/Library/Application Support/ClankerSpanker/host/dist/"
-   launchctl bootout "gui/$(id -u)/com.nightmoose.clankerspanker-host"
-   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.nightmoose.clankerspanker-host.plist"
+   launchctl kickstart -k "gui/$(id -u)/com.nightmoose.grok-dispatch-host"
    ```
 
    Boot log should say `APNs: configured`, not `APNs not configured`.

@@ -20,3 +20,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 012 | [Stop NightMoose login modal on MCP AuthRequired](rfcs/012-login-modal-mcp-false-positive.md) | Accepted | `nightly-maintenance-2026-09-09-rfc012-login-modal-mcp-false-positive` |
 | 013 | [Profile MCP catalog](rfcs/013-profile-mcp-catalog.md) | Accepted | `nightly-maintenance-2026-09-09-rfc013-profile-mcp-catalog` |
 | 014 | [Close as done sticks; hide Grok helper sessions](rfcs/014-close-done-hide-helpers.md) | Accepted | `nightly-maintenance-2026-09-09-rfc014-close-done-hide-helpers` |
+| 015 | [Detach the Mac app from the host process](rfcs/015-host-detach.md) | Accepted | `nightly-maintenance-2026-09-09-rfc015-host-detach` |

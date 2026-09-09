@@ -32,20 +32,19 @@ struct SettingsView: View {
                             Text(localHost.apiReachable ? "Up" : "Down")
                                 .foregroundStyle(localHost.apiReachable ? DispatchColors.success : .secondary)
                         }
-                        LabeledContent("Process") {
-                            Text(localHost.isRunning ? "pid \(localHost.pid.map(String.init) ?? "?")" : "Stopped")
+                        LabeledContent("LaunchAgent") {
+                            Text(localHost.loadedAgentLabel ?? "Not loaded")
+                                .font(.caption.monospaced())
                         }
-                        TextField("Host package path", text: $localHost.hostPackagePath)
+                        TextField("Host package path (source)", text: $localHost.hostPackagePath)
                             .textFieldStyle(.roundedBorder)
                         HStack {
                             Button("Save path") {
                                 localHost.savePackagePath(localHost.hostPackagePath)
                                 statusMessage = "Saved host package path"
                             }
-                            Button("Start") { localHost.start() }
-                                .disabled(localHost.isRunning)
-                            Button("Stop") { localHost.stop() }
-                                .disabled(!localHost.isRunning)
+                            Button("Kickstart") { localHost.start() }
+                                .disabled(localHost.apiReachable)
                             Button("Connect") {
                                 Task {
                                     if let pair = await localHost.bootstrapLocalHost() {
@@ -73,7 +72,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                         }
-                        Text("Starts `host/dist/index.js` with Node. Build the host package first. Sandbox is off so the app can manage a local gateway.")
+                        Text("The gateway runs as a per-user LaunchAgent (installed from Host → Install / update host, or the repo `host/scripts/install-launchd.sh`). This app never spawns node in-process, so quitting the app does not stop the gateway.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

@@ -551,9 +551,9 @@ struct MacCommandCenter: View {
                 apiUp: localHost.apiReachable || appState.socket.isConnected,
                 wsLive: appState.socket.isConnected,
                 hostName: appState.selectedHost?.name,
-                processLabel: localHost.isRunning
-                    ? "app-owned"
-                    : (localHost.apiReachable ? "external" : "down")
+                processLabel: localHost.apiReachable
+                    ? (localHost.loadedAgentLabel.map { "agent · \($0.hasSuffix("clankerspanker-host") ? "app" : "repo")" } ?? "external")
+                    : "down"
             )
         }
     }

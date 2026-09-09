@@ -2,6 +2,26 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-015 detach Mac app from host process
+
+`LocalHostController.start()` on macOS used to spawn `node dist/index.js`
+as a child of the Mac app via `Process()`. Quitting the app killed the
+gateway. `start()` now `launchctl kickstart -k`s whichever LaunchAgent
+is loaded — `com.nightmoose.clankerspanker-host` (app-managed) first,
+then `com.nightmoose.grok-dispatch-host` (repo standalone). The Install
+flow in `MacHostPanel` is preserved and now uses a takeover-confirm
+alert when the repo agent is loaded, so it won't silently evict the
+`~/Projects/GrokDispatch/host` daemon. Dead `process`/`pid`/`isRunning`
+bookkeeping and the "Stop app-owned host" menu entries are gone.
+
+**Soak:** Cmd-Q the Mac app while `lsof -nP -iTCP:8787 -sTCP:LISTEN`
+watches — node stays alive. Menu → Host → "Kickstart local host"
+brings it back if launchd's `KeepAlive` hasn't yet. Host panel install
+button on a machine with the repo agent loaded shows the confirm
+alert; only "Replace" swaps in the Application Support copy.
+
+---
+
 ## Run: 2026-09-09 — RFC-010 iOS app icon badge
 
 Home-screen / Dock badge is `attentionSessions.count` (awaiting approval

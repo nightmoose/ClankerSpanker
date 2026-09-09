@@ -111,6 +111,7 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
+        #if os(iOS)
         NotificationCenter.default.publisher(for: .dispatchDeviceToken)
             .compactMap { $0.object as? String }
             .sink { [weak self] token in
@@ -120,6 +121,7 @@ final class AppState: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        #endif
     }
 
     #if os(iOS)
@@ -220,10 +222,9 @@ final class AppState: ObservableObject {
         await hostCtrl.refreshStatus()
 
         if !hostCtrl.apiReachable {
-            // Start local gateway (no-op if already running externally but unreachable path)
-            if !hostCtrl.isRunning {
-                hostCtrl.start()
-            }
+            // Connect only. Kick the standalone repo LaunchAgent; never
+            // spawn node or install the Application Support copy.
+            hostCtrl.start()
             for _ in 0..<40 {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 await hostCtrl.refreshStatus()
@@ -238,7 +239,7 @@ final class AppState: ObservableObject {
                     code: 1,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Local host not reachable at \(hostCtrl.localBaseURL). Build host (`cd host && npm run build`) and set package path under Host.",
+                            "Local host not reachable at \(hostCtrl.localBaseURL). The gateway is the standalone LaunchAgent com.nightmoose.grok-dispatch-host, not this app.",
                     ]
                 )
             )

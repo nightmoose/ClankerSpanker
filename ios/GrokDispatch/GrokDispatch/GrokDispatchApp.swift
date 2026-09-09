@@ -39,13 +39,10 @@ struct ClankerSpankerApp: App {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandMenu("Host") {
-                Button("Start local host") {
+                Button("Kickstart local host") {
                     LocalHostController.shared.start()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Stop local host") {
-                    LocalHostController.shared.stop()
-                }
                 Button("Show Host panel") {
                     MacAppChrome.showMainWindow()
                     NotificationCenter.default.post(name: .macShowHost, object: nil)
@@ -103,17 +100,12 @@ private struct MacMenuBarMenu: View {
         }
         Divider()
         if !host.apiReachable {
-            Button("Start host") {
+            Button("Kickstart host") {
                 host.start()
                 Task { await host.refreshStatus() }
             }
         } else {
             Text("Host API reachable")
-        }
-        if host.isRunning {
-            Button("Stop app-owned host") {
-                host.stop()
-            }
         }
         Divider()
         Button("Quit ClankerSpanker") {

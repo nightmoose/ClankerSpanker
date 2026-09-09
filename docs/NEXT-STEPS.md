@@ -1,12 +1,21 @@
 # Next steps
 
-**Last updated:** 2026-08-30 (NightMoose)
+**Last updated:** 2026-09-09 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-09-09 (RFC-014 close as done + hide Grok helpers)
+
+**Close as done** / Archive on an idle chat actually leaves Active
+(hydrated overlay was stale). Grok subagent / helper worktree sessions
+no longer flood Active, Archived, or disk-attach lists. Kick the host
+after deploy.
 
 ---
 

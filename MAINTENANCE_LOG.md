@@ -2,6 +2,20 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-014 close as done + hide Grok helpers
+
+Idle Close as done / Archive wrote disk but left `hydrated` stale, so
+`GET /sessions` kept the chat on Active. Those mutations now
+`persist()` the in-memory object. Grok subagent worktree sessions
+(`session_kind` subagent / `subagent_resume`, cwd `…/subagent-*`) are
+no longer imported or listed — talk to the parent session.
+
+**Soak:** Close as done on an idle Grok chat — it leaves Active. Helper
+rows gone from Active / Archived / disk attach. Kick the host after
+deploy.
+
+---
+
 ## Run: 2026-08-30 — RFC-009 remote MCP OAuth
 
 HTTP MCP servers on a profile can Sign in with OAuth 2.1 + PKCE

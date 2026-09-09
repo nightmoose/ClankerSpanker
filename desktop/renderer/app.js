@@ -1703,8 +1703,13 @@ function wireSessionMenu(d) {
             if (!title) return;
             state.detail = await Api.renameSession(d.id, title);
           } else if (act === "close") {
-            state.detail = await Api.close(d.id);
+            await Api.close(d.id);
             banner("Closed as done");
+            state.detail = null;
+            state.selectedId = null;
+            await refreshSessions();
+            renderDetail();
+            return;
           } else if (act === "cancel") {
             state.detail = await Api.cancel(d.id);
           } else if (act === "transfer") {

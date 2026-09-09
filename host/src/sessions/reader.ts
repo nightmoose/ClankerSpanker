@@ -22,15 +22,55 @@ export interface DiskSessionHint {
   transcriptPath?: string;
 }
 
+/** Decode a Grok sessions group dir (`%2FUsers%2F…`) or a raw path. */
+function decodeMaybe(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * True when `cwd` (or a Grok sessions group name) is a subagent worktree.
+ * Grok writes helpers under `~/.grok/worktrees/<repo>/subagent-<id>`.
+ */
+export function isGrokHelperCwd(cwd?: string | null): boolean {
+  if (!cwd) return false;
+  const n = decodeMaybe(cwd).replace(/\\/g, "/");
+  return /(^|\/)subagent-[^/]+(\/|$)/i.test(n);
+}
+
+/**
+ * Grok Build helper / subagent chats. Operators should not attach or
+ * prompt these — talk to the parent session instead.
+ */
+export function isGrokHelperSession(input: {
+  cwd?: string | null;
+  sessionKind?: string | null;
+  worktreeLabel?: string | null;
+  group?: string | null;
+}): boolean {
+  const kind = (input.sessionKind ?? "").trim().toLowerCase();
+  if (kind.startsWith("subagent")) return true;
+  const label = (input.worktreeLabel ?? "").trim();
+  if (/^subagent-/i.test(label)) return true;
+  return isGrokHelperCwd(input.cwd) || isGrokHelperCwd(input.group);
+}
+
+export function defaultGrokSessionsRoot(): string {
+  return join(homedir(), ".grok", "sessions");
+}
+
 /** Best-effort scan of ~/.grok/sessions for display / resume hints. */
-export function listDiskSessions(limit = 200): DiskSessionHint[] {
-  const root = join(homedir(), ".grok", "sessions");
+export function listDiskSessions(limit = 200, root = defaultGrokSessionsRoot()): DiskSessionHint[] {
   if (!existsSync(root)) return [];
 
   const results: DiskSessionHint[] = [];
 
   for (const group of readdirSync(root)) {
     if (group.startsWith(".") || group.endsWith(".sqlite")) continue;
+    if (isGrokHelperCwd(group)) continue;
     const groupPath = join(root, group);
     let st;
     try {
@@ -50,7 +90,20 @@ export function listDiskSessions(limit = 200): DiskSessionHint[] {
           generated_title?: string;
           updated_at?: string;
           current_model_id?: string;
+          session_kind?: string;
+          worktree_label?: string;
         };
+        const cwd = summary.info?.cwd;
+        if (
+          isGrokHelperSession({
+            cwd,
+            sessionKind: summary.session_kind,
+            worktreeLabel: summary.worktree_label,
+            group,
+          })
+        ) {
+          continue;
+        }
         const title =
           summary.generated_title?.trim() ||
           summary.session_summary?.trim() ||
@@ -67,7 +120,7 @@ export function listDiskSessions(limit = 200): DiskSessionHint[] {
         results.push({
           id: summary.info?.session_id ?? sid,
           source: "grok",
-          cwd: summary.info?.cwd,
+          cwd,
           title,
           updatedAt,
           model: summary.current_model_id,

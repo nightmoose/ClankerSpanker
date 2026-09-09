@@ -29,7 +29,7 @@ import { isAuthorized, tokensMatch, unauthorizedBody } from "./auth.js";
 import { TerminalHub } from "./terminal/session.js";
 import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
-import { listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
+import { isGrokHelperCwd, listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
 import { mcpEnvFor, normalizeMcpServers } from "./mcp.js";
@@ -1061,6 +1061,8 @@ async function handleHttp(
       }
     }
     const rawSessions = manager.list().filter((s) => {
+      // Grok subagent worktrees are not operator sessions.
+      if (isGrokHelperCwd(s.cwd)) return false;
       if (!contentQuery) return true;
       return sessionMatchesContentQuery(s, contentQuery);
     });

@@ -32,7 +32,7 @@ Compose → POST /dispatch
 |-------|----------|
 | Host config + token | `~/.grok-dispatch/config.json` |
 | Dispatch session snapshots | `~/.grok-dispatch/sessions/*.json` |
-| Native Grok sessions | `~/.grok/sessions/` |
+| Native Grok sessions | `~/.grok/sessions/` (subagent / helper worktrees are not listed) |
 | Claude projects | `~/.claude/projects/` |
 | Mac app prefs / keychain | macOS userData + Keychain |
 | Electron prefs | Electron `userData` (shell only — not host token of record) |

@@ -39,7 +39,7 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 | Create / run hunter bots | Yes (⌘2) | Yes | No |
 | Host terminal (login shell) | Yes (⌘⇧K) | Yes | `/app/terminal.html` |
 | Tool-call ellipsis (rawInput / command) | Yes | Yes | No (browser session UI has no tool rows) |
-| Grok / Claude disk attach | Yes (via host API) | Yes | Yes |
+| Grok / Claude disk attach | Yes (via host API; Grok subagent helpers omitted) | Yes | Yes |
 | Multi-host registry | Yes | Remote mode + URL | URL in settings |
 | Start/stop **local** host | Yes | Yes (managed mode) | No |
 | Install host out of repo tree | Yes (App Support + LaunchAgent) | Yes (`~/.local/share/clankerspanker/host` + systemd user) | Scripts only |

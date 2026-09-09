@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-02
-**Branch:** nightly-maintenance-2026-09-02-rfc011-apns
+**Branch:** nightly-maintenance-2026-09-09-rfc011-apns
 **Severity:** P1 — RFC-010 only updates the icon while the app (or its
 WebSocket) is alive. Ignore an approval with the app closed and the
 phone looks idle.
@@ -87,7 +87,7 @@ Shared Swift sources: Mac does **not** register for remote push.
 ## Testing
 
 - [x] vitest: key normalize, JOSE sig, device store, payload, skip when unconfigured
-- [ ] `make check` (ratchet 165 → 184)
+- [x] `make check` (ratchet includes APNs tests)
 - [ ] Deez Nutz: kill the app, trip an approval, banner + badge without opening
 - [ ] Approve from the banner (or in-app) → badge drops
 - [ ] `POST /push/test` while the app is killed

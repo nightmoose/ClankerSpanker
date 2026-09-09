@@ -32,6 +32,7 @@ the RFC.
 - [ ] User-facing HTTP/CLI/config/UI: docs updated; OpenAPI if routes changed
 - [ ] `MAINTENANCE_LOG.md` appended
 - [ ] RFC + `docs/STATUS.md` updated
+- [ ] iOS client change: installed on **Deez Nutz** (not simulator-only)
 
 ## Tests
 

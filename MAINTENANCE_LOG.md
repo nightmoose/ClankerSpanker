@@ -2,6 +2,33 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-010 iOS app icon badge
+
+Home-screen / Dock badge is `attentionSessions.count` (awaiting approval
+or a question). `NotificationService.setAppIconBadge` writes it after
+session refresh; approval/question local notifications set
+`content.badge` so SpringBoard updates before the list round-trip.
+Approve/Reject from a banner always refreshes so the number drops.
+
+**Soak:** iPhone — trip an approval, confirm the icon shows `1`, approve
+in-app or from the banner, confirm the mark clears.
+
+---
+
+## Run: 2026-09-09 — RFC-011 APNs
+
+Host sends Apple Push on `approval.needed` / `question.needed` (alert +
+badge) and on resolve (badge only). iPhone registers its device token at
+`POST /push/register`. Key lives in `~/.grok-dispatch/apns/` (not git).
+`environment: auto` tries sandbox then production.
+
+**Soak:** kill ClankerSpanker on Deez Nutz, trip an approval, confirm
+banner + badge without opening the app. `POST /push/test` is the
+shortcut. Bounce `com.nightmoose.clankerspanker-host` (Application
+Support), not the repo `grok-dispatch-host` agent.
+
+---
+
 ## Run: 2026-09-09 — RFC-012 login modal false positive
 
 Vercel MCP `AuthRequired` / `oauth-protected-resource` was matching a

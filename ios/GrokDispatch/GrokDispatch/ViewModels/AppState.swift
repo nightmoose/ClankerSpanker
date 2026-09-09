@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import Combine
+#if os(iOS)
+import UIKit
+#endif
 
 @MainActor
 final class AppState: ObservableObject {
@@ -70,6 +73,10 @@ final class AppState: ObservableObject {
     @Published var lastRefreshError: String?
 
     private var cancellables = Set<AnyCancellable>()
+    #if os(iOS)
+    private var pendingDeviceToken: String?
+    private var lastPushRegistration: String?
+    #endif
 
     init() {
         reloadHosts()
@@ -103,7 +110,40 @@ final class AppState: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .dispatchDeviceToken)
+            .compactMap { $0.object as? String }
+            .sink { [weak self] token in
+                Task { @MainActor in
+                    self?.pendingDeviceToken = token
+                    self?.registerPushIfNeeded()
+                }
+            }
+            .store(in: &cancellables)
     }
+
+    #if os(iOS)
+    /// Upload the APNs device token to the selected host (once per token+host).
+    private func registerPushIfNeeded() {
+        guard let token = pendingDeviceToken, let host = selectedHost else { return }
+        let key = "\(host.id.uuidString)|\(token)"
+        if lastPushRegistration == key { return }
+        lastPushRegistration = key
+        let name = UIDevice.current.name
+        Task {
+            do {
+                try await api.registerPush(
+                    token: token,
+                    clientHostId: host.id.uuidString,
+                    name: name,
+                    host: host
+                )
+            } catch {
+                lastPushRegistration = nil
+            }
+        }
+    }
+    #endif
 
     /// Handle Approve/Reject taps that came from the notification action
     /// buttons. Looks up the host from userInfo, then calls the same REST
@@ -112,11 +152,17 @@ final class AppState: ObservableObject {
         let action = payload["action"] as? String ?? ""
         guard let info = payload["userInfo"] as? [String: Any],
               let kind = info["kind"] as? String,
-              let hostIdString = info["hostId"] as? String,
-              let hostId = UUID(uuidString: hostIdString),
-              let host = hosts.first(where: { $0.id == hostId }),
               let sessionId = info["sessionId"] as? String
         else { return }
+        let host: HostEndpoint? = {
+            if let hostIdString = info["hostId"] as? String,
+               let hostId = UUID(uuidString: hostIdString),
+               let match = hosts.first(where: { $0.id == hostId }) {
+                return match
+            }
+            return selectedHost ?? hosts.first
+        }()
+        guard let host else { return }
 
         switch kind {
         case "approval":
@@ -137,11 +183,10 @@ final class AppState: ObservableObject {
                             comment: nil,
                             host: host
                         )
-                    } else {
-                        // Default tap (no action button) — just refresh and let
-                        // the user see the session in-app.
-                        await self.refreshSessions()
                     }
+                    // Default tap and Approve/Reject both refresh so the
+                    // home-screen badge drops when the work is done.
+                    await self.refreshSessions()
                 } catch {
                     NotificationService.notify(
                         title: "Couldn't resolve approval",
@@ -367,6 +412,7 @@ final class AppState: ObservableObject {
         HostStore.selectedBoundProfileId = nil
         isConfigured = false
         socket.disconnect()
+        NotificationService.setAppIconBadge(0)
     }
 
     /// Legacy single-host save (onboarding + deep link).
@@ -550,8 +596,24 @@ final class AppState: ObservableObject {
     /// cannot wipe `boundProfiles` after a newer refresh already succeeded.
     private var refreshSessionsGeneration: UInt = 0
 
+    /// Home-screen / Dock count: sessions awaiting approval or a question.
+    @discardableResult
+    private func syncAppIconBadge(including sessionId: String? = nil) -> Int {
+        var ids = Set(attentionSessions.map(\.id))
+        if let sessionId { ids.insert(sessionId) }
+        let count = ids.count
+        NotificationService.setAppIconBadge(count)
+        return count
+    }
+
     /// Refresh profiles from all hosts; sessions for the selected host.
     func refreshSessions() async {
+        defer {
+            syncAppIconBadge()
+            #if os(iOS)
+            registerPushIfNeeded()
+            #endif
+        }
         refreshSessionsGeneration &+= 1
         let generation = refreshSessionsGeneration
 
@@ -730,23 +792,27 @@ final class AppState: ObservableObject {
                let hostId,
                let approvalId = payload?["id"] as? String {
                 let approvalTitle = (payload?["title"] as? String) ?? "Approval required"
+                let badge = syncAppIconBadge(including: sid)
                 NotificationService.notifyApproval(
                     sessionId: sid,
                     hostId: hostId,
                     approvalId: approvalId,
                     sessionTitle: sessionTitle,
-                    approvalTitle: approvalTitle
+                    approvalTitle: approvalTitle,
+                    badge: badge
                 )
             }
             if type == "question.needed",
                let sid = sessionId,
                let hostId {
                 let qTitle = (payload?["title"] as? String) ?? "Answers needed"
+                let badge = syncAppIconBadge(including: sid)
                 NotificationService.notifyQuestion(
                     sessionId: sid,
                     hostId: hostId,
                     sessionTitle: sessionTitle,
-                    questionTitle: qTitle
+                    questionTitle: qTitle,
+                    badge: badge
                 )
             }
             if type == "session.updated" || type == "session.completed" {
@@ -772,6 +838,8 @@ extension Notification.Name {
     /// Posted by AppDelegate when the user taps an Approve/Reject action on a
     /// notification. Object is `[String: Any]` with `action` and `userInfo`.
     static let dispatchNotificationAction = Notification.Name("dispatchNotificationAction")
+    /// Hex APNs device token from AppDelegate. Object is `String`.
+    static let dispatchDeviceToken = Notification.Name("dispatchDeviceToken")
     static let macShowCompose = Notification.Name("macShowCompose")
     static let macShowNewBot = Notification.Name("macShowNewBot")
     static let macShowHost = Notification.Name("macShowHost")

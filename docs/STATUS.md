@@ -15,8 +15,8 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 007 | [Phone copy/paste: Term paste + session message selection](rfcs/007-ios-term-copy-paste.md) | Accepted | `nightly-maintenance-2026-08-29-rfc007-ios-term-copy-paste` |
 | 008 | [Per-profile MCP servers (payer isolation)](rfcs/008-profile-mcp.md) | Accepted | `nightly-maintenance-2026-08-29-rfc008-profile-mcp` |
 | 009 | [Remote MCP OAuth (PKCE)](rfcs/009-mcp-oauth.md) | Accepted | `nightly-maintenance-2026-08-30-rfc009-mcp-oauth` |
-| 010 | [iOS app icon badge](rfcs/010-ios-app-icon-badge.md) | Accepted | `nightly-maintenance-2026-09-02-rfc010-ios-app-icon-badge` |
-| 011 | [APNs so a killed iPhone still badges](rfcs/011-apns.md) | Accepted | `nightly-maintenance-2026-09-02-rfc011-apns` |
-| 012 | [Stop NightMoose login modal on MCP AuthRequired](rfcs/012-login-modal-mcp-false-positive.md) | Accepted | `nightly-maintenance-2026-09-02-rfc011-apns` |
+| 010 | [iOS app icon badge](rfcs/010-ios-app-icon-badge.md) | Accepted | `nightly-maintenance-2026-09-09-rfc011-apns` |
+| 011 | [APNs so a killed iPhone still badges](rfcs/011-apns.md) | Accepted | `nightly-maintenance-2026-09-09-rfc011-apns` |
+| 012 | [Stop NightMoose login modal on MCP AuthRequired](rfcs/012-login-modal-mcp-false-positive.md) | Accepted | `nightly-maintenance-2026-09-09-rfc012-login-modal-mcp-false-positive` |
 | 013 | [Profile MCP catalog](rfcs/013-profile-mcp-catalog.md) | Accepted | `nightly-maintenance-2026-09-09-rfc013-profile-mcp-catalog` |
 | 014 | [Close as done sticks; hide Grok helper sessions](rfcs/014-close-done-hide-helpers.md) | Accepted | `nightly-maintenance-2026-09-09-rfc014-close-done-hide-helpers` |

@@ -619,6 +619,21 @@ export interface AttachAgyRequest {
   profileId?: string;
 }
 
+export interface ApnsConfig {
+  /** 10-char Key ID from Apple Developer → Keys. */
+  keyId?: string;
+  /** 10-char Team ID (Nightmoose: XHS7K665C9). */
+  teamId?: string;
+  /** PEM contents. Prefer `keyPath` so the secret is not in config.json. */
+  keyP8?: string;
+  /** Path to the .p8; relative to `dataDir` or absolute. */
+  keyPath?: string;
+  /** Default com.nightmoose.clankerspanker */
+  bundleId?: string;
+  /** sandbox | production | auto (sandbox first, then the other on BadDeviceToken). */
+  environment?: "sandbox" | "production" | "auto";
+}
+
 export interface HostConfigFile {
   hostToken: string;
   bindHost: string;
@@ -637,6 +652,11 @@ export interface HostConfigFile {
   notifyDesktop: boolean;
   /** @deprecated Use notifyDesktop */
   notifyMac?: boolean;
+  /**
+   * Outbound APNs so a killed iPhone still badges. Never returned on public
+   * profile/status payloads. Key file stays under dataDir/apns/.
+   */
+  apns?: ApnsConfig;
   dataDir: string;
   /**
    * Idle hang detection for open `session/prompt` turns (ms of no ACP activity).

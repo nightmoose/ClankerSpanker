@@ -10,6 +10,25 @@ This file is the in-repo status of play for ClankerSpanker. Snapshot:
 
 ---
 
+## Done — 2026-09-09 (RFC-010 iOS app icon badge)
+
+iPhone home-screen (and Mac Dock) badge is the number of sessions awaiting
+approval or a question — same count as the Sessions tab capsule. RFC-011
+covers the killed-app case. See [CLIENTS.md](CLIENTS.md). Rebuild the
+phone and Mac.
+
+---
+
+## Done — 2026-09-09 (RFC-011 APNs)
+
+Killed iPhone still gets approval/question banners and the icon badge.
+Host sends APNs (HTTP/2 + JWT). Open the phone app once after install so
+the device token registers. Setup: [APNS.md](APNS.md). Bounce the
+Application Support host (`com.nightmoose.clankerspanker-host`) after
+deploy — not the old repo LaunchAgent.
+
+---
+
 ## Done — 2026-09-09 (RFC-012 login modal false positive)
 
 “NightMoose needs to sign in” no longer pops on every message when a

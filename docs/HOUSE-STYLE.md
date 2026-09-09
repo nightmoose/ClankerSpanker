@@ -100,6 +100,11 @@ Do not “clean up” these without an RFC and a regression test:
 Result first. One issue at a time. No drive-by refactors. Do not rewrite the
 rename leftovers (`GrokDispatch` paths) unless that *is* the RFC.
 
+iOS client work is not done until it is installed on **Deez Nutz**
+(scheme `ClankerSpankerPhone`). See [`CLIENTS.md`](CLIENTS.md) § Phone deploy.
+Host changes that affect a running gateway need a LaunchAgent kick so
+`host/dist` loads. Phone badges when killed need APNs ([`APNS.md`](APNS.md)).
+
 ## Local + CI gate
 
 ```bash

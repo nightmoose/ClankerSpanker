@@ -59,6 +59,21 @@ paths:
     get:
       summary: List .bot-outbox markdown drafts for this bot's project
       security: [{ bearerAuth: [] }]
+  /push/register:
+    post:
+      summary: Register an APNs device token for this host
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Unregister an APNs device token
+      security: [{ bearerAuth: [] }]
+  /push/status:
+    get:
+      summary: Whether APNs is configured and how many devices are registered (no secrets)
+      security: [{ bearerAuth: [] }]
+  /push/test:
+    post:
+      summary: Send a one-shot test alert to registered devices
+      security: [{ bearerAuth: [] }]
   /dispatch:
     post:
       summary: Create and start a task

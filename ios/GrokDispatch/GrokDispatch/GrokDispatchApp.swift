@@ -207,11 +207,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        NotificationCenter.default.post(name: .dispatchDeviceToken, object: hex)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("[push] APNs registration failed: \(error.localizedDescription)")
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .badge]
+        // Foreground: WebSocket already posts a local banner. Remote APNs
+        // should only refresh the badge so we do not double-notify.
+        if notification.request.trigger is UNPushNotificationTrigger {
+            return [.badge]
+        }
+        return [.banner, .sound, .badge]
     }
 
     /// Approve/Reject tapped from a notification action button. Forwards

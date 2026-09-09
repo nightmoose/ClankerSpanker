@@ -31,12 +31,16 @@ That means an old **iPhone** scheme is selected. This project no longer ships a 
 
 ## Phone app
 
-Scheme: **`ClankerSpankerPhone`** → destination = your **physical iPhone** (or a Simulator).
+Daily driver: **Deez Nutz** (iPhone 13 Pro). After any iOS client change,
+install there — simulator-only is not a ship. Full commands:
+[`docs/CLIENTS.md`](../../docs/CLIENTS.md) § Phone deploy.
 
-Do **not** pick “My Mac (Designed for iPad)” for the phone scheme — that is the broken phone UI on the Mac.
+Scheme: **`ClankerSpankerPhone`** → destination **Deez Nutz**.
+
+Do **not** pick “My Mac (Designed for iPad)” for the phone scheme — that is the broken phone UI on the Mac. Do **not** pick **DaT OnE KiTtY** (a different iPhone 13 Pro).
 
 ```bash
-# After phone is unlocked + trusted for development:
+# After Deez Nutz is unlocked + trusted for development:
 open ClankerSpanker.xcodeproj
-# Scheme menu: ClankerSpankerPhone → your iPhone → Run (⌘R)
+# Scheme menu: ClankerSpankerPhone → Deez Nutz → Run (⌘R)
 ```

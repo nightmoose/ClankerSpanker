@@ -11,6 +11,12 @@ There is **one host gateway** (`host/`). Everything else is a **client** (and op
 | **Any OS browser** | Static UI | `host/web` served at `/app/` | No — host must already be running |
 | **iPhone** | SwiftUI | same `ios/` sources, scheme **ClankerSpankerPhone** → **Deez Nutz** | No — remote host only |
 
+**Configurator** (not a client, no session UI): **ClankerSpankerHostTray** —
+menu-bar-only Swift app in `ios/GrokDispatch/HostTray`, scheme
+`ClankerSpankerHostTray`. Shows host status, kickstarts the LaunchAgent,
+opens `/app/` and `/setup` in the browser. Ship on Mac laptops that host
+a gateway but do not run `ClankerSpanker.app`. RFC-016.
+
 **Do not** dual-maintain full session UIs on Mac in both Electron and Swift.  
 **Mac = native. Linux = Electron.** Electron may *run* on macOS for debugging; shipping Mac UX is the native app.
 

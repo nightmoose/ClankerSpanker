@@ -52,7 +52,7 @@ struct MacHostPanel: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle("Host")
         #if os(macOS)
-        .navigationSubtitle("Close with Done — app stays in the menu bar")
+        .navigationSubtitle("Gateway is a LaunchAgent — install ClankerSpanker Host Tray for menu-bar controls without this app")
         #endif
         .task { await host.refreshStatus() }
     }

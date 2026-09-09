@@ -2,6 +2,29 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-016 standalone Mac host tray
+
+New Xcode target `ClankerSpankerHostTray` (scheme + `.app`), a
+`LSUIElement=true` menu-bar-only Swift app in
+`ios/GrokDispatch/HostTray/`. Shows gateway status, opens `/app/` and
+`/setup` in the default browser, kickstarts whichever LaunchAgent is
+loaded (`clankerspanker-host` first, else `grok-dispatch-host`), and
+reveals the host log + `~/.grok-dispatch/`. No session UI — this is
+a **configurator**, not a client (see `docs/CLIENTS.md`).
+
+To avoid two identical bolts in the menu bar, the ClankerSpanker Mac
+command-center app drops its own `MenuBarExtra` and `MacMenuBarMenu`.
+`applicationShouldTerminateAfterLastWindowClosed` flips to `true`
+now that there's no menu-bar refuge — the tray is the always-on
+surface, the command center quits when its window closes.
+
+**Soak:** `xcodegen` in `ios/GrokDispatch`, then `xcodebuild -scheme
+ClankerSpankerHostTray build`. Drop the built `.app` in `~/Applications`
+and launch — a single bolt should appear. Launching `ClankerSpanker.app`
+alongside should not add a second bolt.
+
+---
+
 ## Run: 2026-09-09 — RFC-015 detach Mac app from host process
 
 `LocalHostController.start()` on macOS used to spawn `node dist/index.js`

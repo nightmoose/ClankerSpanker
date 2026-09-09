@@ -51,7 +51,7 @@ import {
   resolveProfile,
   wrapWithProfileSystemPrompt,
 } from "../profiles.js";
-import { isAuthFailureMessage } from "../login.js";
+import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { AcpClient } from "./client.js";
@@ -4211,6 +4211,16 @@ function normalizeAcpMethod(method: string): string {
 function mapAgentExitError(detail: string | undefined | null): string | null {
   if (!detail) return null;
   const lower = detail.toLowerCase();
+  // MCP connector OAuth (Vercel, Gmail, …) — not NightMoose / Grok CLI login.
+  if (isMcpOAuthRequiredMessage(detail)) {
+    const host = mcpOAuthRequiredHost(detail);
+    const where = host ? ` (${host})` : "";
+    return (
+      `MCP connector needs Sign in${where}. Open Host → Profiles on this Mac ` +
+      `and Sign in for that server, then send another message. ` +
+      `This is not a NightMoose / Grok login.`
+    );
+  }
   // Nested worker noise often says AuthorizationRequired even while the main
   // session is healthy. Only map to a hard auth message when it looks terminal.
   if (

@@ -11,7 +11,6 @@ Adding a line requires an RFC (new untested surface is the failure mode).
 | `host/src/config.ts` | File I/O + discovery; needs fs fixtures |
 | `host/src/platform.ts` | OS / NIC probing |
 | `host/src/notify/local.ts` | Desktop notification shell-out |
-| `host/src/login.ts` | Interactive CLI login |
 | `host/src/server.ts` | HTTP+WS monolith — **highest-value follow-up** |
 | `host/src/acp/client.ts` | Agent stdio client |
 | `host/src/acp/session-manager.ts` | Partial: `session-manager.approvals.test.ts` covers resume-after-restart + opening prompt |

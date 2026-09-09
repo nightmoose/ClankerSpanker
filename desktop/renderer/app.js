@@ -3,11 +3,13 @@
 const RECENT_LIMIT = 5;
 const AUTH_MARKERS = [
   "please run /login",
-  "oauth",
-  "not authenticated",
-  "unauthorized",
+  "not logged in",
+  "failed to authenticate",
+  "run grok login",
+  "oauth token missing",
+  "oauth token revoked",
+  "oauth token expired",
   "login required",
-  "auth login",
 ];
 
 const state = {
@@ -160,10 +162,15 @@ function projectNameFor(session) {
 function needsReLogin(detail) {
   if (!detail) return false;
   if (state.loginAckedFor === `${detail.id}:${detail.updatedAt || ""}`) return false;
-  const blob = [detail.error, ...(detail.transcript || []).map((e) => e.text)]
-    .filter(Boolean)
-    .join("\n")
-    .toLowerCase();
+  const lastNonUser = [...(detail.transcript || [])].reverse().find((e) => e.role !== "user");
+  const blob = [detail.error, lastNonUser?.text].filter(Boolean).join("\n").toLowerCase();
+  if (
+    blob.includes("oauth-protected-resource") ||
+    blob.includes("resource_metadata") ||
+    blob.includes("mcp connector needs sign in")
+  ) {
+    return false;
+  }
   return AUTH_MARKERS.some((m) => blob.includes(m));
 }
 

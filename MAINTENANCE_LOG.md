@@ -2,6 +2,19 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-012 login modal false positive
+
+Vercel MCP `AuthRequired` / `oauth-protected-resource` was matching a
+bare `oauth` substring, so Mac/iPhone popped “NightMoose needs to sign
+in” on every follow-up. Profile CLI login detection no longer matches
+MCP OAuth. The Sign in alert is banner-only (tap to open). Worker exit
+maps to “MCP connector needs Sign in (mcp.vercel.com)”.
+
+**Soak:** send a message in the looping NightMoose chat — no modal.
+Sign in Vercel from Host → Profiles, not `grok login`.
+
+---
+
 ## Run: 2026-09-09 — RFC-013 profile MCP catalog
 
 Checked-in paste map for who gets which connector:

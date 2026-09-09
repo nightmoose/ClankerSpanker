@@ -64,7 +64,7 @@ connectors from `~/.grok`.
 
 - [x] vitest: Vercel AuthRequired is MCP, not profile login
 - [x] vitest: `please run /login` still is profile login
-- [ ] `make check`
+- [x] `make check`
 - [ ] Mac: send a follow-up in the session that was looping — no modal
 
 ## Rollout

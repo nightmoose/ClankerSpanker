@@ -10,6 +10,14 @@ This file is the in-repo status of play for ClankerSpanker. Snapshot:
 
 ---
 
+## Done — 2026-09-09 (RFC-012 login modal false positive)
+
+“NightMoose needs to sign in” no longer pops on every message when a
+**Vercel MCP** connector wants OAuth. Kick the host after deploy; rebuild
+Mac. See RFC-012.
+
+---
+
 ## Done — 2026-09-09 (RFC-013 profile MCP catalog)
 
 Paste JSON: [MCP-CATALOG.md](MCP-CATALOG.md). NightMoose = GitHub /

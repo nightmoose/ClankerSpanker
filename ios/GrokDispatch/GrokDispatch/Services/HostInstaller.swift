@@ -33,9 +33,12 @@ enum HostInstaller {
     }
 
     /// Copy/build host into Application Support and optionally load launchd.
+    /// `takeoverStandalone` boots out `com.nightmoose.grok-dispatch-host`
+    /// first if it is loaded — required because both agents bind port 8787.
     static func install(
         fromSource source: URL?,
         loadLaunchAgent: Bool = true,
+        takeoverStandalone: Bool = false,
         log: (String) -> Void = { _ in }
     ) throws {
         let fm = FileManager.default
@@ -82,7 +85,7 @@ enum HostInstaller {
         }
 
         if loadLaunchAgent {
-            try installLaunchAgent(log: log)
+            try installLaunchAgent(takeoverStandalone: takeoverStandalone, log: log)
         }
 
         LocalHostController.shared.savePackagePath(installRoot.path)
@@ -99,7 +102,10 @@ enum HostInstaller {
         }
     }
 
-    static func installLaunchAgent(log: (String) -> Void = { _ in }) throws {
+    static func installLaunchAgent(
+        takeoverStandalone: Bool = false,
+        log: (String) -> Void = { _ in }
+    ) throws {
         let node = findNode()
         let entry = installRoot.appendingPathComponent("dist/index.js").path
         guard FileManager.default.fileExists(atPath: entry) else {
@@ -145,10 +151,31 @@ enum HostInstaller {
             at: plistURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        // Both LaunchAgents bind port 8787 — only one can be loaded at a
+        // time. If the repo-standalone agent is up, refuse unless the
+        // caller (typically the Host panel confirm alert) opted in.
+        let standalone = "com.nightmoose.grok-dispatch-host"
+        let (standaloneLoaded, _) = LocalHostController.launchctl(
+            ["print", "gui/\(uid)/\(standalone)"]
+        )
+        if standaloneLoaded {
+            if !takeoverStandalone {
+                throw InstallError.message(
+                    "\(standalone) is already loaded (repo host at ~/Projects/GrokDispatch/host). Confirm from the Host panel to replace it, or leave it as your gateway."
+                )
+            }
+            log("Booting out repo agent \(standalone) so the app-managed one can take the port…")
+            _ = try? run(
+                cmd: "/bin/launchctl",
+                args: ["bootout", "gui/\(uid)/\(standalone)"],
+                log: log
+            )
+        }
+
         try plist.write(to: plistURL, atomically: true, encoding: .utf8)
         log("Wrote \(plistURL.path)")
 
-        // bootout then bootstrap
+        // bootout any stale copy of the app-managed agent, then bootstrap.
         _ = try? run(cmd: "/bin/launchctl", args: ["bootout", "gui/\(uid)/\(label)"], log: log)
         try run(cmd: "/bin/launchctl", args: ["bootstrap", "gui/\(uid)", plistURL.path], log: log)
         _ = try? run(cmd: "/bin/launchctl", args: ["enable", "gui/\(uid)/\(label)"], log: log)

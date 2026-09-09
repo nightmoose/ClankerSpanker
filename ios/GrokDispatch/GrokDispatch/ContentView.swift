@@ -53,6 +53,7 @@ struct ContentView: View {
 #if os(iOS)
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // Top tab strip on every page (Sessions → Bots → Settings), including when a
@@ -89,6 +90,10 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .tint(DispatchColors.accent)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await appState.refreshSessions() }
+        }
     }
 }
 #endif

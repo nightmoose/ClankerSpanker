@@ -52,6 +52,8 @@ import {
 import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
+import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
+import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
@@ -193,6 +195,9 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     for (const ws of clients) {
       if (ws.readyState === ws.OPEN) ws.send(payload);
     }
+    void handleSessionPush(config, manager.list(), event).catch((err) => {
+      console.warn("[push]", err instanceof Error ? err.message : err);
+    });
   });
 
   server.listen(config.bindPort, config.bindHost, () => {
@@ -1758,6 +1763,57 @@ async function handleHttp(
   // POST /auth/validate
   if (method === "POST" && path === "/auth/validate") {
     json(res, 200, { ok: true, projects: config.projects.length });
+    return;
+  }
+
+  // GET /push/status — configured? device count. Never returns the .p8.
+  if (method === "GET" && path === "/push/status") {
+    json(res, 200, pushStatus(config));
+    return;
+  }
+
+  // POST /push/register — iPhone uploads its APNs device token.
+  if (method === "POST" && path === "/push/register") {
+    try {
+      const body = (await readJson(req)) as {
+        token?: string;
+        clientHostId?: string;
+        name?: string;
+        bundleId?: string;
+      };
+      const device = registerPushDevice(config.dataDir, {
+        token: String(body.token ?? ""),
+        clientHostId: String(body.clientHostId ?? ""),
+        name: body.name,
+        bundleId: body.bundleId,
+      });
+      json(res, 200, { ok: true, token: device.token.slice(0, 8), name: device.name });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /push/register
+  if (method === "DELETE" && path === "/push/register") {
+    try {
+      const body = (await readJson(req)) as { token?: string };
+      const ok = unregisterPushDevice(config.dataDir, String(body.token ?? ""));
+      json(res, 200, { ok });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /push/test — soak: one alert to every registered phone.
+  if (method === "POST" && path === "/push/test") {
+    try {
+      const result = await sendTestPush(config);
+      json(res, result.error && !result.sent ? 400 : 200, result);
+    } catch (err) {
+      json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
 

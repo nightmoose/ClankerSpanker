@@ -25,6 +25,7 @@ targets:
         excludes:
           - Info.plist
           - Info-macOS.plist
+          - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker
@@ -40,6 +41,11 @@ targets:
         # Critical: do not generate+merge Info.plist — ATS for LAN HTTP was lost in the merge.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: GrokDispatch/Info.plist
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Release.entitlements
     info:
       path: GrokDispatch/Info.plist
       properties:
@@ -73,6 +79,7 @@ targets:
         excludes:
           - Info.plist
           - Info-macOS.plist
+          - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker.mac

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-02
-**Branch:** nightly-maintenance-2026-09-02-rfc010-ios-app-icon-badge
+**Branch:** nightly-maintenance-2026-09-09-rfc011-apns
 **Severity:** P2 — phone already banners for approvals; the SpringBoard
 icon never shows a count, so pending work is invisible once the banner
 is gone.

@@ -725,6 +725,38 @@ actor APIClient {
         try await get("/bots/\(id)/outbox", host: host)
     }
 
+    // MARK: - APNs
+
+    struct PushRegisterBody: Codable, Sendable {
+        var token: String
+        var clientHostId: String
+        var name: String?
+    }
+
+    struct PushRegisterResponse: Codable, Sendable {
+        var ok: Bool?
+        var token: String?
+        var name: String?
+    }
+
+    struct PushStatusResponse: Codable, Sendable {
+        var configured: Bool
+        var deviceCount: Int
+        var bundleId: String?
+    }
+
+    func registerPush(token: String, clientHostId: String, name: String?, host: HostEndpoint) async throws {
+        _ = try await post(
+            "/push/register",
+            body: PushRegisterBody(token: token, clientHostId: clientHostId, name: name),
+            host: host
+        ) as PushRegisterResponse
+    }
+
+    func pushStatus(host: HostEndpoint) async throws -> PushStatusResponse {
+        try await get("/push/status", host: host)
+    }
+
     // MARK: - Internals
 
     private func get<T: Decodable>(

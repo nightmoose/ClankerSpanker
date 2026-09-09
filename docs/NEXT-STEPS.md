@@ -10,6 +10,16 @@ This file is the in-repo status of play for ClankerSpanker. Snapshot:
 
 ---
 
+## Done — 2026-09-09 (RFC-013 profile MCP catalog)
+
+Paste JSON: [MCP-CATALOG.md](MCP-CATALOG.md). NightMoose = GitHub /
+Vercel / Fly / Supabase / Notion. Personal = GitHub + Notion (own Sign
+in). FullScore = Databricks / Azure DevOps / Azure. Gemini = none.
+**Do not paste NightMoose until `grokHome` is set** (Grok still inherits
+`~/.grok`). `/app/` → Profiles (this Mac) → paste → Sign in HTTP rows.
+
+---
+
 ## Done — 2026-09-09 (RFC-014 close as done + hide Grok helpers)
 
 **Close as done** / Archive on an idle chat actually leaves Active

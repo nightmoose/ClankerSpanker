@@ -2,6 +2,19 @@
 
 ---
 
+## Run: 2026-09-09 — RFC-013 profile MCP catalog
+
+Checked-in paste map for who gets which connector:
+[docs/MCP-CATALOG.md](docs/MCP-CATALOG.md). NightMoose / Personal /
+FullScore / Gemini assignment is the RFC. Do not put Gmail on
+NightMoose. Do not paste NightMoose MCP until that profile has
+`grokHome` (RFC-006). Vitest parses the fenced JSON.
+
+**Soak:** `/app/` Profiles → paste Personal or FullScore → Sign in.
+NightMoose waits on `grokHome`.
+
+---
+
 ## Run: 2026-09-09 — RFC-014 close as done + hide Grok helpers
 
 Idle Close as done / Archive wrote disk but left `hydrated` stale, so

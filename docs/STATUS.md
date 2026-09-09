@@ -18,5 +18,5 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 010 | [iOS app icon badge](rfcs/010-ios-app-icon-badge.md) | Accepted | `nightly-maintenance-2026-09-02-rfc010-ios-app-icon-badge` |
 | 011 | [APNs so a killed iPhone still badges](rfcs/011-apns.md) | Accepted | `nightly-maintenance-2026-09-02-rfc011-apns` |
 | 012 | [Stop NightMoose login modal on MCP AuthRequired](rfcs/012-login-modal-mcp-false-positive.md) | Accepted | `nightly-maintenance-2026-09-02-rfc011-apns` |
-| 013 | [Profile MCP catalog](rfcs/013-profile-mcp-catalog.md) | Draft | `nightly-maintenance-2026-09-03-rfc013-profile-mcp-catalog` |
+| 013 | [Profile MCP catalog](rfcs/013-profile-mcp-catalog.md) | Accepted | `nightly-maintenance-2026-09-09-rfc013-profile-mcp-catalog` |
 | 014 | [Close as done sticks; hide Grok helper sessions](rfcs/014-close-done-hide-helpers.md) | Accepted | `nightly-maintenance-2026-09-09-rfc014-close-done-hide-helpers` |

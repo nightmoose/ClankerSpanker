@@ -4,7 +4,14 @@ MCP servers are billed to the **profile**, not the host. Configure them on
 this Mac in `/app/` → Profiles (loopback only). Public API lists **names
 only** — env, headers, and OAuth tokens never leave the machine.
 
-See RFC-008 (server list) and RFC-009 (remote OAuth).
+See RFC-008 (server list), RFC-009 (remote OAuth), and the
+paste-ready map in [MCP-CATALOG.md](MCP-CATALOG.md) (RFC-013): NightMoose
+gets GitHub / Vercel / Fly / Supabase / Notion; Personal gets GitHub +
+Notion (separate Sign in); FullScore gets Databricks / Azure DevOps /
+Azure. No Gmail / M365 / QuickBooks on NightMoose.
+
+Do not paste NightMoose MCP until that profile has `grokHome` (RFC-006).
+Without it, Grok still inherits `~/.grok` marketplace connectors.
 
 ## JSON shape
 

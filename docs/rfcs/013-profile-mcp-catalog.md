@@ -1,8 +1,8 @@
 # RFC-013 — Profile MCP catalog (who gets which connector)
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-09-03
-**Branch:** nightly-maintenance-2026-09-03-rfc013-profile-mcp-catalog
+**Branch:** nightly-maintenance-2026-09-09-rfc013-profile-mcp-catalog
 **Severity:** P1 — RFC-008/009 shipped the *mechanism*; every profile still
 has `mcpServers: null`. Grok then inherits `~/.grok` marketplace MCP
 (Vercel `AuthRequired` killed NightMoose turns — RFC-012). We need a
@@ -127,19 +127,19 @@ checked-in JSON (names + urls, no secrets).
 
 ## Testing
 
-- [ ] Catalog JSON in `docs/MCP-CATALOG.md` parses (`jq` / vitest fixture)
+- [x] Catalog JSON in `docs/MCP-CATALOG.md` parses (`host/src/mcp-catalog.test.ts`)
 - [ ] Manual: NightMoose + Vercel Sign in; FullScore turn must **not**
-      see Vercel tools
+      see Vercel tools (blocked on RFC-006 `grokHome` on the NightMoose
+      profile — do not paste NightMoose MCP until that is set)
 - [ ] Manual: MCP AuthRequired on an unsigned Vercel still does **not**
       open the NightMoose login modal (RFC-012)
-- [ ] `make check` when any host code ships (docs-only first pass: skip
-      host matrix)
+- [x] `make check`
 
 ## Rollout
 
-1. Land catalog + this RFC (Draft → Accepted when the assignment table
-   is signed off).
-2. Operator paste + Sign in per profile.
+1. Land catalog + this RFC (Accepted).
+2. Operator paste + Sign in per profile from [MCP-CATALOG.md](../MCP-CATALOG.md).
+   Skip NightMoose until that profile has `grokHome`.
 3. RFC-006 `grokHome` before trusting NightMoose isolation.
 4. Follow-up RFC for catalog chips in `/app/`.
 

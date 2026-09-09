@@ -41,6 +41,7 @@
 		3DFB90311742314844B97AC5 /* NewBotSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3294449B296EB18B0F3425F /* NewBotSheet.swift */; };
 		3F9D3A593083E1465F85CAE7 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60398E332640794CFD228E9D /* NotificationService.swift */; };
 		4027C37B415063C291359256 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB2B868A6D8625E7F9C0616 /* ContentView.swift */; };
+		4149334860C2D5B32EBFDF9C /* HostTrayMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121E6B23EF56E5CF48A9AF42 /* HostTrayMenu.swift */; };
 		419B058D557DBD1C84030F10 /* SessionNotesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47843CC758EC1A51C630D6C /* SessionNotesTab.swift */; };
 		454384CAD1EAF197BDA621F2 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A685BAFD961F5E6C694D6F5 /* TranscriptView.swift */; };
 		4656F5018491CB0AE5E981B9 /* SessionEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F25AEA7D3ED6F565F7A696 /* SessionEvent.swift */; };
@@ -75,11 +76,13 @@
 		858693D9FC31E7718653DCB4 /* FileViewerWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BAD3C9551C253B3F9E783EF /* FileViewerWebView.swift */; };
 		8B16F58D4F9A4ADF09C2F9FB /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75B309F4A99CE203B9C62AE /* ProjectEditorView.swift */; };
 		8B7179F4B7D11E95CF15DE12 /* FileViewerWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BAD3C9551C253B3F9E783EF /* FileViewerWebView.swift */; };
+		8CAD912843DD7909D49F02E0 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 3DDD6C0EB7EF66B552538DC3 /* README.md */; };
 		913080FCC74E0763D0A3FFD7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE7D6F1ECA8E6C2253E28BA /* SettingsView.swift */; };
 		91873A814BC95272D465A7CC /* BotsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C10142E529BE1802E6106FC /* BotsViewModel.swift */; };
 		921E465998C70D1828B59632 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C73742B5DD261F9F27151E9 /* DesignSystem.swift */; };
 		998033C2E4C2E7CC2F60829F /* FileViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC78D3A777596858C7DCF92A /* FileViewerRenderer.swift */; };
 		9AD3AA930C96306C5AEFA8D4 /* ConnectionDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D21C1458B4A04811A73C1C /* ConnectionDefaults.swift */; };
+		9D2FD1B9B2D6189086C7E388 /* HostTrayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B97ADA6B7526646BDFDC744 /* HostTrayConfig.swift */; };
 		9DF2B211EA083E563DFECCAF /* MacProfilesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C43EC4D08AB16DB63FED7AB /* MacProfilesSection.swift */; };
 		9EC7548A89FAA45A81501A63 /* BotsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C10142E529BE1802E6106FC /* BotsViewModel.swift */; };
 		9F13EBA2C17308340CD1C17E /* BotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D736DAA334D64C03AD13198 /* BotsView.swift */; };
@@ -88,6 +91,7 @@
 		A15D279CEA6401F50125E04D /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03F9A04E1610E4506766E3AE /* TasksView.swift */; };
 		A33B014186FD4B5016063D26 /* MacSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C9792F7449578EEDD5262EE /* MacSettingsPane.swift */; };
 		A34B0F14805E8A26E4162B79 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03F9A04E1610E4506766E3AE /* TasksView.swift */; };
+		A3F0578F7E3E3B5D1FC4F52B /* HostTrayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18EDD7584774D338F6AE2DE5 /* HostTrayApp.swift */; };
 		A760FE3CA56B8A197DA7E2A3 /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B27DB3DA8C4CB872859618B7 /* ProjectsView.swift */; };
 		A8CDB9585CD224DAE2255E5D /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BDCFA0539F93F140DADA28E /* SplashView.swift */; };
 		A93DC1EBB7A596B8C1C99C90 /* MacCommandCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED9C8C1980AFCD08DC94B6C /* MacCommandCenter.swift */; };
@@ -100,6 +104,7 @@
 		B8FB2118028D054B510F47CD /* LocalHostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F3B91D1A3D750EF83C5E96 /* LocalHostController.swift */; };
 		BE17770A539B5A1DD373AD0E /* DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFD3543FE070072BA74786C /* DiffView.swift */; };
 		C49A5FAF901948E283D2FF21 /* MessageCaptureSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6313CA9EA2CCD062780DBD3 /* MessageCaptureSheets.swift */; };
+		C59CB5292A6EC0916E125938 /* HostTrayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01931171F271297250746AB7 /* HostTrayStore.swift */; };
 		D3AED35EFB62232D72B02671 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C6727C6EF56522D6EEFBFC /* DashboardView.swift */; };
 		D3CA0059FB2B3131258B8237 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 55345BFD3C49B41270831FBD /* Assets.xcassets */; };
 		D59C5623508AAA05BEC853E0 /* ComposerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59AE47EC508A6307DEABD8A9 /* ComposerViewModel.swift */; };
@@ -125,15 +130,19 @@
 
 /* Begin PBXFileReference section */
 		000102DBF13531D5802145FA /* SessionDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailViewModel.swift; sourceTree = "<group>"; };
+		01931171F271297250746AB7 /* HostTrayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrayStore.swift; sourceTree = "<group>"; };
 		03F9A04E1610E4506766E3AE /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		0967D24F8E6EF7E6EA50B083 /* PhoneMainTabStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneMainTabStrip.swift; sourceTree = "<group>"; };
 		0C9792F7449578EEDD5262EE /* MacSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsPane.swift; sourceTree = "<group>"; };
+		121E6B23EF56E5CF48A9AF42 /* HostTrayMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrayMenu.swift; sourceTree = "<group>"; };
 		153B5F557BBBBEBE2834673A /* ApprovalBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalBarView.swift; sourceTree = "<group>"; };
 		15F25AEA7D3ED6F565F7A696 /* SessionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEvent.swift; sourceTree = "<group>"; };
+		18EDD7584774D338F6AE2DE5 /* HostTrayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrayApp.swift; sourceTree = "<group>"; };
 		2315C70325F7DED760F60ABF /* GrokDispatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokDispatchApp.swift; sourceTree = "<group>"; };
 		2B2A3B7AF7C26BA0CF515F2C /* HostEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEndpoint.swift; sourceTree = "<group>"; };
 		31F1C53C9F6DCC5B4EEE1922 /* ProjectAttachmentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectAttachmentsSection.swift; sourceTree = "<group>"; };
 		3489EFB2EEF31176CF55AA42 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		3DDD6C0EB7EF66B552538DC3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		41A34E8C53D0D70D3EDA81E4 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
 		42EF6D3ECE19412F8B6E19C6 /* MacComposePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComposePane.swift; sourceTree = "<group>"; };
 		4BAD3C9551C253B3F9E783EF /* FileViewerWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerWebView.swift; sourceTree = "<group>"; };
@@ -150,12 +159,14 @@
 		714F44F9CE7D64E4DFD7A867 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		73F7C6FFF4CE1370A674E6F6 /* SessionFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileViewer.swift; sourceTree = "<group>"; };
 		74AB3A087C7D83F9FAA7CFA4 /* ClankerSpanker.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClankerSpanker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B97ADA6B7526646BDFDC744 /* HostTrayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrayConfig.swift; sourceTree = "<group>"; };
 		7C43EC4D08AB16DB63FED7AB /* MacProfilesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacProfilesSection.swift; sourceTree = "<group>"; };
 		7CFD3543FE070072BA74786C /* DiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffView.swift; sourceTree = "<group>"; };
 		7F6B5D49072856A25E88588E /* MacHostPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHostPanel.swift; sourceTree = "<group>"; };
 		824F5F99CAD6D4621AC0B67E /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
 		88B5E8EAB8AEDCB3B42E8E51 /* ClankerSpankerMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClankerSpankerMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A685BAFD961F5E6C694D6F5 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
+		8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClankerSpankerHostTray.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C10142E529BE1802E6106FC /* BotsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotsViewModel.swift; sourceTree = "<group>"; };
 		8C73742B5DD261F9F27151E9 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		9CB2B868A6D8625E7F9C0616 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -186,6 +197,18 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		1661EB076FB912A2DA5D1474 /* HostTray */ = {
+			isa = PBXGroup;
+			children = (
+				18EDD7584774D338F6AE2DE5 /* HostTrayApp.swift */,
+				7B97ADA6B7526646BDFDC744 /* HostTrayConfig.swift */,
+				121E6B23EF56E5CF48A9AF42 /* HostTrayMenu.swift */,
+				01931171F271297250746AB7 /* HostTrayStore.swift */,
+				3DDD6C0EB7EF66B552538DC3 /* README.md */,
+			);
+			path = HostTray;
+			sourceTree = "<group>";
+		};
 		1FD75054F24475B489C61868 /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -284,6 +307,7 @@
 			isa = PBXGroup;
 			children = (
 				74AB3A087C7D83F9FAA7CFA4 /* ClankerSpanker.app */,
+				8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */,
 				88B5E8EAB8AEDCB3B42E8E51 /* ClankerSpankerMac.app */,
 			);
 			name = Products;
@@ -301,6 +325,7 @@
 			isa = PBXGroup;
 			children = (
 				E349C400B8787CBF5EED64F2 /* GrokDispatch */,
+				1661EB076FB912A2DA5D1474 /* HostTray */,
 				A01CFEA3CA42565E04B0E2D2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -398,6 +423,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		34126F9E5312E2A223C3BCEB /* ClankerSpankerHostTray */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB08CB73A3A6C3B923EF8AB7 /* Build configuration list for PBXNativeTarget "ClankerSpankerHostTray" */;
+			buildPhases = (
+				0245099A2FD55CDE150E4D7D /* Sources */,
+				7B1276530F3458BC5A1D30C1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ClankerSpankerHostTray;
+			packageProductDependencies = (
+			);
+			productName = ClankerSpankerHostTray;
+			productReference = 8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */;
+			productType = "com.apple.product-type.application";
+		};
 		455F64796E6F14A09E40F2D2 /* ClankerSpankerMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 79365BAE7AEE66C4363658F4 /* Build configuration list for PBXNativeTarget "ClankerSpankerMac" */;
@@ -443,6 +486,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					34126F9E5312E2A223C3BCEB = {
+						DevelopmentTeam = XHS7K665C9;
+						ProvisioningStyle = Automatic;
+					};
 					455F64796E6F14A09E40F2D2 = {
 						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
@@ -468,6 +515,7 @@
 			projectRoot = "";
 			targets = (
 				4ED1CC7DF28415C7D1E03B62 /* ClankerSpanker */,
+				34126F9E5312E2A223C3BCEB /* ClankerSpankerHostTray */,
 				455F64796E6F14A09E40F2D2 /* ClankerSpankerMac */,
 			);
 		};
@@ -482,6 +530,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B1276530F3458BC5A1D30C1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8CAD912843DD7909D49F02E0 /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B6F7B25BDC5C776941C82FE2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -493,6 +549,17 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0245099A2FD55CDE150E4D7D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3F0578F7E3E3B5D1FC4F52B /* HostTrayApp.swift in Sources */,
+				9D2FD1B9B2D6189086C7E388 /* HostTrayConfig.swift in Sources */,
+				4149334860C2D5B32EBFDF9C /* HostTrayMenu.swift in Sources */,
+				C59CB5292A6EC0916E125938 /* HostTrayStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		33FE585BBB578BDD7710A887 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -683,6 +750,54 @@
 			};
 			name = Release;
 		};
+		6424B2F58D9E1BFC29B35D93 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = XHS7K665C9;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "HostTray/Info-HostTray.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClankerSpanker Host Tray";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © nightmoose";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.hosttray;
+				PRODUCT_NAME = ClankerSpankerHostTray;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		719791257E29C81D21E4A788 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = XHS7K665C9;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "HostTray/Info-HostTray.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClankerSpanker Host Tray";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © nightmoose";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.hosttray;
+				PRODUCT_NAME = ClankerSpankerHostTray;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		83B0C8962BB6388A4A61C9C0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -860,6 +975,15 @@
 			buildConfigurations = (
 				83B0C8962BB6388A4A61C9C0 /* Debug */,
 				FF40825BBCCBD7E94CFF1E7D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BB08CB73A3A6C3B923EF8AB7 /* Build configuration list for PBXNativeTarget "ClankerSpankerHostTray" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				719791257E29C81D21E4A788 /* Debug */,
+				6424B2F58D9E1BFC29B35D93 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

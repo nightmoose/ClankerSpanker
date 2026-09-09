@@ -35,6 +35,7 @@ import { SessionStore, toolBlobToJson } from "../sessions/store.js";
 import {
   extractClaudeContext,
   gitDiff,
+  isGrokHelperCwd,
   listAgySessions,
   listClaudeSessions,
   listDiskSessions,
@@ -688,6 +689,18 @@ export class SessionManager extends EventEmitter {
     return disk.map((s) => this.live.get(s.id)?.session ?? this.hydrated.get(s.id) ?? s);
   }
 
+  /**
+   * Canonical in-memory session. Idle mutations must `persist()` this object
+   * so `list()` (hydrated overlay) matches disk. Loading a fresh store copy
+   * and `store.save`ing it leaves the overlay stale — Close as done / Archive
+   * then look like no-ops.
+   */
+  private loadMutable(sessionId: string): DispatchSession {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return s;
+  }
+
   get(id: string): DispatchSession | null {
     const live = this.live.get(id)?.session;
     if (live) {
@@ -1003,8 +1016,11 @@ export class SessionManager extends EventEmitter {
    * (idempotent). Does **not** spawn ACP — first follow-up / attach does ensureLive.
    * That way the phone/Mac list matches the Grok TUI without paying spawn cost up front.
    */
+  /** Tests replace this to avoid reading ~/.grok/sessions. */
+  listGrokDiskSessions = (limit = 200): DiskSessionHint[] => listDiskSessions(limit);
+
   syncGrokDiskSessions(limit = 200): { imported: number; totalDisk: number } {
-    const hints = listDiskSessions(limit);
+    const hints = this.listGrokDiskSessions(limit);
     const linked = new Set(
       this.list()
         .map((s) => s.grokSessionId)
@@ -1016,6 +1032,8 @@ export class SessionManager extends EventEmitter {
       if (!hint.id || linked.has(hint.id)) continue;
       if (forgotten.has(hint.id)) continue;
       if (!hint.cwd?.trim()) continue;
+      // Subagent worktrees are not operator sessions — don't wrap them.
+      if (isGrokHelperCwd(hint.cwd)) continue;
       this.importGrokDiskHint(hint);
       linked.add(hint.id);
       imported++;
@@ -1525,12 +1543,11 @@ export class SessionManager extends EventEmitter {
       this.cliRunners.delete(sessionId);
     }
 
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.status = "cancelled";
     s.updatedAt = now();
     s.completedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.completed", { status: "cancelled" });
     return s;
   }
@@ -1619,14 +1636,13 @@ export class SessionManager extends EventEmitter {
       this.cliRunners.delete(sessionId);
     }
 
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.status = "completed";
     s.archived = true;
     s.archivedAt = now();
     s.updatedAt = now();
     s.completedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.completed", {
       status: "completed",
       archived: true,
@@ -1688,6 +1704,7 @@ export class SessionManager extends EventEmitter {
       status: "cancelled",
       deleted: true,
     });
+    this.hydrated.delete(sessionId);
     this.eventSeq.delete(sessionId);
   }
 
@@ -1703,11 +1720,10 @@ export class SessionManager extends EventEmitter {
       this.emitEvent(live.session, "session.updated", { title: live.session.title });
       return live.session;
     }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.title = trimmed.slice(0, 200);
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { title: s.title });
     return s;
   }
@@ -1733,11 +1749,10 @@ export class SessionManager extends EventEmitter {
       this.emitEvent(live.session, "session.updated", { projectId: live.session.projectId });
       return live.session;
     }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.projectId = target ?? undefined;
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { projectId: s.projectId });
     return s;
   }
@@ -2348,24 +2363,11 @@ export class SessionManager extends EventEmitter {
    * Archived chats drop out of the default Active list but stay on disk and openable.
    */
   setArchived(sessionId: string, archived: boolean): DispatchSession {
-    const live = this.live.get(sessionId);
-    if (live) {
-      live.session.archived = archived;
-      live.session.archivedAt = archived ? now() : undefined;
-      live.session.updatedAt = now();
-      this.persist(live.session);
-      this.emitEvent(live.session, "session.updated", {
-        archived: live.session.archived,
-        archivedAt: live.session.archivedAt,
-      });
-      return live.session;
-    }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.archived = archived;
     s.archivedAt = archived ? now() : undefined;
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { archived: s.archived, archivedAt: s.archivedAt });
     return s;
   }

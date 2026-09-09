@@ -18,7 +18,7 @@ paths:
       security: [{ bearerAuth: [] }]
   /sessions:
     get:
-      summary: List dispatched sessions
+      summary: List dispatched sessions (omits Grok subagent/helper chats)
       security: [{ bearerAuth: [] }]
   /sessions/{id}:
     get:

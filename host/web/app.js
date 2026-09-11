@@ -665,6 +665,7 @@ function openProfileEditor(id, draftOverride) {
     claudeConfigDir: source.claudeConfigDir || "",
     antigravityConfigDir: source.antigravityConfigDir || "",
     envText: envToText(source.env || {}),
+    mcpText: mcpToText(source.mcpServers),
   };
   state.profileEditor = { id: id || null, draft };
 
@@ -712,6 +713,10 @@ function openProfileEditor(id, draftOverride) {
       <p class="preview">${escapeHtml(envHint)}</p>
       <label class="field">System prompt (Claude persona — appended)</label>
       <textarea id="pe-sysprompt" rows="3">${escapeHtml(draft.systemPrompt)}</textarea>
+      <label class="field">MCP servers (JSON array — billed to this profile)</label>
+      <textarea id="pe-mcp" rows="6" spellcheck="false" placeholder='[{"name":"databricks","command":"npx","args":["-y","databricks-mcp"]}]'>${escapeHtml(draft.mcpText || "")}</textarea>
+      <p class="preview">stdio: command/args/env. HTTP: url/headers/transport. Use \${VAR} from Environment above. Secrets stay on this machine. HTTP servers can Sign in with MCP OAuth after you save the profile.</p>
+      ${mcpOAuthBlock(isNew ? null : source)}
       <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
         <button type="button" class="secondary" id="pe-cancel">Cancel</button>
         <button type="button" class="primary" id="pe-save">${isNew ? "Create profile" : "Save changes"}</button>
@@ -725,6 +730,7 @@ function openProfileEditor(id, draftOverride) {
     color: $("#pe-color").value.trim(),
     model: $("#pe-model").value.trim(),
     systemPrompt: $("#pe-sysprompt").value.trim(),
+    mcpText: $("#pe-mcp")?.value ?? "",
     claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : source.claudeConfigDir || "",
     antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : source.antigravityConfigDir || "",
     envText: $("#pe-env").value,
@@ -743,6 +749,15 @@ function openProfileEditor(id, draftOverride) {
     state.profileEditor = null;
     renderProfiles();
   });
+  host.querySelectorAll("[data-mcp-oauth]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const name = btn.getAttribute("data-mcp-oauth");
+      const action = btn.getAttribute("data-mcp-action");
+      if (!name || isNew) return;
+      if (action === "logout") logoutMcpOAuth(source.id, name);
+      else startMcpOAuth(source.id, name);
+    });
+  });
   $("#pe-save").addEventListener("click", async () => {
     const d = readDraft();
     if (!d.name) {
@@ -750,6 +765,13 @@ function openProfileEditor(id, draftOverride) {
       return;
     }
     const env = envFromText(d.envText);
+    let mcpServers;
+    try {
+      mcpServers = parseMcpText(d.mcpText);
+    } catch (err) {
+      banner(err instanceof Error ? err.message : String(err), true);
+      return;
+    }
     const payload = {
       name: d.name,
       backend: d.backend,
@@ -759,6 +781,7 @@ function openProfileEditor(id, draftOverride) {
       claudeConfigDir: d.claudeConfigDir || null,
       antigravityConfigDir: d.antigravityConfigDir || null,
       env,
+      mcpServers,
     };
     try {
       if (isNew) {
@@ -813,6 +836,110 @@ function envToText(env) {
     .filter(([k]) => k && k.trim())
     .map(([k, v]) => `${k}=${v ?? ""}`)
     .join("\n");
+}
+
+function mcpOAuthBlock(source) {
+  if (!source?.id) {
+    return `<p class="preview">Save this profile first, then Sign in to HTTP MCP servers.</p>`;
+  }
+  const servers = (source.mcpServers || []).filter((s) => s && s.url);
+  if (!servers.length) return "";
+  const status = source.mcpOAuth || {};
+  const rows = servers
+    .map((s) => {
+      const st = status[s.name] || {};
+      const connected = st.connected === true;
+      const label = connected
+        ? st.expiresAt
+          ? `signed in · expires ${escapeHtml(String(st.expiresAt).slice(0, 16).replace("T", " "))}`
+          : "signed in"
+        : st.expired
+          ? "expired"
+          : "not signed in";
+      const action = connected ? "logout" : "start";
+      const btn = connected ? "Sign out" : "Sign in";
+      return `<div class="mcp-oauth-row">
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="meta">${escapeHtml(label)}</span>
+        <button type="button" class="secondary" data-mcp-oauth="${escapeAttr(s.name)}" data-mcp-action="${action}">${btn}</button>
+      </div>`;
+    })
+    .join("");
+  return `<div class="mcp-oauth-list">${rows}</div>`;
+}
+
+async function startMcpOAuth(profileId, serverName) {
+  if (!profileId || !serverName) return;
+  try {
+    const r = await api(
+      `/profiles/${encodeURIComponent(profileId)}/mcp/${encodeURIComponent(serverName)}/oauth/start`,
+      { method: "POST", body: "{}" },
+    );
+    if (r?.authorizeUrl) window.open(r.authorizeUrl, "_blank", "noopener");
+    banner(`Complete ${serverName} sign-in in the browser tab`);
+    pollMcpOAuth(profileId, serverName);
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+async function logoutMcpOAuth(profileId, serverName) {
+  if (!profileId || !serverName) return;
+  try {
+    await api(
+      `/profiles/${encodeURIComponent(profileId)}/mcp/${encodeURIComponent(serverName)}/oauth/logout`,
+      { method: "POST", body: "{}" },
+    );
+    banner(`Signed out of ${serverName}`);
+    const draft = state.profileEditor?.draft;
+    await refresh();
+    if (state.profileEditor?.id === profileId) openProfileEditor(profileId, draft);
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+async function pollMcpOAuth(profileId, serverName) {
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      await refresh();
+    } catch {
+      continue;
+    }
+    const p = (state.adminProfiles || []).find((x) => x.id === profileId);
+    if (p?.mcpOAuth?.[serverName]?.connected) {
+      banner(`Signed in to ${serverName}`);
+      if (state.profileEditor?.id === profileId) {
+        openProfileEditor(profileId, state.profileEditor.draft);
+      } else {
+        renderProfiles();
+      }
+      return;
+    }
+  }
+}
+
+function mcpToText(servers) {
+  if (!Array.isArray(servers) || !servers.length) return "";
+  try {
+    return JSON.stringify(servers, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+function parseMcpText(text) {
+  const t = String(text || "").trim();
+  if (!t) return [];
+  let v;
+  try {
+    v = JSON.parse(t);
+  } catch {
+    throw new Error("MCP servers must be valid JSON");
+  }
+  if (!Array.isArray(v)) throw new Error("MCP servers must be a JSON array");
+  return v;
 }
 
 function envFromText(text) {

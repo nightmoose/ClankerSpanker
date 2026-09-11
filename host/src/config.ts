@@ -245,6 +245,23 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     }
   }
 
+  const apns =
+    raw.apns && typeof raw.apns === "object"
+      ? {
+          keyId: typeof raw.apns.keyId === "string" ? raw.apns.keyId : undefined,
+          teamId: typeof raw.apns.teamId === "string" ? raw.apns.teamId : undefined,
+          keyP8: typeof raw.apns.keyP8 === "string" ? raw.apns.keyP8 : undefined,
+          keyPath: typeof raw.apns.keyPath === "string" ? raw.apns.keyPath : undefined,
+          bundleId: typeof raw.apns.bundleId === "string" ? raw.apns.bundleId : undefined,
+          environment:
+            raw.apns.environment === "sandbox" ||
+            raw.apns.environment === "production" ||
+            raw.apns.environment === "auto"
+              ? raw.apns.environment
+              : undefined,
+        }
+      : undefined;
+
   const merged: HostConfigFile = {
     hostToken: raw.hostToken ?? randomBytes(24).toString("hex"),
     bindHost: raw.bindHost ?? "0.0.0.0",
@@ -255,6 +272,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     profiles,
     autoApproveKinds: raw.autoApproveKinds ?? DEFAULT_AUTO_APPROVE,
     notifyDesktop,
+    apns,
     dataDir: raw.dataDir ?? DEFAULT_DATA_DIR,
     promptIdleTimeoutMs:
       typeof raw.promptIdleTimeoutMs === "number" ? raw.promptIdleTimeoutMs : undefined,
@@ -320,6 +338,36 @@ export function resolveProjectPath(
   }
 
   throw new Error("No project configured. Add projects to ~/.grok-dispatch/config.json");
+}
+
+/** Extra workspace folders besides cwd. Must exist; honors allowCustomPaths. */
+export function normalizeExtraDirs(
+  config: HostConfigFile,
+  cwd: string,
+  extraDirs?: string[],
+): string[] {
+  if (!extraDirs?.length) return [];
+  const cwdResolved = resolve(cwd);
+  const out: string[] = [];
+  for (const raw of extraDirs) {
+    const trimmed = String(raw ?? "").trim();
+    if (!trimmed) continue;
+    const dir = resolve(trimmed);
+    if (dir === cwdResolved) continue;
+    assertUsableCwd(dir, "extra folder");
+    if (!config.allowCustomPaths) {
+      const allowed = config.projects.some((p) => {
+        const paths = (p.paths?.length ? p.paths : [p.path]).filter(Boolean);
+        return paths.some((pp) => {
+          const r = resolve(pp);
+          return dir === r || dir.startsWith(r + "/") || dir.startsWith(r + "\\");
+        });
+      });
+      if (!allowed) throw new Error(`Extra folder not allowlisted: ${dir}`);
+    }
+    if (!out.includes(dir)) out.push(dir);
+  }
+  return out;
 }
 
 function assertUsableCwd(path: string, label: string): void {

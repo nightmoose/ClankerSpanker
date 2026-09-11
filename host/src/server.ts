@@ -6,10 +6,11 @@ import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync as fsReadFileSync, unlinkSync, writeFileSync } from "node:fs";
-import type { AgentProfile, HostConfigFile, SessionBackend } from "./types.js";
+import type { AgentProfile, HostConfigFile, ProfileMcpServer, SessionBackend } from "./types.js";
 import type {
   AnswerQuestionsRequest,
   ApproveRequest,
+  AttachAgyRequest,
   AttachClaudeRequest,
   AttachRequest,
   Bot,
@@ -24,12 +25,21 @@ import type {
   ReviewWorkRequest,
   TransferProfileRequest,
 } from "./types.js";
-import { isAuthorized, unauthorizedBody } from "./auth.js";
+import { isAuthorized, tokensMatch, unauthorizedBody } from "./auth.js";
+import { TerminalHub } from "./terminal/session.js";
 import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
-import { listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
+import { isGrokHelperCwd, listAgySessions, listClaudeSessions, listDiskSessions } from "./sessions/reader.js";
 import { preferredClientHost } from "./platform.js";
-import { normalizeBackend, publicProfiles, resolveProfile } from "./profiles.js";
+import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
+import { mcpEnvFor, normalizeMcpServers } from "./mcp.js";
+import {
+  completeMcpOAuth,
+  logoutMcpOAuth,
+  mcpOAuthRedirectUri,
+  mcpOAuthStatusMap,
+  startMcpOAuth,
+} from "./mcp-oauth.js";
 import { profilesWithUsage } from "./usage.js";
 import { startProfileLogin } from "./login.js";
 import {
@@ -42,6 +52,8 @@ import {
 import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
+import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
+import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
@@ -80,9 +92,48 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     }
   });
 
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  // Two paths on one HTTP server. `ws` abortHandshake()s path mismatches, so a
+  // second WebSocketServer({ server, path }) would kill /ws clients (status pill
+  // flashing Live ↔ Offline). Route upgrades ourselves.
+  const wss = new WebSocketServer({ noServer: true });
+  const termWss = new WebSocketServer({ noServer: true });
+  const terminals = new TerminalHub();
   const clients = new Set<WsClient>();
   const localClients = new Set<WsClient>();
+
+  server.on("upgrade", (req, socket, head) => {
+    const pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname;
+    if (pathname === "/ws/terminal") {
+      termWss.handleUpgrade(req, socket, head, (ws) => {
+        termWss.emit("connection", ws, req);
+      });
+      return;
+    }
+    if (pathname === "/ws") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+      return;
+    }
+    socket.destroy();
+  });
+
+  function terminalAuthorized(req: IncomingMessage): boolean {
+    if (isAuthorized(req, config)) return true;
+    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
+    return tokensMatch(url.searchParams.get("token"), config.hostToken);
+  }
+
+  termWss.on("connection", (ws, req) => {
+    if (!terminalAuthorized(req)) {
+      ws.close(4401, "Unauthorized");
+      return;
+    }
+    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
+    const cols = Number(url.searchParams.get("cols") || "80");
+    const rows = Number(url.searchParams.get("rows") || "24");
+    terminals.attach(ws, { cols, rows });
+  });
 
   // Let SessionManager suppress its shell-based desktop notifications when
   // a loopback client (the Mac app) is present to post its own richer local
@@ -94,7 +145,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
     const qToken = url.searchParams.get("token");
     const headerOk = isAuthorized(req, config);
-    if (!headerOk && qToken !== config.hostToken) {
+    if (!headerOk && !tokensMatch(qToken, config.hostToken)) {
       ws.close(4401, "Unauthorized");
       return;
     }
@@ -144,6 +195,9 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     for (const ws of clients) {
       if (ws.readyState === ws.OPEN) ws.send(payload);
     }
+    void handleSessionPush(config, manager.list(), event).catch((err) => {
+      console.warn("[push]", err instanceof Error ? err.message : err);
+    });
   });
 
   server.listen(config.bindPort, config.bindHost, () => {
@@ -156,6 +210,8 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
 
   const shutdown = async () => {
     clearInterval(heartbeat);
+    terminals.shutdown();
+    termWss.close();
     wss.close();
     server.close();
     await manager.shutdown();
@@ -210,6 +266,45 @@ async function handleHttp(
 
   if (method === "GET" && path === "/connect.json") {
     json(res, 200, connectPayload(config, req));
+    return;
+  }
+
+  // OAuth browser redirect — loopback only, no host token (the AS cannot send one).
+  if (method === "GET" && path === "/mcp/oauth/callback") {
+    if (!isLocalMachineReq(req)) {
+      htmlPage(res, 403, "MCP OAuth callback is only accepted from this machine.");
+      return;
+    }
+    const err = url.searchParams.get("error");
+    const errDesc = url.searchParams.get("error_description");
+    if (err) {
+      htmlPage(
+        res,
+        400,
+        `Sign-in was not completed (${escapeHtml(err)}${errDesc ? `: ${escapeHtml(errDesc)}` : ""}). Close this tab and try Sign in again.`,
+      );
+      return;
+    }
+    const code = url.searchParams.get("code") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    if (!code || !state) {
+      htmlPage(res, 400, "Missing code or state. Close this tab and try Sign in again.");
+      return;
+    }
+    try {
+      const done = await completeMcpOAuth({ dataDir: config.dataDir, state, code });
+      htmlPage(
+        res,
+        200,
+        `Signed in to <strong>${escapeHtml(done.serverName)}</strong> for profile <strong>${escapeHtml(done.profileId)}</strong>. You can close this tab.`,
+      );
+    } catch (e) {
+      htmlPage(
+        res,
+        400,
+        `Could not finish MCP sign-in: ${escapeHtml(e instanceof Error ? e.message : String(e))}`,
+      );
+    }
     return;
   }
 
@@ -459,7 +554,24 @@ async function handleHttp(
     const wantAdmin = url.searchParams.get("admin") === "1";
     const localAdmin = isLocalMachineReq(req);
     const adminPayload = wantAdmin && localAdmin
-      ? { admin: true as const, adminProfiles: config.profiles ?? [] }
+      ? {
+          admin: true as const,
+          adminProfiles: (config.profiles ?? []).map((p) => ({
+            ...p,
+            mcpOAuth: Object.fromEntries(
+              Object.entries(mcpOAuthStatusMap(config.dataDir, p.id, p.mcpServers)).map(
+                ([name, st]) => [
+                  name,
+                  {
+                    connected: st.connected,
+                    expired: st.expired,
+                    expiresAt: st.expiresAt ? new Date(st.expiresAt).toISOString() : undefined,
+                  },
+                ],
+              ),
+            ),
+          })),
+        }
       : { admin: false as const };
     if (!wantUsage) {
       json(res, 200, { profiles: publicProfiles(config), ...adminPayload });
@@ -523,11 +635,16 @@ async function handleHttp(
         env: sanitizeEnv(body.env),
         claudeConfigDir: trimOrUndef(body.claudeConfigDir),
         antigravityConfigDir: trimOrUndef(body.antigravityConfigDir),
+        grokHome: trimOrUndef(body.grokHome),
         model: trimOrUndef(body.model),
         systemPrompt: trimOrUndef(body.systemPrompt),
-        toolAllowlist: Array.isArray(body.toolAllowlist)
-          ? body.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
-          : undefined,
+        ...splitProfileToolFields({
+          toolAllowlist: Array.isArray(body.toolAllowlist) ? body.toolAllowlist : undefined,
+          autoApprovalSignatures: Array.isArray(body.autoApprovalSignatures)
+            ? body.autoApprovalSignatures
+            : undefined,
+        }),
+        mcpServers: normalizeMcpServers(body.mcpServers),
       };
       config.profiles = [...existing, created];
       saveConfig(config);
@@ -543,7 +660,7 @@ async function handleHttp(
 
   // PATCH /profiles/:id — safe partial update over any origin: color, model,
   // systemPrompt, toolAllowlist. On this machine also accepts name/backend/env/
-  // claudeConfigDir/antigravityConfigDir (Profiles manager on the host).
+  // claudeConfigDir/antigravityConfigDir/grokHome (Profiles manager on the host).
   const profilePatchMatch = path.match(/^\/profiles\/([^/]+)$/);
   if (method === "PATCH" && profilePatchMatch) {
     const profileId = decodeURIComponent(profilePatchMatch[1] ?? "");
@@ -553,12 +670,15 @@ async function handleHttp(
         model?: string | null;
         systemPrompt?: string | null;
         toolAllowlist?: string[] | null;
+        autoApprovalSignatures?: string[] | null;
         // this-machine-only
         name?: string;
         backend?: string;
         env?: Record<string, string> | null;
         claudeConfigDir?: string | null;
         antigravityConfigDir?: string | null;
+        grokHome?: string | null;
+        mcpServers?: ProfileMcpServer[] | null;
       };
       const profiles = config.profiles ?? [];
       const idx = profiles.findIndex((p) => p.id === profileId);
@@ -586,10 +706,20 @@ async function handleHttp(
       if (body.toolAllowlist === null) {
         next.toolAllowlist = undefined;
       } else if (Array.isArray(body.toolAllowlist)) {
-        const cleaned = body.toolAllowlist
-          .map((s) => String(s).trim())
-          .filter((s) => s.length > 0);
-        next.toolAllowlist = cleaned.length ? cleaned : undefined;
+        next.toolAllowlist = body.toolAllowlist;
+      }
+      if (body.autoApprovalSignatures === null) {
+        next.autoApprovalSignatures = undefined;
+      } else if (Array.isArray(body.autoApprovalSignatures)) {
+        next.autoApprovalSignatures = body.autoApprovalSignatures;
+      }
+      if (
+        body.toolAllowlist !== undefined ||
+        body.autoApprovalSignatures !== undefined
+      ) {
+        const split = splitProfileToolFields(next);
+        next.toolAllowlist = split.toolAllowlist;
+        next.autoApprovalSignatures = split.autoApprovalSignatures;
       }
       // This-machine-only fields: secrets + identity. Silently ignored from other devices.
       if (isLocalMachineReq(req)) {
@@ -613,6 +743,16 @@ async function handleHttp(
           next.antigravityConfigDir = undefined;
         } else if (typeof body.antigravityConfigDir === "string") {
           next.antigravityConfigDir = trimOrUndef(body.antigravityConfigDir);
+        }
+        if (body.grokHome === null) {
+          next.grokHome = undefined;
+        } else if (typeof body.grokHome === "string") {
+          next.grokHome = trimOrUndef(body.grokHome);
+        }
+        if (body.mcpServers === null) {
+          next.mcpServers = undefined;
+        } else if (Array.isArray(body.mcpServers)) {
+          next.mcpServers = normalizeMcpServers(body.mcpServers);
         }
       }
       profiles[idx] = next;
@@ -663,6 +803,60 @@ async function handleHttp(
     config.profiles = profiles.filter((_, i) => i !== idx);
     saveConfig(config);
     json(res, 200, { ok: true, deleted: profileId });
+    return;
+  }
+
+  // POST /profiles/:id/mcp/:name/oauth/start — this machine only.
+  const mcpOAuthStartMatch = path.match(/^\/profiles\/([^/]+)\/mcp\/([^/]+)\/oauth\/start$/);
+  if (method === "POST" && mcpOAuthStartMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, { error: "MCP OAuth is only allowed from the host machine" });
+      return;
+    }
+    const profileId = decodeURIComponent(mcpOAuthStartMatch[1] ?? "");
+    const serverName = decodeURIComponent(mcpOAuthStartMatch[2] ?? "");
+    try {
+      const profile = resolveProfile(config, profileId);
+      const server = (profile.mcpServers ?? []).find((s) => s.name === serverName);
+      if (!server?.url) {
+        json(res, 404, { error: `HTTP MCP server "${serverName}" not found on this profile` });
+        return;
+      }
+      const env = mcpEnvFor(profile);
+      const mcpUrl = server.url.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, key: string) => env[key] ?? "");
+      const result = await startMcpOAuth({
+        dataDir: config.dataDir,
+        profileId: profile.id,
+        serverName: server.name,
+        mcpUrl,
+        redirectUri: mcpOAuthRedirectUri(config.bindPort),
+        clientId: server.oauthClientId,
+        clientSecret: server.oauthClientSecret,
+        scope: server.oauthScope,
+      });
+      json(res, 200, result);
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /profiles/:id/mcp/:name/oauth/logout — this machine only.
+  const mcpOAuthLogoutMatch = path.match(/^\/profiles\/([^/]+)\/mcp\/([^/]+)\/oauth\/logout$/);
+  if (method === "POST" && mcpOAuthLogoutMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, { error: "MCP OAuth is only allowed from the host machine" });
+      return;
+    }
+    const profileId = decodeURIComponent(mcpOAuthLogoutMatch[1] ?? "");
+    const serverName = decodeURIComponent(mcpOAuthLogoutMatch[2] ?? "");
+    try {
+      resolveProfile(config, profileId);
+      logoutMcpOAuth(config.dataDir, profileId, serverName);
+      json(res, 200, { ok: true });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
 
@@ -872,6 +1066,8 @@ async function handleHttp(
       }
     }
     const rawSessions = manager.list().filter((s) => {
+      // Grok subagent worktrees are not operator sessions.
+      if (isGrokHelperCwd(s.cwd)) return false;
       if (!contentQuery) return true;
       return sessionMatchesContentQuery(s, contentQuery);
     });
@@ -897,6 +1093,7 @@ async function handleHttp(
         isLive: manager.isLive(s.id),
         backend: summary.backend ?? s.backend ?? "grok",
         claudeSessionId: s.claudeSessionId,
+        antigravityConversationId: s.antigravityConversationId,
       };
     });
     const active = all.filter((s) => !s.archived);
@@ -915,6 +1112,12 @@ async function handleHttp(
     let claude = listClaudeSessions(100).filter(
       (d) => !linkedClaude.has(d.id) && !manager.isForgottenClaudeSession(d.id),
     );
+    const linkedAgy = new Set(
+      all.map((s) => s.antigravityConversationId).filter((id): id is string => Boolean(id)),
+    );
+    let agy = listAgySessions(100).filter(
+      (d) => !linkedAgy.has(d.id) && !manager.isForgottenAgySession(d.id),
+    );
     if (contentQuery) {
       disk = disk.filter(
         (d) =>
@@ -928,12 +1131,19 @@ async function handleHttp(
           (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
           d.id.toLowerCase().includes(contentQuery),
       );
+      agy = agy.filter(
+        (d) =>
+          (d.title ?? "").toLowerCase().includes(contentQuery) ||
+          (d.cwd ?? "").toLowerCase().includes(contentQuery) ||
+          d.id.toLowerCase().includes(contentQuery),
+      );
     }
     json(res, 200, {
       sessions: includeArchived ? all : active,
       archivedSessions: archived,
       diskSessions: disk,
       claudeSessions: claude,
+      agySessions: agy,
       query: contentQuery || undefined,
     });
     return;
@@ -999,6 +1209,51 @@ async function handleHttp(
     return;
   }
 
+  // GET /sessions/:id/files — cwd, extra dirs, tool locations, attachments
+  const filesMatch = /^\/sessions\/([^/]+)\/files$/.exec(path);
+  if (method === "GET" && filesMatch) {
+    const id = decodeURIComponent(filesMatch[1]!);
+    try {
+      json(res, 200, { files: manager.listFiles(id) });
+    } catch (err) {
+      json(res, 404, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /sessions/:id/file?path= — read a workspace file (allowlisted roots only)
+  const fileMatch = /^\/sessions\/([^/]+)\/file$/.exec(path);
+  if (method === "GET" && fileMatch) {
+    const id = decodeURIComponent(fileMatch[1]!);
+    const filePath = url.searchParams.get("path") ?? "";
+    try {
+      json(res, 200, manager.readFile(id, filePath));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = /not found/i.test(msg) ? 404 : /outside/i.test(msg) ? 403 : 400;
+      json(res, code, { error: msg });
+    }
+    return;
+  }
+
+  // PATCH /sessions/:id/extra-dirs — add extra workspace folders mid-session
+  const extraDirsMatch = /^\/sessions\/([^/]+)\/extra-dirs$/.exec(path);
+  if (method === "PATCH" && extraDirsMatch) {
+    const id = decodeURIComponent(extraDirsMatch[1]!);
+    try {
+      const body = (await readJson(req)) as { extraDirs?: string[] };
+      const session = manager.addExtraDirs(id, body.extraDirs ?? []);
+      json(
+        res,
+        200,
+        manager.store.toDetail(session, manager.getPendingApproval(id), manager.getPendingQuestion(id)),
+      );
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   // POST /dispatch
   if (method === "POST" && path === "/dispatch") {
     const body = (await readJson(req)) as DispatchRequest;
@@ -1035,6 +1290,27 @@ async function handleHttp(
       json(res, 201, {
         ...manager.store.toDetail(session, manager.getPendingApproval(session.id)),
         isLive: manager.isLive(session.id),
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /sessions/attach-agy — resume an Antigravity / Gemini CLI conversation
+  if (method === "POST" && path === "/sessions/attach-agy") {
+    const body = (await readJson(req)) as AttachAgyRequest;
+    try {
+      const session = await manager.attachAgy(body);
+      json(res, 201, {
+        ...manager.store.toDetail(
+          session,
+          manager.getPendingApproval(session.id),
+          manager.getPendingQuestion(session.id),
+        ),
+        isLive: manager.isLive(session.id),
+        backend: session.backend ?? "antigravity",
+        antigravityConversationId: session.antigravityConversationId,
       });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -1490,6 +1766,57 @@ async function handleHttp(
     return;
   }
 
+  // GET /push/status — configured? device count. Never returns the .p8.
+  if (method === "GET" && path === "/push/status") {
+    json(res, 200, pushStatus(config));
+    return;
+  }
+
+  // POST /push/register — iPhone uploads its APNs device token.
+  if (method === "POST" && path === "/push/register") {
+    try {
+      const body = (await readJson(req)) as {
+        token?: string;
+        clientHostId?: string;
+        name?: string;
+        bundleId?: string;
+      };
+      const device = registerPushDevice(config.dataDir, {
+        token: String(body.token ?? ""),
+        clientHostId: String(body.clientHostId ?? ""),
+        name: body.name,
+        bundleId: body.bundleId,
+      });
+      json(res, 200, { ok: true, token: device.token.slice(0, 8), name: device.name });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /push/register
+  if (method === "DELETE" && path === "/push/register") {
+    try {
+      const body = (await readJson(req)) as { token?: string };
+      const ok = unregisterPushDevice(config.dataDir, String(body.token ?? ""));
+      json(res, 200, { ok });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // POST /push/test — soak: one alert to every registered phone.
+  if (method === "POST" && path === "/push/test") {
+    try {
+      const result = await sendTestPush(config);
+      json(res, result.error && !result.sent ? 400 : 200, result);
+    } catch (err) {
+      json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   json(res, 404, { error: "Not found", path });
 }
 
@@ -1500,6 +1827,21 @@ function json(res: ServerResponse, status: number, body: unknown): void {
     "Content-Length": Buffer.byteLength(data),
   });
   res.end(data);
+}
+
+function htmlPage(res: ServerResponse, status: number, message: string): void {
+  const body = `<!doctype html>
+<html><head><meta charset="utf-8"><title>ClankerSpanker MCP</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0b0b10; color: #f2f2f7;
+    max-width: 32rem; margin: 12vh auto; padding: 0 16px; line-height: 1.45; }
+  a { color: #73b8ff; }
+</style></head>
+<body>
+  <p>${message}</p>
+</body></html>`;
+  res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(body);
 }
 
 /**

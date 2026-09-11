@@ -45,6 +45,15 @@ body {
 }
 .pill.ok { color: var(--ok); border-color: #2a5a3a; }
 .pill.muted { color: var(--muted); }
+.pill.warn { color: var(--warn); border-color: #5a4a2a; }
+
+.mcp-oauth-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.mcp-oauth-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px;
+}
+.mcp-oauth-row .name { font-weight: 600; }
+.mcp-oauth-row .meta { color: var(--muted); font-size: 12px; flex: 1; min-width: 10rem; }
 
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .tab {

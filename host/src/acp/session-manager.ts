@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import type {
   AgentQuestion,
   AnswerQuestionsRequest,
+  AttachAgyRequest,
   AttachClaudeRequest,
   AttachRequest,
   Bot,
@@ -28,23 +29,31 @@ import type {
   ReviewWorkRequest,
   TransferProfileRequest,
 } from "../types.js";
-import { resolveProjectPath, saveConfig } from "../config.js";
+import { normalizeExtraDirs, resolveProjectPath, saveConfig } from "../config.js";
+import { extraDirsAgentNote, listSessionFiles, readSessionFile } from "../sessions/files.js";
 import { SessionStore, toolBlobToJson } from "../sessions/store.js";
 import {
   extractClaudeContext,
   gitDiff,
+  isGrokHelperCwd,
+  listAgySessions,
   listClaudeSessions,
   listDiskSessions,
   type DiskSessionHint,
 } from "../sessions/reader.js";
 import { notifyDesktop } from "../notify/local.js";
 import {
+  allowlistAllowsTool,
   defaultModelForBackend,
+  grokAgentModelArgs,
   isGrokBackend,
   profileProcessEnv,
   resolveProfile,
+  wrapWithProfileSystemPrompt,
 } from "../profiles.js";
-import { isAuthFailureMessage } from "../login.js";
+import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
+import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
+import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { AcpClient } from "./client.js";
 import {
   buildQuestionAnswers,
@@ -290,6 +299,72 @@ export function lastUserTextIs(session: { transcript?: TranscriptEntry[] }, text
   return last?.role === "user" && last.text === text;
 }
 
+/**
+ * After `session/prompt` returns for a Grok turn, decide whether the session
+ * should flip to `idle`. Reads only the *persisted* session — the in-memory
+ * LiveSession bookkeeping maps used to be the source of truth here, but they
+ * drifted (see RFC-019) and stranded sessions on `running` forever when a
+ * cleared `AskUserQuestion` left a phantom entry behind.
+ *
+ * Returns `false` for terminal states (`cancelled` / `failed`), for states
+ * that are legitimately waiting on the user (`awaiting_approval` /
+ * `awaiting_question`), and for any session that still carries a persisted
+ * `pendingApproval` or `pendingQuestion`. Everything else flips.
+ */
+export function shouldFlipToIdleAfterTurn(
+  session: Pick<DispatchSession, "status" | "pendingApproval" | "pendingQuestion">,
+): boolean {
+  const s = session.status;
+  if (s === "cancelled" || s === "failed") return false;
+  if (s === "awaiting_approval" || s === "awaiting_question") return false;
+  if (session.pendingApproval != null) return false;
+  if (session.pendingQuestion != null) return false;
+  return true;
+}
+
+/**
+ * Remove every entry in a `pendingQuestions` map that belongs to a given
+ * `toolCallId`. Used when the underlying `AskUserQuestion` tool call
+ * finishes so the LiveSession bookkeeping doesn't lie to
+ * `shouldFlipToIdleAfterTurn` (RFC-019).
+ *
+ * Returns the count of drained entries so callers can log / assert.
+ */
+export function drainPendingQuestionsByToolCall(
+  map: Map<string, PendingQuestion & { rpcId?: number | string }>,
+  toolCallId: string | undefined,
+): number {
+  if (!toolCallId) return 0;
+  let drained = 0;
+  for (const [qid, q] of map) {
+    if (q.toolCallId === toolCallId) {
+      map.delete(qid);
+      drained += 1;
+    }
+  }
+  return drained;
+}
+
+/**
+ * First-turn Grok ACP prompt. Profile instructions are injected here (ACP has
+ * no systemPrompt field) and skipped on resume / follow-up.
+ */
+export function composeGrokOpeningPrompt(opts: {
+  prompt: string;
+  planMode?: boolean;
+  extraDirs?: string[];
+  systemPrompt?: string;
+}): string {
+  let promptText = opts.prompt;
+  if (opts.planMode) {
+    promptText =
+      `[Plan mode] Explore the codebase and write a concrete implementation plan before making any file edits. ` +
+      `Present the plan for approval before implementing.\n\n${opts.prompt}`;
+  }
+  promptText = extraDirsAgentNote(opts.extraDirs) + promptText;
+  return wrapWithProfileSystemPrompt(promptText, opts.systemPrompt, { fresh: true });
+}
+
 interface LiveSession {
   session: DispatchSession;
   client: AcpClient;
@@ -326,6 +401,15 @@ interface BotRunState {
  */
 export class SessionManager extends EventEmitter {
   private live = new Map<string, LiveSession>();
+  /**
+   * Canonical in-memory session objects. Claude/Antigravity turns are not in
+   * `live` (that's ACP), so `get()` used to `store.load()` a fresh copy every
+   * call. `createClaudeApproval` would park pendingApproval on copy A, then
+   * `claudeTurn`'s `runner.on("tool")` persist of copy B would wipe it — the
+   * phone never saw Approve, the hook timed out after 10m, and the model
+   * reported the tool as denied.
+   */
+  private hydrated = new Map<string, DispatchSession>();
   /** Claude PreToolUse hook approvals (polled by hook process). */
   private claudeApprovals = new Map<string, ClaudeHookApproval>();
   /** Active headless CLI runners (Claude / Antigravity) so cancel can SIGTERM them. */
@@ -350,6 +434,8 @@ export class SessionManager extends EventEmitter {
    *  hints on every list refresh. Persisted to
    *  <dataDir>/deleted-claude-sessions.json. */
   private forgottenClaude?: Set<string>;
+  /** Tombstone set of Antigravity conversation IDs the user deleted. */
+  private forgottenAgy?: Set<string>;
 
   constructor(private readonly config: HostConfigFile) {
     super();
@@ -450,6 +536,48 @@ export class SessionManager extends EventEmitter {
   isForgottenClaudeSession(claudeSessionId: string | undefined | null): boolean {
     if (!claudeSessionId) return false;
     return this.loadForgottenClaude().has(claudeSessionId);
+  }
+
+  private get forgottenAgyPath(): string {
+    return join(this.config.dataDir, "deleted-agy-sessions.json");
+  }
+
+  private loadForgottenAgy(): Set<string> {
+    if (this.forgottenAgy) return this.forgottenAgy;
+    const set = new Set<string>();
+    try {
+      if (existsSync(this.forgottenAgyPath)) {
+        const raw = JSON.parse(readFileSync(this.forgottenAgyPath, "utf8")) as
+          | { conversationId?: string }[]
+          | string[];
+        for (const entry of raw) {
+          const id = typeof entry === "string" ? entry : entry?.conversationId;
+          if (id) set.add(id);
+        }
+      }
+    } catch (err) {
+      console.warn("[sessions] failed to read deleted-agy-sessions.json:", err);
+    }
+    this.forgottenAgy = set;
+    return set;
+  }
+
+  private saveForgottenAgy(): void {
+    if (!this.forgottenAgy) return;
+    const entries = [...this.forgottenAgy].map((conversationId) => ({
+      conversationId,
+      deletedAt: now(),
+    }));
+    try {
+      writeFileSync(this.forgottenAgyPath, JSON.stringify(entries, null, 2) + "\n", "utf8");
+    } catch (err) {
+      console.warn("[sessions] failed to write deleted-agy-sessions.json:", err);
+    }
+  }
+
+  isForgottenAgySession(conversationId: string | undefined | null): boolean {
+    if (!conversationId) return false;
+    return this.loadForgottenAgy().has(conversationId);
   }
 
   /** For graceful shutdown / tests. */
@@ -603,13 +731,37 @@ export class SessionManager extends EventEmitter {
 
   list(): DispatchSession[] {
     const disk = this.store.list();
-    // Overlay live status
-    return disk.map((s) => this.live.get(s.id)?.session ?? s);
+    // Overlay the in-memory object (ACP live, or hydrated Claude/agy turn).
+    return disk.map((s) => this.live.get(s.id)?.session ?? this.hydrated.get(s.id) ?? s);
+  }
+
+  /**
+   * Canonical in-memory session. Idle mutations must `persist()` this object
+   * so `list()` (hydrated overlay) matches disk. Loading a fresh store copy
+   * and `store.save`ing it leaves the overlay stale — Close as done / Archive
+   * then look like no-ops.
+   */
+  private loadMutable(sessionId: string): DispatchSession {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return s;
   }
 
   get(id: string): DispatchSession | null {
-    const s = this.live.get(id)?.session ?? this.store.load(id);
-    if (!s) return null;
+    const live = this.live.get(id)?.session;
+    if (live) {
+      this.hydrated.set(id, live);
+      return this.rehydrateQuestionUi(live);
+    }
+    const cached = this.hydrated.get(id);
+    if (cached) return this.rehydrateQuestionUi(cached);
+    const loaded = this.store.load(id);
+    if (!loaded) return null;
+    this.hydrated.set(id, loaded);
+    return this.rehydrateQuestionUi(loaded);
+  }
+
+  private rehydrateQuestionUi(s: DispatchSession): DispatchSession {
     // Rehydrate questionnaire UI from a pending AskUserQuestion tool call
     if (!s.pendingQuestion) {
       const parked = findPendingAskUserTool(s);
@@ -624,9 +776,11 @@ export class SessionManager extends EventEmitter {
 
   getPendingApproval(sessionId: string): PendingApproval | null {
     const live = this.live.get(sessionId);
-    const session = live?.session ?? this.store.load(sessionId);
+    const session = this.get(sessionId);
     const id = session?.pendingApprovalId;
-    if (!id) return null;
+    if (!id) {
+      return this.pendingClaudeHookApproval(sessionId);
+    }
 
     if (live) {
       const full = live.pendingApprovals.get(id);
@@ -658,7 +812,30 @@ export class SessionManager extends EventEmitter {
     if (session?.pendingApproval && session.pendingApproval.id === id) {
       return session.pendingApproval;
     }
-    return null;
+    return this.pendingClaudeHookApproval(sessionId);
+  }
+
+  /** Last-resort: in-memory hook still pending even if disk lost pendingApprovalId. */
+  private pendingClaudeHookApproval(sessionId: string): PendingApproval | null {
+    let found: ClaudeHookApproval | undefined;
+    for (const hook of this.claudeApprovals.values()) {
+      if (hook.sessionId === sessionId && hook.status === "pending") {
+        if (!found || hook.createdAt > found.createdAt) found = hook;
+      }
+    }
+    if (!found) return null;
+    return {
+      id: found.id,
+      sessionId: found.sessionId,
+      title: found.title,
+      kind: found.toolName.toLowerCase().includes("bash") ? "execute" : "edit",
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+      ],
+      createdAt: found.createdAt,
+      rawInput: found.toolInput,
+    };
   }
 
   getPendingQuestion(sessionId: string): PendingQuestion | null {
@@ -720,6 +897,7 @@ export class SessionManager extends EventEmitter {
       title: isBotRun ? botTaggedTitle(rawTitle) : rawTitle,
       prompt: promptText,
       cwd,
+      extraDirs: normalizeExtraDirs(this.config, cwd, req.extraDirs),
       projectId,
       model,
       planMode,
@@ -852,6 +1030,7 @@ export class SessionManager extends EventEmitter {
       live.session.transferHandoffPending = false;
       this.persist(live.session);
     }
+    agentText = extraDirsAgentNote(live.session.extraDirs) + agentText;
 
     // Run the ACP turn in the background; return the session snapshot with
     // the user's entry immediately so the phone doesn't hit URLSession's
@@ -883,8 +1062,11 @@ export class SessionManager extends EventEmitter {
    * (idempotent). Does **not** spawn ACP — first follow-up / attach does ensureLive.
    * That way the phone/Mac list matches the Grok TUI without paying spawn cost up front.
    */
+  /** Tests replace this to avoid reading ~/.grok/sessions. */
+  listGrokDiskSessions = (limit = 200): DiskSessionHint[] => listDiskSessions(limit);
+
   syncGrokDiskSessions(limit = 200): { imported: number; totalDisk: number } {
-    const hints = listDiskSessions(limit);
+    const hints = this.listGrokDiskSessions(limit);
     const linked = new Set(
       this.list()
         .map((s) => s.grokSessionId)
@@ -896,6 +1078,8 @@ export class SessionManager extends EventEmitter {
       if (!hint.id || linked.has(hint.id)) continue;
       if (forgotten.has(hint.id)) continue;
       if (!hint.cwd?.trim()) continue;
+      // Subagent worktrees are not operator sessions — don't wrap them.
+      if (isGrokHelperCwd(hint.cwd)) continue;
       this.importGrokDiskHint(hint);
       linked.add(hint.id);
       imported++;
@@ -1136,6 +1320,80 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
+  /**
+   * Open an Antigravity / Gemini CLI conversation (`agy --conversation <id>`).
+   * Does not parse the sqlite trajectory; the CLI holds history.
+   */
+  async attachAgy(req: AttachAgyRequest): Promise<DispatchSession> {
+    const agyId = req.conversationId?.trim();
+    if (!agyId) throw new Error("conversationId is required");
+    if (!req.cwd?.trim()) throw new Error("cwd is required");
+
+    const existing = this.list().find((s) => s.antigravityConversationId === agyId);
+    if (existing) {
+      if (req.prompt?.trim()) return this.followUp(existing.id, req.prompt.trim());
+      return existing;
+    }
+
+    let profile = req.profileId
+      ? resolveProfile(this.config, req.profileId)
+      : resolveProfile(this.config, undefined, "antigravity");
+    if (profile.backend !== "antigravity") {
+      profile = resolveProfile(this.config, undefined, "antigravity");
+    }
+    if (profile.backend !== "antigravity") {
+      throw new Error("No Antigravity / Gemini profile on this host — add one in Profiles.");
+    }
+
+    const hint = listAgySessions(200).find((s) => s.id === agyId);
+    const id = randomUUID();
+    const createdAt = now();
+    const title =
+      req.title?.trim() ||
+      hint?.title ||
+      `Gemini ${agyId.slice(0, 8)}`;
+    const session: DispatchSession = {
+      id,
+      backend: "antigravity",
+      profileId: profile.id,
+      profileName: profile.name,
+      profileColor: profile.color,
+      antigravityConversationId: agyId,
+      title: shortTitle(req.prompt ?? title, req.title ?? title),
+      prompt: req.prompt?.trim() || `(Gemini CLI conversation ${agyId.slice(0, 8)})`,
+      cwd: req.cwd.trim(),
+      model: profile.model ?? "antigravity",
+      planMode: false,
+      subagents: false,
+      worktree: false,
+      status: "idle",
+      createdAt,
+      updatedAt: createdAt,
+      transcript: [
+        {
+          id: randomUUID(),
+          role: "system",
+          text:
+            `Attached Gemini CLI conversation ${agyId} as ${profile.name}. ` +
+            `Follow-ups resume with agy --conversation. History stays in the CLI.`,
+          at: createdAt,
+        },
+      ],
+      toolCalls: [],
+      events: [],
+    };
+    this.store.save(session);
+    this.emitEvent(session, "session.created", {
+      session: this.store.toSummary(session),
+      attached: true,
+      backend: "antigravity",
+    });
+    if (req.prompt?.trim()) {
+      return this.antigravityTurn(id, req.prompt.trim());
+    }
+    return session;
+  }
+
   /** Create a Claude tool approval and park the session (called by PreToolUse hook). */
   createClaudeApproval(body: {
     sessionId: string;
@@ -1157,6 +1415,23 @@ export class SessionManager extends EventEmitter {
       createdAt: now(),
     };
     this.claudeApprovals.set(id, approval);
+
+    const profile = this.profileFor(session);
+
+    // Pre-flight: profile.toolAllowlist names the only tools this account may
+    // invoke. Deny in the hook so Write never reaches the phone.
+    if (
+      profile?.toolAllowlist?.length &&
+      !allowlistAllowsTool(profile.toolAllowlist, { toolName: body.toolName })
+    ) {
+      approval.status = "rejected";
+      approval.comment = `${body.toolName} is not on this profile's toolAllowlist`;
+      console.log(
+        `[approvals] deny toolAllowlist session=${body.sessionId.slice(0, 8)} ` +
+          `profile=${profile.id} tool=${body.toolName}`,
+      );
+      return approval;
+    }
 
     // Fast-path #1: Safe bash commands (git status, ls, cat, etc.) never
     // need to bother the phone.
@@ -1181,11 +1456,13 @@ export class SessionManager extends EventEmitter {
       return approval;
     }
 
-    // Fast-path #3: profile-scoped allowlist (persists across sessions).
+    // Fast-path #3: profile-scoped auto-approve signatures (persist across sessions).
     // Entries are either exact signatures (e.g. `claude:bash:git status`) or a
     // shorthand tool prefix (`claude:bash` matches every bash invocation).
-    const profile = this.profileFor(session);
-    if (profile?.toolAllowlist?.length && matchesProfileAllowlist(sig, profile.toolAllowlist)) {
+    if (
+      profile?.autoApprovalSignatures?.length &&
+      matchesProfileAllowlist(sig, profile.autoApprovalSignatures)
+    ) {
       approval.status = "approved";
       console.log(
         `[approvals] auto-approve profile-allowlist session=${body.sessionId.slice(0, 8)} ` +
@@ -1221,7 +1498,11 @@ export class SessionManager extends EventEmitter {
       live.pendingApprovals.set(id, { ...publicApproval, source: "claude" });
     }
 
+    console.log(
+      `[approvals] park claude session=${body.sessionId.slice(0, 8)} tool=${body.toolName} title="${approval.title.slice(0, 80)}"`,
+    );
     this.emitEvent(session, "approval.needed", publicApproval);
+    this.emitEvent(session, "session.updated", { status: "awaiting_approval" });
     this.maybeNotify("Claude needs approval", `${session.title}: ${approval.title}`);
     return approval;
   }
@@ -1308,12 +1589,11 @@ export class SessionManager extends EventEmitter {
       this.cliRunners.delete(sessionId);
     }
 
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.status = "cancelled";
     s.updatedAt = now();
     s.completedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.completed", { status: "cancelled" });
     return s;
   }
@@ -1402,14 +1682,13 @@ export class SessionManager extends EventEmitter {
       this.cliRunners.delete(sessionId);
     }
 
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.status = "completed";
     s.archived = true;
     s.archivedAt = now();
     s.updatedAt = now();
     s.completedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.completed", {
       status: "completed",
       archived: true,
@@ -1459,11 +1738,19 @@ export class SessionManager extends EventEmitter {
         this.saveForgottenClaude();
       }
     }
+    if (s.antigravityConversationId) {
+      const set = this.loadForgottenAgy();
+      if (!set.has(s.antigravityConversationId)) {
+        set.add(s.antigravityConversationId);
+        this.saveForgottenAgy();
+      }
+    }
     // Emit a terminal event so open clients drop it from their lists.
     this.emitEvent(s, "session.completed", {
       status: "cancelled",
       deleted: true,
     });
+    this.hydrated.delete(sessionId);
     this.eventSeq.delete(sessionId);
   }
 
@@ -1479,11 +1766,10 @@ export class SessionManager extends EventEmitter {
       this.emitEvent(live.session, "session.updated", { title: live.session.title });
       return live.session;
     }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.title = trimmed.slice(0, 200);
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { title: s.title });
     return s;
   }
@@ -1509,11 +1795,10 @@ export class SessionManager extends EventEmitter {
       this.emitEvent(live.session, "session.updated", { projectId: live.session.projectId });
       return live.session;
     }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.projectId = target ?? undefined;
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { projectId: s.projectId });
     return s;
   }
@@ -2124,24 +2409,11 @@ export class SessionManager extends EventEmitter {
    * Archived chats drop out of the default Active list but stay on disk and openable.
    */
   setArchived(sessionId: string, archived: boolean): DispatchSession {
-    const live = this.live.get(sessionId);
-    if (live) {
-      live.session.archived = archived;
-      live.session.archivedAt = archived ? now() : undefined;
-      live.session.updatedAt = now();
-      this.persist(live.session);
-      this.emitEvent(live.session, "session.updated", {
-        archived: live.session.archived,
-        archivedAt: live.session.archivedAt,
-      });
-      return live.session;
-    }
-    const s = this.store.load(sessionId);
-    if (!s) throw new Error("Session not found");
+    const s = this.loadMutable(sessionId);
     s.archived = archived;
     s.archivedAt = archived ? now() : undefined;
     s.updatedAt = now();
-    this.store.save(s);
+    this.persist(s);
     this.emitEvent(s, "session.updated", { archived: s.archived, archivedAt: s.archivedAt });
     return s;
   }
@@ -2541,6 +2813,43 @@ export class SessionManager extends EventEmitter {
     return { cwd: s.cwd, diff };
   }
 
+  listFiles(sessionId: string) {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return listSessionFiles(s, this.config);
+  }
+
+  readFile(sessionId: string, path: string) {
+    const s = this.get(sessionId);
+    if (!s) throw new Error("Session not found");
+    return readSessionFile(s, this.config, path);
+  }
+
+  /** Merge extra workspace folders. Next Claude turn gets `--add-dir`; others see a prompt note. */
+  addExtraDirs(sessionId: string, extraDirs: string[]): DispatchSession {
+    const session = this.getMutableSession(sessionId);
+    const added = normalizeExtraDirs(this.config, session.cwd, extraDirs);
+    const existing = session.extraDirs ?? [];
+    const merged = [...existing];
+    for (const dir of added) {
+      if (!merged.includes(dir)) merged.push(dir);
+    }
+    session.extraDirs = merged;
+    session.updatedAt = now();
+    const newly = merged.filter((d) => !existing.includes(d));
+    if (newly.length) {
+      session.transcript.push({
+        id: randomUUID(),
+        role: "system",
+        text: `Added extra workspace folder${newly.length === 1 ? "" : "s"}:\n${newly.map((d) => `- ${d}`).join("\n")}`,
+        at: now(),
+      });
+    }
+    this.persist(session);
+    this.emitEvent(session, "session.updated", { extraDirs: session.extraDirs });
+    return session;
+  }
+
   // ── internals ──────────────────────────────────────────────
 
   /** One Claude Code turn: stream-json + optional phone tool approvals. */
@@ -2591,6 +2900,9 @@ export class SessionManager extends EventEmitter {
 
     const hostBase = `http://127.0.0.1:${this.config.bindPort}`;
     const profile = this.profileFor(session);
+    if (profile) {
+      await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
+    }
     const runner = new ClaudeRunner({
       cwd: session.cwd,
       resumeSessionId: session.claudeSessionId,
@@ -2604,6 +2916,10 @@ export class SessionManager extends EventEmitter {
       model: session.model,
       appendSystemPrompt: profile?.systemPrompt,
       extraDirs,
+      toolAllowlist: profile?.toolAllowlist,
+      mcpConfigPath: profile
+        ? writeProfileMcpJson(this.config.dataDir, profile, mcpEnvFor(profile))
+        : undefined,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -2736,9 +3052,10 @@ export class SessionManager extends EventEmitter {
     const savedPaths = savePromptImagesForSession(this.config, session, images);
     const promptPaths = materializeImagesInCwd(session.cwd, savedPaths);
     let agentPrompt =
-      promptPaths.length === 0
+      extraDirsAgentNote(session.extraDirs) +
+      (promptPaths.length === 0
         ? prompt
-        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`;
+        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`);
 
     if (session.transferHandoffPending || (!session.antigravityConversationId && session.transcript.length > 1)) {
       if (session.transferHandoffPending) {
@@ -2772,6 +3089,7 @@ export class SessionManager extends EventEmitter {
       profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "1" ||
       profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "true";
 
+    const profile = this.profileFor(session);
     const runner = new AntigravityRunner({
       cwd: session.cwd,
       conversationId: session.antigravityConversationId,
@@ -2779,6 +3097,8 @@ export class SessionManager extends EventEmitter {
       model: session.model,
       skipPermissions: !requirePerms,
       profileEnv,
+      systemPrompt: profile?.systemPrompt,
+      toolAllowlist: profile?.toolAllowlist,
     });
     this.cliRunners.set(sessionId, runner);
 
@@ -2890,13 +3210,16 @@ export class SessionManager extends EventEmitter {
     await client.start();
     const newParams: Record<string, unknown> = {
       cwd: session.cwd,
-      mcpServers: [],
+      mcpServers: await this.acpMcpServersFor(session),
     };
     if (session.worktree) {
       newParams._meta = { ...(newParams._meta as object), worktree: true };
     }
     if (session.subagents === false) {
       newParams._meta = { ...(newParams._meta as object), noSubagents: true };
+    }
+    if (session.extraDirs?.length) {
+      newParams._meta = { ...(newParams._meta as object), extraDirs: session.extraDirs };
     }
     const result = (await client.request("session/new", newParams)) as { sessionId?: string };
     session.grokSessionId = result.sessionId ?? randomUUID();
@@ -3009,13 +3332,27 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  private async acpMcpServersFor(session: DispatchSession) {
+    const profile = this.profileFor(session);
+    if (!profile) return [];
+    await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
+    return toAcpMcpServers(
+      profile.mcpServers,
+      mcpEnvFor(profile),
+      oauthHeaderMap(this.config.dataDir, profile.id, profile.mcpServers),
+    );
+  }
+
   private newAcpClient(session: DispatchSession): AcpClient {
-    const agentArgs: string[] = [];
-    if (session.model) agentArgs.push("--model", session.model);
-    return new AcpClient(this.config.grokBinary, agentArgs, this.profileEnvFor(session), {
-      promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
-      promptMaxMs: this.config.promptMaxMs,
-    });
+    return new AcpClient(
+      this.config.grokBinary,
+      grokAgentModelArgs(session.model),
+      this.profileEnvFor(session),
+      {
+        promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
+        promptMaxMs: this.config.promptMaxMs,
+      },
+    );
   }
 
   /** True while a prompt is parked on the human (do not idle-fail). */
@@ -3088,7 +3425,7 @@ export class SessionManager extends EventEmitter {
       await client.request("session/load", {
         sessionId: grokSessionId,
         cwd: session.cwd,
-        mcpServers: [],
+        mcpServers: await this.acpMcpServersFor(session),
       });
       session.grokSessionId = grokSessionId;
       session.updatedAt = now();
@@ -3174,7 +3511,7 @@ export class SessionManager extends EventEmitter {
         prompt,
         isFollowUp,
         maxTurns: maxTurns ?? 20,
-        toolsAllowlist: botTools,
+        toolsAllowlist: botTools?.length ? botTools : owner.toolAllowlist,
         promptMaxMs: this.config.promptMaxMs,
         autoApproveKinds: (this.config.autoApproveKinds ?? []).map((k) => k.toLowerCase()),
         callbacks: {
@@ -3231,7 +3568,7 @@ export class SessionManager extends EventEmitter {
 
       const newParams: Record<string, unknown> = {
         cwd: session.cwd,
-        mcpServers: [],
+        mcpServers: await this.acpMcpServersFor(session),
       };
       if (session.worktree) {
         newParams._meta = { ...(newParams._meta as object), worktree: true };
@@ -3241,6 +3578,9 @@ export class SessionManager extends EventEmitter {
       }
       if (!session.subagents) {
         newParams._meta = { ...(newParams._meta as object), noSubagents: true };
+      }
+      if (session.extraDirs?.length) {
+        newParams._meta = { ...(newParams._meta as object), extraDirs: session.extraDirs };
       }
 
       const result = (await client.request("session/new", newParams)) as {
@@ -3252,12 +3592,13 @@ export class SessionManager extends EventEmitter {
       this.persist(session);
       this.emitEvent(session, "session.updated", { grokSessionId: session.grokSessionId, status: "running" });
 
-      let promptText = session.prompt;
-      if (session.planMode) {
-        promptText =
-          `[Plan mode] Explore the codebase and write a concrete implementation plan before making any file edits. ` +
-          `Present the plan for approval before implementing.\n\n${session.prompt}`;
-      }
+      const profile = this.profileFor(session);
+      const promptText = composeGrokOpeningPrompt({
+        prompt: session.prompt,
+        planMode: session.planMode,
+        extraDirs: session.extraDirs,
+        systemPrompt: profile?.systemPrompt,
+      });
 
       await this.promptTurn(live, promptText, imgs);
     } catch (err) {
@@ -3331,24 +3672,19 @@ export class SessionManager extends EventEmitter {
       this.flushAssistant(live);
 
       session.stopReason = result.stopReason;
-      const statusNow = live.session.status;
-      if (statusNow !== "cancelled" && statusNow !== "failed") {
-        if (
-          statusNow !== "awaiting_approval" &&
-          statusNow !== "awaiting_question" &&
-          live.pendingApprovals.size === 0 &&
-          live.pendingQuestions.size === 0
-        ) {
-          // Idle = ready for another message (multi-turn). Not a terminal "Done".
-          live.session.status = "idle";
-          live.session.updatedAt = now();
-          this.persist(live.session);
-          this.emitEvent(live.session, "session.updated", {
-            stopReason: result.stopReason,
-            status: "idle",
-          });
-          this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
-        }
+      // Trust the persisted session — the in-memory LiveSession bookkeeping
+      // maps drift out of sync (RFC-019 chased a phantom question that
+      // stranded sessions on `running` forever).
+      if (shouldFlipToIdleAfterTurn(live.session)) {
+        // Idle = ready for another message (multi-turn). Not a terminal "Done".
+        live.session.status = "idle";
+        live.session.updatedAt = now();
+        this.persist(live.session);
+        this.emitEvent(live.session, "session.updated", {
+          stopReason: result.stopReason,
+          status: "idle",
+        });
+        this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
       }
     } catch (err) {
       if (live.session.status === "cancelled") return;
@@ -3621,13 +3957,16 @@ export class SessionManager extends EventEmitter {
     const ri = record.rawInput as { variant?: string; questions?: unknown } | undefined;
     if (!ri || ri.variant !== "AskUserQuestion") return;
     if (record.status === "completed" || record.status === "failed") {
-      // Clear soft pending if tool finished
+      // Clear soft pending if tool finished. Drain matching entries from
+      // `live.pendingQuestions` too — leaving them behind used to keep
+      // the end-of-turn block from flipping to idle (RFC-019).
       if (live.session.pendingQuestion?.toolCallId === record.toolCallId) {
         live.session.pendingQuestionId = undefined;
         live.session.pendingQuestion = null;
         if (live.session.status === "awaiting_question") live.session.status = "running";
         this.persist(live.session);
       }
+      drainPendingQuestionsByToolCall(live.pendingQuestions, record.toolCallId);
       return;
     }
     const questions = normalizeQuestions(ri.questions);
@@ -3718,6 +4057,29 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
+    const grokProfile = this.profileFor(live.session);
+    if (
+      grokProfile?.toolAllowlist?.length &&
+      !allowlistAllowsTool(grokProfile.toolAllowlist, {
+        toolName: toolCall.title,
+        kind: toolCall.kind,
+        title: toolCall.title,
+      })
+    ) {
+      const reject =
+        options.find((o) => o.kind === "reject_once" || o.kind === "reject_always") ?? options[1];
+      if (reject) {
+        console.log(
+          `[approvals] deny toolAllowlist session=${live.session.id.slice(0, 8)} ` +
+            `profile=${grokProfile.id} tool="${(toolCall.title ?? toolCall.kind ?? "").slice(0, 80)}"`,
+        );
+        live.client.respond(rpcId, {
+          outcome: { outcome: "selected", optionId: reject.optionId },
+        });
+      }
+      return;
+    }
+
     // Auto-approve safe kinds (reads/searches). Do NOT include "other" if it masks questionnaires —
     // still allow configured kinds except we already special-cased AskUser.
     if (this.config.autoApproveKinds.map((k) => k.toLowerCase()).includes(kind)) {
@@ -3735,6 +4097,21 @@ export class SessionManager extends EventEmitter {
       const allow = options.find((o) => o.kind === "allow_once" || o.kind === "allow_always") ?? options[0];
       console.log(
         `[approvals] auto-approve session-allowlist session=${live.session.id.slice(0, 8)} sig="${grokSig}"`,
+      );
+      live.client.respond(rpcId, {
+        outcome: { outcome: "selected", optionId: allow.optionId },
+      });
+      return;
+    }
+
+    if (
+      grokProfile?.autoApprovalSignatures?.length &&
+      matchesProfileAllowlist(grokSig, grokProfile.autoApprovalSignatures)
+    ) {
+      const allow = options.find((o) => o.kind === "allow_once" || o.kind === "allow_always") ?? options[0];
+      console.log(
+        `[approvals] auto-approve profile-allowlist session=${live.session.id.slice(0, 8)} ` +
+          `profile=${grokProfile.id} sig="${grokSig}"`,
       );
       live.client.respond(rpcId, {
         outcome: { outcome: "selected", optionId: allow.optionId },
@@ -3789,6 +4166,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private persist(session: DispatchSession): void {
+    this.hydrated.set(session.id, session);
     this.store.save(session);
   }
 
@@ -3877,6 +4255,16 @@ function normalizeAcpMethod(method: string): string {
 function mapAgentExitError(detail: string | undefined | null): string | null {
   if (!detail) return null;
   const lower = detail.toLowerCase();
+  // MCP connector OAuth (Vercel, Gmail, …) — not NightMoose / Grok CLI login.
+  if (isMcpOAuthRequiredMessage(detail)) {
+    const host = mcpOAuthRequiredHost(detail);
+    const where = host ? ` (${host})` : "";
+    return (
+      `MCP connector needs Sign in${where}. Open Host → Profiles on this Mac ` +
+      `and Sign in for that server, then send another message. ` +
+      `This is not a NightMoose / Grok login.`
+    );
+  }
   // Nested worker noise often says AuthorizationRequired even while the main
   // session is healthy. Only map to a hard auth message when it looks terminal.
   if (
@@ -4025,6 +4413,9 @@ function ensureAttachmentDirs(config: HostConfigFile, session: DispatchSession):
     dirs.push(join(config.dataDir, "projects", session.projectId, "attachments"));
   }
   for (const dir of dirs) mkdirSync(dir, { recursive: true });
+  for (const extra of session.extraDirs ?? []) {
+    if (extra && !dirs.includes(extra)) dirs.push(extra);
+  }
   return dirs;
 }
 

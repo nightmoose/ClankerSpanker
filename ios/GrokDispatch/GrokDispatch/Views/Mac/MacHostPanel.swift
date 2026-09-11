@@ -9,6 +9,11 @@ struct MacHostPanel: View {
     @State private var statusNote: String?
     @State private var installBusy = false
     @State private var installLog: [String] = []
+    /// True while the "Install / update host" confirm alert is up. Only shown
+    /// when the repo-standalone agent (`com.nightmoose.grok-dispatch-host`)
+    /// is loaded — installing would boot it out and hand the port to the
+    /// Application Support copy.
+    @State private var confirmTakeover = false
 
     var body: some View {
         ScrollView {
@@ -47,7 +52,7 @@ struct MacHostPanel: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle("Host")
         #if os(macOS)
-        .navigationSubtitle("Close with Done — app stays in the menu bar")
+        .navigationSubtitle("Gateway is a LaunchAgent — install ClankerSpanker Host Tray for menu-bar controls without this app")
         #endif
         .task { await host.refreshStatus() }
     }
@@ -72,7 +77,11 @@ struct MacHostPanel: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        Task { await runInstall(loadAgent: true) }
+                        if repoAgentLoaded {
+                            confirmTakeover = true
+                        } else {
+                            Task { await runInstall(loadAgent: true, takeover: false) }
+                        }
                     } label: {
                         if installBusy { ProgressView() } else { Text("Install / update host") }
                     }
@@ -80,7 +89,11 @@ struct MacHostPanel: View {
                     .disabled(installBusy)
 
                     Button("Load LaunchAgent") {
-                        Task { await runLoadAgent() }
+                        if repoAgentLoaded {
+                            confirmTakeover = true
+                        } else {
+                            Task { await runLoadAgent(takeover: false) }
+                        }
                     }
                     .disabled(installBusy || !HostInstaller.isInstalled)
 
@@ -95,6 +108,14 @@ struct MacHostPanel: View {
                     .disabled(installBusy)
                 }
                 .controlSize(.large)
+                .alert("Replace repo-standalone host?", isPresented: $confirmTakeover) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Replace", role: .destructive) {
+                        Task { await runInstall(loadAgent: true, takeover: true) }
+                    }
+                } message: {
+                    Text("com.nightmoose.grok-dispatch-host is loaded and serving the port from ~/Projects/GrokDispatch/host. Installing will boot that agent out and hand the port to the Application Support copy managed by this app.")
+                }
 
                 Text("Copies a built `host/` into \(HostInstaller.installRoot.path), runs `npm install --omit=dev`, and registers a per-user LaunchAgent that survives reboots.")
                     .font(.caption)
@@ -121,19 +142,17 @@ struct MacHostPanel: View {
                 labeled("API", host.apiReachable ? "Reachable ✓" : "Down")
                 labeled("Gateway process", host.processStatusLabel)
 
-                if host.apiReachable && !host.isRunning {
-                    Text("Something is already serving \(host.localBaseURL) (often LaunchAgent or a terminal). Sessions still work.")
+                if host.apiReachable {
+                    Text("The gateway is a LaunchAgent — it survives quitting this app and reboots. Sessions stay live.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(spacing: 10) {
-                    Button("Start host") { host.start() }
+                    Button("Kickstart host") { host.start() }
                         .buttonStyle(.borderedProminent)
-                        .disabled(host.isRunning || host.apiReachable)
-                    Button("Stop (app-owned)") { host.stop() }
-                        .disabled(!host.isRunning)
+                        .disabled(host.apiReachable)
                     Button("Refresh") {
                         Task { await host.refreshStatus() }
                     }
@@ -229,9 +248,9 @@ struct MacHostPanel: View {
     }
 
     private var logsCard: some View {
-        GroupBox("Runtime logs (app-owned process)") {
+        GroupBox("Runtime logs (this session)") {
             ScrollView {
-                Text(host.logs.isEmpty ? "(no process output yet — LaunchAgent logs: ~/Library/Logs/clankerspanker-host.log)" : host.logs.suffix(80).joined(separator: "\n"))
+                Text(host.logs.isEmpty ? "(no in-app messages — LaunchAgent logs: ~/Library/Logs/clankerspanker-host.log or ~/Library/Logs/grok-dispatch-host.log)" : host.logs.suffix(80).joined(separator: "\n"))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,6 +259,12 @@ struct MacHostPanel: View {
             .frame(minHeight: 120, maxHeight: 220)
             .padding(4)
         }
+    }
+
+    /// True when the repo-standalone LaunchAgent is the currently-loaded one.
+    /// The Install / Load buttons prompt for confirmation before evicting it.
+    private var repoAgentLoaded: Bool {
+        host.loadedAgentLabel == "com.nightmoose.grok-dispatch-host"
     }
 
     private func labeled(_ title: String, _ value: String) -> some View {
@@ -268,13 +293,17 @@ struct MacHostPanel: View {
     }
 
     @MainActor
-    private func runInstall(loadAgent: Bool) async {
+    private func runInstall(loadAgent: Bool, takeover: Bool) async {
         installBusy = true
         installLog = []
         defer { installBusy = false }
         do {
             let source = host.hostPackagePath.isEmpty ? nil : URL(fileURLWithPath: host.hostPackagePath)
-            try HostInstaller.install(fromSource: source, loadLaunchAgent: loadAgent) { line in
+            try HostInstaller.install(
+                fromSource: source,
+                loadLaunchAgent: loadAgent,
+                takeoverStandalone: takeover
+            ) { line in
                 installLog.append(line)
             }
             host.savePackagePath(HostInstaller.installRoot.path)
@@ -291,11 +320,11 @@ struct MacHostPanel: View {
     }
 
     @MainActor
-    private func runLoadAgent() async {
+    private func runLoadAgent(takeover: Bool) async {
         installBusy = true
         defer { installBusy = false }
         do {
-            try HostInstaller.installLaunchAgent { installLog.append($0) }
+            try HostInstaller.installLaunchAgent(takeoverStandalone: takeover) { installLog.append($0) }
             await host.refreshStatus()
             statusNote = "LaunchAgent loaded"
         } catch {

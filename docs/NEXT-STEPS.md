@@ -1,12 +1,114 @@
 # Next steps
 
-**Last updated:** 2026-08-23 (NightMoose)
+**Last updated:** 2026-09-09 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-09-09 (RFC-010 iOS app icon badge)
+
+iPhone home-screen (and Mac Dock) badge is the number of sessions awaiting
+approval or a question — same count as the Sessions tab capsule. RFC-011
+covers the killed-app case. See [CLIENTS.md](CLIENTS.md). Rebuild the
+phone and Mac.
+
+---
+
+## Done — 2026-09-09 (RFC-011 APNs)
+
+Killed iPhone still gets approval/question banners and the icon badge.
+Host sends APNs (HTTP/2 + JWT). Open the phone app once after install so
+the device token registers. Setup: [APNS.md](APNS.md). Bounce the
+Application Support host (`com.nightmoose.clankerspanker-host`) after
+deploy — not the old repo LaunchAgent.
+
+---
+
+## Done — 2026-09-09 (RFC-012 login modal false positive)
+
+“NightMoose needs to sign in” no longer pops on every message when a
+**Vercel MCP** connector wants OAuth. Kick the host after deploy; rebuild
+Mac. See RFC-012.
+
+---
+
+## Done — 2026-09-09 (RFC-013 profile MCP catalog)
+
+Paste JSON: [MCP-CATALOG.md](MCP-CATALOG.md). NightMoose = GitHub /
+Vercel / Fly / Supabase / Notion. Personal = GitHub + Notion (own Sign
+in). FullScore = Databricks / Azure DevOps / Azure. Gemini = none.
+**Do not paste NightMoose until `grokHome` is set** (Grok still inherits
+`~/.grok`). `/app/` → Profiles (this Mac) → paste → Sign in HTTP rows.
+
+---
+
+## Done — 2026-09-09 (RFC-014 close as done + hide Grok helpers)
+
+**Close as done** / Archive on an idle chat actually leaves Active
+(hydrated overlay was stale). Grok subagent / helper worktree sessions
+no longer flood Active, Archived, or disk-attach lists. Kick the host
+after deploy.
+
+---
+
+## Done — 2026-08-30 (RFC-009 remote MCP OAuth)
+
+HTTP MCP servers on a profile can **Sign in** from `/app/` Profiles (this
+machine). PKCE + loopback callback; tokens in
+`~/.grok-dispatch/mcp-oauth/`. Kick the host after deploy. See
+[MCP.md](MCP.md).
+
+---
+
+## Done — 2026-08-29 (RFC-008 per-profile MCP)
+
+Host Profiles (this machine) JSON `mcpServers` on each chip. Claude `--mcp-config`; Grok ACP `session/new`. Kick the host after deploy.
+
+---
+
+## Done — 2026-08-29 (RFC-007 phone copy/paste)
+
+iPhone Term has a **Paste** key. Expanded session messages: **Copy**, **Read / Select** (select a span), code-block Copy, bubble long-press Copy. Rebuild the phone app.
+
+---
+
+## Done — 2026-08-24 (RFC-005 attach Gemini CLI)
+
+agy TUI/CLI chats on the host can be attached like Claude/Grok disk sessions.
+Gemini chip → **Gemini CLI on disk**. Resume uses `--conversation`. Consumer
+Gemini app chats still cannot be imported.
+
+---
+
+## Done — 2026-08-24 (RFC-004 host terminal)
+
+You no longer need to “get back to the Mac” for `launchctl`, `git`, `agy`, etc.
+Open **Term** on the phone (or Mac ⌘⇧K / Linux Terminal). Same host token as
+the app; login shell on the host. Kickstart the host once so `pty-bridge.py` is
+on disk, then use Term for later kicks.
+
+---
+
+## Done — 2026-08-24 (RFC-003 phone bots)
+
+iPhone can **create** hunters and **Run now**. New **Bots** tab (between Tasks and Dispatch). Mac ⌘2 Bots tab unchanged. Host APIs were already there.
+
+---
+
+## Done — 2026-08-24 (RFC-002 chat / files / extra folders)
+
+| Ask | Where | Status |
+|---|---|---|
+| Chat-only Transcript (toggle, not a new tab) | Mac/iOS `TranscriptView`, Linux `mergedItems` | **Done.** Hides tools, thoughts, system. |
+| Files under Notes + view | `GET /sessions/:id/files` + `/file`, Notes tab | **Done.** Mac FileViewerPane; Linux viewer; iPhone sheet. |
+| Multi-folder picker at dispatch + add later | `extraDirs` on dispatch + `PATCH /sessions/:id/extra-dirs` | **Done.** Mac NSOpenPanel / Linux dialog; iPhone picks host project paths. Claude `--add-dir` on each turn. |
+
+**Operator:** kickstart the LaunchAgent so `host/dist` loads, then rebuild the Mac app.
 
 ---
 

@@ -20,3 +20,5 @@ make rfc SLUG=short-kebab
 - One host gateway (`docs/CLIENTS.md`)
 - Do not rename `x-grok-dispatch-token` casually
 - Do not copy `ConnectionDefaults.lanHostURL` (`192.168.50.9`)
+- iOS client changes: always install on **Deez Nutz** (scheme `ClankerSpankerPhone`). Simulator is not a ship.
+- Phone push when the app is killed: host APNs (`docs/APNS.md`); kick the LaunchAgent after host changes.

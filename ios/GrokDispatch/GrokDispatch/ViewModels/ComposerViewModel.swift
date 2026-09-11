@@ -11,6 +11,8 @@ final class ComposerViewModel: ObservableObject {
     /// host as `cwd` so `resolveProjectPath` picks it.
     @Published var selectedProjectPath: String?
     @Published var customPath: String = ""
+    /// Extra workspace folders besides cwd (Claude `--add-dir` / prompt note).
+    @Published var extraDirs: [String] = []
     /// Opt-in: plan mode locks file edits until exit_plan_mode succeeds.
     /// Default off so "just do the task" dispatches actually implement.
     @Published var planMode = false
@@ -219,6 +221,33 @@ final class ComposerViewModel: ObservableObject {
         pendingImages.removeAll { $0.id == id }
     }
 
+    /// Working directory that will be sent on dispatch (project path or custom).
+    var resolvedCwd: String {
+        let trimmedCustom = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedCustom.isEmpty { return trimmedCustom }
+        if let pid = selectedProjectId,
+           let project = projects.first(where: { $0.id == pid })
+        {
+            let picked = selectedProjectPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !picked.isEmpty, project.effectivePaths.contains(picked) { return picked }
+            return project.primaryPath
+        }
+        return ""
+    }
+
+    func addExtraFolderPaths(_ paths: [String]) {
+        let cwd = resolvedCwd
+        for raw in paths {
+            let p = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if p.isEmpty || p == cwd { continue }
+            if !extraDirs.contains(p) { extraDirs.append(p) }
+        }
+    }
+
+    func removeExtraDir(_ path: String) {
+        extraDirs.removeAll { $0 == path }
+    }
+
     func dispatch(appState: AppState) async -> SessionRoute? {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = pendingImages
@@ -320,6 +349,10 @@ final class ComposerViewModel: ObservableObject {
             // instead of defaulting to paths[0].
             body.cwd = picked
         }
+        let extras = extraDirs
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != body.cwd && $0 != resolvedCwd }
+        if !extras.isEmpty { body.extraDirs = extras }
 
         do {
             let session = try await appState.api.dispatch(body, host: bound.host)
@@ -328,6 +361,7 @@ final class ComposerViewModel: ObservableObject {
             prompt = ""
             title = ""
             pendingImages = []
+            extraDirs = []
             appState.selectBoundProfile(bound.id)
             return SessionRoute(hostId: bound.host.id, sessionId: session.id)
         } catch {

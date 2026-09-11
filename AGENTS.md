@@ -42,6 +42,13 @@ shape: local host, bearer token, phone client.
 **Laptop clients:** Mac = native (`ios/`, scheme ClankerSpanker → My Mac).  
 Linux = Electron (`desktop/`). Do not dual-maintain full session UIs on Mac.
 
+**Daily-driver iPhone is Deez Nutz** (iPhone 13 Pro). After any iOS client
+change, build scheme **ClankerSpankerPhone** and install on that device —
+simulator-only is not a ship. Commands: [`docs/CLIENTS.md`](docs/CLIENTS.md)
+§ Phone deploy. Do not confuse with DaT OnE KiTtY (also an iPhone 13 Pro).
+Phone badges when the app is killed need APNs on the host
+([`docs/APNS.md`](docs/APNS.md)); kick the LaunchAgent after host changes.
+
 ## Rules
 
 - **`host/src/auth.ts` is the security boundary.** Token comparison is

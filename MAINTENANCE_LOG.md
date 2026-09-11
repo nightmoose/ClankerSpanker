@@ -2,6 +2,325 @@
 
 ---
 
+## Run: 2026-09-11 — RFC-019 stuck "Running" + phantom pending questions
+
+Confirmed sessions were stranded on `status: "running"` after Grok
+had clearly ended the turn (`stopReason: "end_turn"`, transcript
+final, `isLive: false`, persisted `pendingApproval` /
+`pendingQuestion` both `null`). Root cause in
+`host/src/acp/session-manager.ts`: the end-of-turn block gated
+the flip to `idle` on the in-memory `live.pendingApprovals` /
+`live.pendingQuestions` maps, and `maybeParkAskUserQuestionFromTool`
+cleared the persisted `pendingQuestion` on tool completion without
+draining the map. Phantom entry → the flip skipped forever.
+
+Fix: extracted two pure helpers — `shouldFlipToIdleAfterTurn(session)`
+reads the persisted `pendingApproval` / `pendingQuestion` only, and
+`drainPendingQuestionsByToolCall(map, toolCallId)` clears matching
+map entries when the underlying `AskUserQuestion` tool finishes.
+`handlePrompt` calls the first, `maybeParkAskUserQuestionFromTool`
+calls the second. 9 new vitest cases in
+`session-manager.stuck-running.test.ts`; baseline 198 → 207.
+
+Stuck session `a53072c3-ccae-4622-93e5-22d3107bd272` was hand-patched
+to `status: "idle"` on disk after the host bounce so it renders
+correctly without a follow-up turn.
+
+**Soak:** kickstart `com.nightmoose.grok-dispatch-host`, send a
+follow-up in any long-running Grok chat, verify the pill flips from
+Running → Your turn once `session/prompt` returns.
+
+---
+
+## Run: 2026-09-11 — RFC-018 markdown link resolver with cwd context
+
+Grok emits `[foo.pdf](foo.pdf)` — bare relative paths. Tapping the
+Markdown link in the expanded-message view (via
+`AttributedString(markdown:)`) forwarded that URL to
+`NSWorkspace.shared.open`, which macOS rejected with
+`-50 paramErr` and popped "The application can't be opened."
+
+New helper `MarkdownLinkResolver` decides: system-scheme URLs pass to
+the OS, iOS discards relative paths (no filesystem reach), and macOS
+resolves them against the session's `cwd`. Threaded `cwd` +
+`onOpenLocalFile` through `TranscriptView → ExpandedMessage →
+ExpandedMessageView → MarkdownView`, then wrapped the Markdown
+renderer's `.environment(\.openURL, OpenURLAction { … })` around the
+resolver. `SessionDetailView` passes `detail.cwd` and routes the
+callback through the existing `openFileInViewer(_:cwd:)` →
+`AppState.openInViewer(_:)` chain.
+
+**Soak:** in a Grok session with relative doc links, tap one in the
+Expand view — Preview / Safari opens the correct file under
+`detail.cwd`. Absolute `https://` links still open the browser. On
+the phone (RFC-002-era session with `cwd`), the tap is a no-op — no
+system alert. RFC-017 (dup response) is Draft, follow-up.
+
+---
+
+## Run: 2026-09-09 — RFC-016 standalone Mac host tray
+
+New Xcode target `ClankerSpankerHostTray` (scheme + `.app`), a
+`LSUIElement=true` menu-bar-only Swift app in
+`ios/GrokDispatch/HostTray/`. Shows gateway status, opens `/app/` and
+`/setup` in the default browser, kickstarts whichever LaunchAgent is
+loaded (`clankerspanker-host` first, else `grok-dispatch-host`), and
+reveals the host log + `~/.grok-dispatch/`. No session UI — this is
+a **configurator**, not a client (see `docs/CLIENTS.md`).
+
+To avoid two identical bolts in the menu bar, the ClankerSpanker Mac
+command-center app drops its own `MenuBarExtra` and `MacMenuBarMenu`.
+`applicationShouldTerminateAfterLastWindowClosed` flips to `true`
+now that there's no menu-bar refuge — the tray is the always-on
+surface, the command center quits when its window closes.
+
+**Soak:** `xcodegen` in `ios/GrokDispatch`, then `xcodebuild -scheme
+ClankerSpankerHostTray build`. Drop the built `.app` in `~/Applications`
+and launch — a single bolt should appear. Launching `ClankerSpanker.app`
+alongside should not add a second bolt.
+
+---
+
+## Run: 2026-09-09 — RFC-015 detach Mac app from host process
+
+`LocalHostController.start()` on macOS used to spawn `node dist/index.js`
+as a child of the Mac app via `Process()`. Quitting the app killed the
+gateway. `start()` now `launchctl kickstart -k`s whichever LaunchAgent
+is loaded — `com.nightmoose.clankerspanker-host` (app-managed) first,
+then `com.nightmoose.grok-dispatch-host` (repo standalone). The Install
+flow in `MacHostPanel` is preserved and now uses a takeover-confirm
+alert when the repo agent is loaded, so it won't silently evict the
+`~/Projects/GrokDispatch/host` daemon. Dead `process`/`pid`/`isRunning`
+bookkeeping and the "Stop app-owned host" menu entries are gone.
+
+**Soak:** Cmd-Q the Mac app while `lsof -nP -iTCP:8787 -sTCP:LISTEN`
+watches — node stays alive. Menu → Host → "Kickstart local host"
+brings it back if launchd's `KeepAlive` hasn't yet. Host panel install
+button on a machine with the repo agent loaded shows the confirm
+alert; only "Replace" swaps in the Application Support copy.
+
+---
+
+## Run: 2026-09-09 — RFC-010 iOS app icon badge
+
+Home-screen / Dock badge is `attentionSessions.count` (awaiting approval
+or a question). `NotificationService.setAppIconBadge` writes it after
+session refresh; approval/question local notifications set
+`content.badge` so SpringBoard updates before the list round-trip.
+Approve/Reject from a banner always refreshes so the number drops.
+
+**Soak:** iPhone — trip an approval, confirm the icon shows `1`, approve
+in-app or from the banner, confirm the mark clears.
+
+---
+
+## Run: 2026-09-09 — RFC-011 APNs
+
+Host sends Apple Push on `approval.needed` / `question.needed` (alert +
+badge) and on resolve (badge only). iPhone registers its device token at
+`POST /push/register`. Key lives in `~/.grok-dispatch/apns/` (not git).
+`environment: auto` tries sandbox then production.
+
+**Soak:** kill ClankerSpanker on Deez Nutz, trip an approval, confirm
+banner + badge without opening the app. `POST /push/test` is the
+shortcut. Bounce `com.nightmoose.clankerspanker-host` (Application
+Support), not the repo `grok-dispatch-host` agent.
+
+---
+
+## Run: 2026-09-09 — RFC-012 login modal false positive
+
+Vercel MCP `AuthRequired` / `oauth-protected-resource` was matching a
+bare `oauth` substring, so Mac/iPhone popped “NightMoose needs to sign
+in” on every follow-up. Profile CLI login detection no longer matches
+MCP OAuth. The Sign in alert is banner-only (tap to open). Worker exit
+maps to “MCP connector needs Sign in (mcp.vercel.com)”.
+
+**Soak:** send a message in the looping NightMoose chat — no modal.
+Sign in Vercel from Host → Profiles, not `grok login`.
+
+---
+
+## Run: 2026-09-09 — RFC-013 profile MCP catalog
+
+Checked-in paste map for who gets which connector:
+[docs/MCP-CATALOG.md](docs/MCP-CATALOG.md). NightMoose / Personal /
+FullScore / Gemini assignment is the RFC. Do not put Gmail on
+NightMoose. Do not paste NightMoose MCP until that profile has
+`grokHome` (RFC-006). Vitest parses the fenced JSON.
+
+**Soak:** `/app/` Profiles → paste Personal or FullScore → Sign in.
+NightMoose waits on `grokHome`.
+
+---
+
+## Run: 2026-09-09 — RFC-014 close as done + hide Grok helpers
+
+Idle Close as done / Archive wrote disk but left `hydrated` stale, so
+`GET /sessions` kept the chat on Active. Those mutations now
+`persist()` the in-memory object. Grok subagent worktree sessions
+(`session_kind` subagent / `subagent_resume`, cwd `…/subagent-*`) are
+no longer imported or listed — talk to the parent session.
+
+**Soak:** Close as done on an idle Grok chat — it leaves Active. Helper
+rows gone from Active / Archived / disk attach. Kick the host after
+deploy.
+
+---
+
+## Run: 2026-08-30 — RFC-009 remote MCP OAuth
+
+HTTP MCP servers on a profile can Sign in with OAuth 2.1 + PKCE
+(`host/src/mcp-oauth.ts`). Tokens live in
+`{dataDir}/mcp-oauth/{profileId}/{serverName}.json` (0600), not
+`config.json`. `toMcpJson` / ACP `mcpServers` inject `Authorization:
+Bearer` when fresh. Three local-only routes: start, loopback callback,
+logout. Host Profiles editor has per-server Sign in/out.
+
+**Soak:** NightMoose HTTP MCP → Sign in on `/app/` (this Mac) → dispatch
+→ tools appear; FullScore must not see that token.
+
+---
+
+## Run: 2026-08-29 — RFC-008 per-profile MCP servers
+
+`AgentProfile.mcpServers` is the payer-owned connector list. Dispatch
+writes `{dataDir}/mcp/{profileId}.mcp.json` and passes `--mcp-config` to
+Claude; Grok ACP `session/new` / `session/load` get the ACP-shaped
+array. Host Profiles editor (this machine) has a JSON textarea.
+`${VAR}` expands from profile env. Public GET lists names only.
+
+**Soak:** add a stdio server on NightMoose, dispatch, confirm the tools
+show; FullScore turn must not see them.
+
+---
+
+## Run: 2026-08-29 — RFC-007 iPhone Term paste + session copy
+
+Term accessory bar has **Paste** (clipboard → xterm `term.paste` → PTY).
+Expanded message popup: **Copy** toolbar, **Read / Select** (Select is a
+real `UITextView` so you can highlight a command), code-block Copy chip,
+bubble long-press Copy. Path: session → copy → Term → Paste.
+
+**Soak:** Expand an agent reply → Select → copy a `launchctl` line → Term
+Paste → it runs.
+
+---
+
+## Run: 2026-08-29 — Claude approvals never reached the phone
+
+Claude turns are not in the ACP `live` map, so `get()` loaded a fresh
+disk copy per call. `createClaudeApproval` parked `pendingApproval` on
+copy A; `claudeTurn`'s `runner.on("tool")` then persisted copy B and
+wiped it. The hook waited 10 minutes, denied, and the user never saw
+Approve. `get()` now returns one hydrated object per session.
+
+**Soak:** FullScore session → Edit a new file → Approve bar on phone/Mac
+before the tool runs.
+
+---
+
+## Run: 2026-08-29 — RFC-006 Phase C: toolAllowlist + Bot env
+
+`toolAllowlist` is now a pre-flight tool-name list (Claude `--tools`,
+Grok/Claude hook deny, Bot `toolsForAllowlist`). Signature-shaped
+entries (`claude:bash:…`) migrate to `autoApprovalSignatures` on
+load so existing auto-approve configs keep skipping the phone.
+`agy` has no restrict flag — fresh turns get an advisory note.
+Bot `pickProvider` uses `profileProcessEnv` so `profile.env` and
+`grokHome` → `GROK_HOME` reach the HTTP clients.
+
+**Soak:** profile with `toolAllowlist=["Read","Grep"]` cannot Write
+on Claude/Grok; a leftover `toolAllowlist: ["claude:bash"]` still
+auto-approves bash after reload.
+
+---
+
+## Run: 2026-08-29 — RFC-006 Phase B: prompt + model sentinel parity
+
+`systemPrompt` now reaches Grok (first-turn preamble) and Antigravity
+(prepended to a fresh `agy -p`; skipped on `--conversation` resume).
+Claude still uses `--append-system-prompt`. `isModelSentinel(backend,
+model)` replaces the Claude-only helper plus the hardcoded agy/Grok
+`--model` exclusions so sentinel slugs (`claude`, `grok-build`,
+`gemini`, `default`, empty) let each CLI pick its account default.
+
+**Soak:** dispatch a Grok profile with a persona set; confirm the
+opening ACP prompt carries `[Profile instructions]` and a follow-up
+does not. Same for a fresh vs resumed agy conversation.
+
+---
+
+## Run: 2026-08-28 — RFC-006 Phase A: Grok home dir isolation
+
+`AgentProfile.grokHome` is now honored by `profileProcessEnv` (sets
+`GROK_HOME`) and by `profileHasCredentials` for grok/bot backends. Two
+Grok profiles can point at distinct `~/.grok`-style dirs and sign in
+independently instead of trampling one `auth.json`. POST/PATCH
+`/profiles` accept the field on this-machine requests.
+
+**Soak:** create a second grok profile with `grokHome=/tmp/nightmoose-2`,
+`grok mcp login` inside it, confirm the shared `~/.grok/auth.json` is
+untouched.
+
+---
+
+## Run: 2026-08-24 — RFC-005 attach Gemini CLI conversations
+
+`GET /sessions` now returns `agySessions` from
+`~/.gemini/antigravity-cli`. `POST /sessions/attach-agy` wraps them as
+Antigravity Dispatch sessions (`agy --conversation`). Mac/iPhone disk lists
+and Linux Gemini disk nav. Not the consumer Gemini app.
+
+**Soak:** Gemini chip → on-disk row → attach → follow-up.
+
+---
+
+## Run: 2026-08-24 — Host status pill flashing (RFC-004 follow-up)
+
+Two `WebSocketServer({ server, path })` instances both subscribed to HTTP
+`upgrade`. `ws` abortHandshake()s path mismatches, so `/ws/terminal` killed
+every `/ws` client. Status flipped Live ↔ Offline. Route upgrades by pathname
+with `noServer: true`.
+
+---
+
+## Run: 2026-08-24 — RFC-004 host terminal
+
+Authenticated PTY over `ws://host:8787/ws/terminal?token=` (same host token,
+`tokensMatch`). Login shell via Python `pty.fork` (no node-pty). Phone **Term**
+tab, Mac toolbar ⌘⇧K sheet, Linux nav Terminal, `/app/terminal.html`.
+
+**Soak:** phone Term → `hostname` / `launchctl`; Mac sheet; idle close.
+
+---
+
+## Run: 2026-08-24 — RFC-003 phone bots (create + run)
+
+iPhone chrome had no Bots tab (`AppTab` was Sessions/Projects/Tasks/Dispatch/Settings). Mac already had hunters (⌘2). Host `POST /bots` and `POST /bots/:id/run` were live; the phone never called them.
+
+Added **Bots** to the top strip. List + New bot sheet + Run now / last session / job / outbox. Same host APIs as Mac.
+
+**Soak:** iPhone Bots → New bot → Create; Run now opens the hunter session.
+
+---
+
+## Run: 2026-08-24 — RFC-002 session chat-only, Files, extra folders
+
+Transcript now has a **Chat only** toggle (Mac/iOS + Linux) that hides
+tool rows, thoughts, and system lines. Notes gained a **Files** section
+(cwd, extra dirs, tool locations, attachments) with view: Mac pane,
+Linux viewer (local disk, host API fallback), iPhone sheet via
+`GET /sessions/:id/file`. Dispatch accepts `extraDirs`; Mac/Linux use a
+real multi-folder picker (first = cwd, rest extra). iPhone picks extra
+folders from registered host projects. Mid-session `PATCH …/extra-dirs`
+merges more folders; Claude gets `--add-dir` on the next turn.
+
+**Soak:** Chat only on a noisy Claude session; Notes Files open a tool
+path; pick two folders on New Session; add a third from Notes.
+
+---
+
 ## Run: 2026-08-23 — RFC-001 markdown tables + todo jump to source
 
 Expanded-message `MarkdownParser` had no table block — GFM `| col |` rows

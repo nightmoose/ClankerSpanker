@@ -271,6 +271,7 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     var profileName: String?
     var profileColor: String?
     var claudeSessionId: String?
+    var antigravityConversationId: String?
 
     var isArchived: Bool { archived == true }
 
@@ -400,6 +401,7 @@ struct SessionDetail: Codable, Identifiable, Sendable {
     var title: String
     var prompt: String
     var cwd: String
+    var extraDirs: [String]?
     var projectId: String?
     var model: String
     var planMode: Bool
@@ -432,6 +434,36 @@ struct SessionDetail: Codable, Identifiable, Sendable {
     var usage: SessionUsage?
 
     var isArchived: Bool { archived == true }
+
+    var effectiveExtraDirs: [String] { extraDirs ?? [] }
+}
+
+struct SessionFileEntry: Codable, Identifiable, Hashable, Sendable {
+    var path: String
+    var kind: String
+    var title: String?
+    var updatedAt: String?
+
+    var id: String { path }
+
+    var isFolder: Bool { kind == "folder" }
+    var isAttachment: Bool { kind == "attachment" }
+}
+
+struct SessionFileContent: Codable, Identifiable, Sendable {
+    var path: String
+    var name: String
+    var mimeType: String
+    var size: Int
+    var encoding: String
+    var text: String?
+    var data: String?
+    var truncated: Bool?
+    var binary: Bool?
+
+    var isImage: Bool { mimeType.hasPrefix("image/") }
+
+    var id: String { path }
 }
 
 /// Cumulative token usage for a Claude session (from `message.usage` on the
@@ -482,6 +514,7 @@ struct DiskSessionHint: Codable, Identifiable, Sendable {
     var transcriptPath: String?
 
     var isClaude: Bool { source == "claude" }
+    var isAntigravity: Bool { source == "antigravity" || source == "agy" || source == "gemini" }
 }
 
 struct SessionsResponse: Codable, Sendable {
@@ -490,6 +523,7 @@ struct SessionsResponse: Codable, Sendable {
     var archivedSessions: [SessionSummary]?
     var diskSessions: [DiskSessionHint]?
     var claudeSessions: [DiskSessionHint]?
+    var agySessions: [DiskSessionHint]?
     /// Echo of `?q=` when the host ran a content search.
     var query: String?
 }

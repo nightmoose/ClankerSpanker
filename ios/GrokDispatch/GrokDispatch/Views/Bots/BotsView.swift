@@ -1,20 +1,227 @@
 import SwiftUI
 
-/// Phone / fallback: own split. Mac command center hosts sidebar + detail
-/// in the same NavigationSplitView as Sessions so the left list matches.
+/// Phone hunters. Mac command center hosts sidebar + detail in the same
+/// NavigationSplitView as Sessions (`BotsSidebar` / `BotsDetail`).
 struct BotsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var vm = BotsViewModel()
-    var onOpenSession: ((String) -> Void)?
+    @State private var pendingRoute: SessionRoute?
+    @State private var showNewBot = false
+    @State private var detailBot: BotNav?
+
+    private struct BotNav: Hashable, Identifiable {
+        var id: String
+    }
 
     var body: some View {
-        NavigationSplitView {
-            BotsSidebar(vm: vm)
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
-        } detail: {
-            BotsDetail(vm: vm, onOpenSession: onOpenSession)
+        NavigationStack {
+            ZStack {
+                DispatchBackground()
+                VStack(spacing: 0) {
+                    botsChrome
+                    if let errorMessage = vm.errorMessage, !vm.bots.isEmpty {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(DispatchColors.danger)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 6)
+                    }
+                    botsList
+                }
+            }
+            .navigationTitle("")
+            #if os(iOS)
+            .toolbar(.hidden, for: .navigationBar)
+            #endif
+            .navigationDestination(item: $pendingRoute) { route in
+                if let host = appState.hosts.first(where: { $0.id == route.hostId }) {
+                    SessionDetailView(
+                        sessionId: route.sessionId,
+                        host: host,
+                        scrollToMessageId: route.messageId
+                    )
+                } else {
+                    Text("Host no longer available").foregroundStyle(.secondary)
+                }
+            }
+            .navigationDestination(item: $detailBot) { nav in
+                ZStack {
+                    DispatchBackground()
+                    BotsDetail(vm: vm, onOpenSession: openSession, pinnedBotId: nav.id, compact: true)
+                }
+                .navigationTitle(vm.bots.first(where: { $0.id == nav.id })?.name ?? "Bot")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
+                #endif
+            }
+            .sheet(isPresented: $showNewBot) {
+                NewBotSheet(vm: vm)
+                    .environmentObject(appState)
+            }
+            .task { await vm.load(appState: appState) }
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { _ in
+                Task { await vm.load(appState: appState, quiet: true) }
+            }
+            .onChange(of: appState.selectedHost?.id) { _, _ in
+                Task { await vm.load(appState: appState) }
+            }
+            .onChange(of: appState.tabRefreshTick) { _, _ in
+                guard appState.selectedTab == .bots else { return }
+                Task { await vm.load(appState: appState) }
+            }
         }
-        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var botsChrome: some View {
+        HStack(spacing: 12) {
+            Button {
+                showNewBot = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(DispatchColors.accent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("New bot")
+
+            Text("Bots")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 8)
+
+            if vm.isLoading && vm.bots.isEmpty {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var botsList: some View {
+        if let errorMessage = vm.errorMessage, vm.bots.isEmpty {
+            Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(DispatchColors.danger)
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if vm.bots.isEmpty && !vm.isLoading {
+            VStack(spacing: 14) {
+                Spacer()
+                Image(systemName: "scope")
+                    .font(.system(size: 44, weight: .ultraLight))
+                    .foregroundStyle(.secondary)
+                Text("No bots yet")
+                    .font(.title3.weight(.semibold))
+                Text("Create a hunter, give it a standing job, and run it from here. Drafts land in the outbox — nothing is sent.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                Button {
+                    showNewBot = true
+                } label: {
+                    Label("New bot", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(vm.bots) { bot in
+                        phoneBotRow(bot)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 24)
+            }
+        }
+    }
+
+    private func phoneBotRow(_ bot: Bot) -> some View {
+        DispatchCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    detailBot = BotNav(id: bot.id)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(bot.name)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(bot.enabled ? "On" : "Paused")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .foregroundStyle(bot.enabled ? DispatchColors.success : .secondary)
+                                .background((bot.enabled ? DispatchColors.success : Color.secondary).opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                        Text(jobPreview(bot))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 10) {
+                            Text(BotSchedule.label(bot.interval))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            if let last = bot.lastRunDate {
+                                Text(last.formatted(.relative(presentation: .named)))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            } else {
+                                Text("Never run")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task {
+                            if let sid = await vm.run(bot, appState: appState) {
+                                openSession(sid)
+                            }
+                        }
+                    } label: {
+                        Label(vm.runningId == bot.id ? "Starting…" : "Run now", systemImage: "play.fill")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(vm.runningId == bot.id)
+
+                    if let sid = bot.lastSessionId {
+                        Button("Last run") { openSession(sid) }
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func jobPreview(_ bot: Bot) -> String {
+        let line = bot.job
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        return line.map { String($0) } ?? "No standing job"
+    }
+
+    private func openSession(_ sessionId: String) {
+        guard let host = appState.selectedHost else { return }
+        pendingRoute = SessionRoute(hostId: host.id, sessionId: sessionId)
     }
 }
 
@@ -153,10 +360,20 @@ struct BotsDetail: View {
     @ObservedObject var vm: BotsViewModel
     var onOpenSession: ((String) -> Void)?
     var onNewBot: (() -> Void)?
+    /// When set (phone push), show this bot instead of the sidebar selection.
+    var pinnedBotId: String? = nil
+    var compact: Bool = false
+
+    private var displayedBot: Bot? {
+        if let pinnedBotId {
+            return vm.bots.first { $0.id == pinnedBotId } ?? vm.selectedBot
+        }
+        return vm.selectedBot
+    }
 
     var body: some View {
         Group {
-            if let bot = vm.selectedBot {
+            if let bot = displayedBot {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         header(bot)
@@ -170,8 +387,8 @@ struct BotsDetail: View {
                         runControls(bot)
                         outboxSection(bot)
                     }
-                    .padding(24)
-                    .frame(maxWidth: 760, alignment: .leading)
+                    .padding(compact ? 16 : 24)
+                    .frame(maxWidth: compact ? .infinity : 760, alignment: .leading)
                 }
             } else if vm.isLoading {
                 ProgressView("Loading bots…")
@@ -228,27 +445,47 @@ struct BotsDetail: View {
     }
 
     private func header(_ bot: Bot) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
+        let titleAndStatus = VStack(alignment: .leading, spacing: 4) {
+            if !compact {
                 Text(bot.name)
                     .font(.title2.weight(.bold))
-                Text(bot.enabled ? "Scheduled" : "Paused · Run now still works")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
-            Spacer()
-            Picker("Interval", selection: intervalBinding(bot)) {
-                ForEach(intervalChoices(for: bot), id: \.self) { value in
-                    Text(BotSchedule.label(value)).tag(value)
+            Text(bot.enabled ? "Scheduled" : "Paused · Run now still works")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        let interval = Picker("Interval", selection: intervalBinding(bot)) {
+            ForEach(intervalChoices(for: bot), id: \.self) { value in
+                Text(BotSchedule.label(value)).tag(value)
+            }
+        }
+        .labelsHidden()
+        .help("How often the host fires this job when enabled")
+        let enabled = Toggle("Enabled", isOn: vm.enabledBinding(for: bot, appState: appState))
+            .toggleStyle(.switch)
+            .help("When on, the host fires this job when enabled. Off = Run now only.")
+
+        return Group {
+            if compact {
+                VStack(alignment: .leading, spacing: 12) {
+                    titleAndStatus
+                    HStack {
+                        interval
+                            .pickerStyle(.menu)
+                        Spacer()
+                        enabled
+                    }
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    titleAndStatus
+                    Spacer()
+                    interval
+                        .frame(minWidth: 160)
+                    enabled
+                        .labelsHidden()
                 }
             }
-            .labelsHidden()
-            .frame(minWidth: 160)
-            .help("How often the host fires this job when enabled")
-            Toggle("Enabled", isOn: vm.enabledBinding(for: bot, appState: appState))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .help("When on, the host fires this job on the interval. Off = Run now only.")
         }
     }
 

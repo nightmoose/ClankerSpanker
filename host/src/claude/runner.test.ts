@@ -6,6 +6,7 @@ import {
   APPROVAL_HOOK_SOURCE,
   buildClaudeHookSettings,
   buildPreToolUseDecision,
+  claudeToolRestrictArgs,
   extraDirsForClaude,
 } from "./runner.js";
 
@@ -73,6 +74,14 @@ describe("buildClaudeHookSettings extra dirs", () => {
   it("omits permissions when there are no extra dirs", () => {
     const settings = buildClaudeHookSettings("/hooks/pretool.mjs");
     expect(settings.permissions).toBeUndefined();
+  });
+});
+
+describe("claudeToolRestrictArgs", () => {
+  it("passes --tools when a pre-flight allowlist is set", () => {
+    expect(claudeToolRestrictArgs(["Read", "Grep"])).toEqual(["--tools", "Read,Grep"]);
+    expect(claudeToolRestrictArgs([])).toEqual([]);
+    expect(claudeToolRestrictArgs(undefined)).toEqual([]);
   });
 });
 

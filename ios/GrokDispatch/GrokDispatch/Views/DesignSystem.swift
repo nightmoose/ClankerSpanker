@@ -1,4 +1,31 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+#if os(macOS)
+import AppKit
+#endif
+
+enum DispatchClipboard {
+    static func copy(_ text: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = text
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
+    static func pasteString() -> String? {
+        #if os(iOS)
+        return UIPasteboard.general.string
+        #elseif os(macOS)
+        return NSPasteboard.general.string(forType: .string)
+        #else
+        return nil
+        #endif
+    }
+}
 
 enum DispatchColors {
     static let accent = Color(red: 0.45, green: 0.72, blue: 1.0)

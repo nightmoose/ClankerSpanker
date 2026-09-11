@@ -92,6 +92,14 @@ const Api = (() => {
     events: (id, since = 0) =>
       request(`/sessions/${enc(id)}/events?since=${encodeURIComponent(since)}`),
     diff: (id) => request(`/sessions/${enc(id)}/diff`),
+    sessionFiles: (id) => request(`/sessions/${enc(id)}/files`),
+    sessionFile: (id, filePath) =>
+      request(`/sessions/${enc(id)}/file?path=${encodeURIComponent(filePath)}`),
+    addExtraDirs: (id, extraDirs) =>
+      request(`/sessions/${enc(id)}/extra-dirs`, {
+        method: "PATCH",
+        body: jsonBody({ extraDirs }),
+      }),
 
     projects: () => request("/projects"),
     project: (id) => request(`/projects/${enc(id)}`),
@@ -192,6 +200,8 @@ const Api = (() => {
     attachGrok: (body) => request("/sessions/attach", { method: "POST", body: jsonBody(body) }),
     attachClaude: (body) =>
       request("/sessions/attach-claude", { method: "POST", body: jsonBody(body) }),
+    attachAgy: (body) =>
+      request("/sessions/attach-agy", { method: "POST", body: jsonBody(body) }),
 
     listBots: () => request("/bots"),
     getBot: (id) => request(`/bots/${enc(id)}`),

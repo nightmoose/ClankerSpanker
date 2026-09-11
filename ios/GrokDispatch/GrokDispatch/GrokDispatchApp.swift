@@ -39,13 +39,10 @@ struct ClankerSpankerApp: App {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandMenu("Host") {
-                Button("Start local host") {
+                Button("Kickstart local host") {
                     LocalHostController.shared.start()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Stop local host") {
-                    LocalHostController.shared.stop()
-                }
                 Button("Show Host panel") {
                     MacAppChrome.showMainWindow()
                     NotificationCenter.default.post(name: .macShowHost, object: nil)
@@ -59,12 +56,6 @@ struct ClankerSpankerApp: App {
                 }
             }
         }
-
-        // Menu bar (upper-right) — stays while main window is closed
-        MenuBarExtra("ClankerSpanker", systemImage: "bolt.circle.fill") {
-            MacMenuBarMenu()
-                .environmentObject(appState)
-        }
         #else
         WindowGroup {
             ContentView()
@@ -77,57 +68,6 @@ struct ClankerSpankerApp: App {
 }
 
 #if os(macOS)
-private struct MacMenuBarMenu: View {
-    @EnvironmentObject private var appState: AppState
-    @ObservedObject private var host = LocalHostController.shared
-
-    var body: some View {
-        Button("Show ClankerSpanker") {
-            MacAppChrome.showMainWindow()
-        }
-        Divider()
-        Text(statusLine)
-            .font(.caption)
-        Divider()
-        Button("New session…") {
-            MacAppChrome.showMainWindow()
-            NotificationCenter.default.post(name: .macShowCompose, object: nil)
-        }
-        Button("Host panel…") {
-            MacAppChrome.showMainWindow()
-            NotificationCenter.default.post(name: .macShowHost, object: nil)
-        }
-        Button("Settings…") {
-            MacAppChrome.showMainWindow()
-            NotificationCenter.default.post(name: .macShowSettings, object: nil)
-        }
-        Divider()
-        if !host.apiReachable {
-            Button("Start host") {
-                host.start()
-                Task { await host.refreshStatus() }
-            }
-        } else {
-            Text("Host API reachable")
-        }
-        if host.isRunning {
-            Button("Stop app-owned host") {
-                host.stop()
-            }
-        }
-        Divider()
-        Button("Quit ClankerSpanker") {
-            NSApp.terminate(nil)
-        }
-    }
-
-    private var statusLine: String {
-        let api = host.apiReachable ? "API up" : "API down"
-        let ws = appState.socket.isConnected ? "Live" : "WS off"
-        return "\(api) · \(ws)"
-    }
-}
-
 enum MacAppChrome {
     static func showMainWindow() {
         NSApp.setActivationPolicy(.regular)
@@ -158,8 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Stay alive in the menu bar when the user closes the window
-        false
+        // Menu-bar duties moved to ClankerSpankerHostTray (RFC-016);
+        // closing the last window here means the user is done with the
+        // command center, so quit.
+        true
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -207,11 +149,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        NotificationCenter.default.post(name: .dispatchDeviceToken, object: hex)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("[push] APNs registration failed: \(error.localizedDescription)")
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .badge]
+        // Foreground: WebSocket already posts a local banner. Remote APNs
+        // should only refresh the badge so we do not double-notify.
+        if notification.request.trigger is UNPushNotificationTrigger {
+            return [.badge]
+        }
+        return [.banner, .sound, .badge]
     }
 
     /// Approve/Reject tapped from a notification action button. Forwards

@@ -114,6 +114,35 @@ struct MacComposePane: View {
                             } label: {
                                 Label("Pick cwd…", systemImage: "folder")
                             }
+                            Button {
+                                pickExtraFolders()
+                            } label: {
+                                Label("Extra folders…", systemImage: "folder.badge.plus")
+                            }
+                        }
+
+                        if !vm.extraDirs.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Also open")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                ForEach(vm.extraDirs, id: \.self) { dir in
+                                    HStack {
+                                        Text(dir)
+                                            .font(.system(.caption, design: .monospaced))
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Spacer()
+                                        Button {
+                                            vm.removeExtraDir(dir)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
                         }
 
                         TextField("Or type absolute path", text: $vm.customPath)
@@ -225,22 +254,25 @@ struct MacComposePane: View {
 
     private func pickCwdOnce() {
         let urls = FolderPicker.pickDirectories(
-            message: "Choose the working directory for this task",
+            message: "Choose the working directory. Select more than one to also add extra folders.",
             prompt: "Use Folder"
         )
-        // If user multi-selected, use the first as cwd and register all
         guard let first = urls.first else { return }
-        if urls.count > 1 {
-            let folders = urls.map { url -> (id: String, name: String, path: String) in
-                (url.lastPathComponent.lowercased() + "-" + String(abs(url.path.hashValue), radix: 16),
-                 url.lastPathComponent,
-                 url.path)
-            }
-            try? LocalHostConfigFile.mergeProjects(folders)
-            projectNote = "Using \(first.path); also registered \(urls.count) folders"
-        }
         vm.customPath = first.path
         vm.selectedProjectId = nil
+        let extras = urls.dropFirst().map(\.path)
+        if !extras.isEmpty {
+            vm.addExtraFolderPaths(extras)
+            projectNote = "cwd \(first.lastPathComponent); \(extras.count) extra folder(s)"
+        }
+    }
+
+    private func pickExtraFolders() {
+        let urls = FolderPicker.pickDirectories(
+            message: "Choose extra workspace folders besides the working directory",
+            prompt: "Add"
+        )
+        vm.addExtraFolderPaths(urls.map(\.path))
     }
 
     private func dispatch() async {

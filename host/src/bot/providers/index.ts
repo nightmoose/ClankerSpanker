@@ -1,8 +1,12 @@
 import type { AgentProfile } from "../../types.js";
-import { normalizeBackend } from "../../profiles.js";
+import { normalizeBackend, profileProcessEnv } from "../../profiles.js";
 import { getClaudeCliAccessToken, claudeCodeUserAgent } from "../../usage.js";
 import type { ChatProvider, FetchLike } from "../protocol.js";
-import { getGrokCliAccessToken, readGrokCliAccessToken } from "../grok-cli-auth.js";
+import {
+  getGrokCliAccessToken,
+  grokAuthJsonPaths,
+  readGrokCliAccessToken,
+} from "../grok-cli-auth.js";
 import { getAgyAccessToken } from "../gemini-cli-auth.js";
 import { createAnthropicProvider } from "./anthropic.js";
 import { createGeminiProvider } from "./gemini.js";
@@ -11,21 +15,22 @@ import { createOpenAICompatProvider, remapBotModel } from "./openai-compat.js";
 export type ProviderKind = "xai" | "openai-compat" | "anthropic" | "gemini" | "none";
 
 export function envFromProfile(profile: AgentProfile): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env, ...(profile.env ?? {}) };
+  const env: Record<string, string | undefined> = { ...profileProcessEnv(profile) };
   if (!env.XAI_API_KEY?.trim()) {
-    const cli = readGrokCliAccessToken();
+    const cli = readGrokCliAccessToken(grokAuthJsonPaths(profile.grokHome));
     if (cli) env.XAI_API_KEY = cli;
   }
   return env;
 }
 
 async function envFromProfileFresh(profile: AgentProfile): Promise<Record<string, string | undefined>> {
-  const env: Record<string, string | undefined> = { ...process.env, ...(profile.env ?? {}) };
+  const env: Record<string, string | undefined> = { ...profileProcessEnv(profile) };
+  const authPaths = grokAuthJsonPaths(profile.grokHome);
   if (!profile.env?.XAI_API_KEY?.trim() && !process.env.XAI_API_KEY?.trim()) {
-    const cli = await getGrokCliAccessToken();
+    const cli = await getGrokCliAccessToken(authPaths);
     if (cli) env.XAI_API_KEY = cli;
   } else if (!env.XAI_API_KEY?.trim()) {
-    const cli = readGrokCliAccessToken();
+    const cli = readGrokCliAccessToken(authPaths);
     if (cli) env.XAI_API_KEY = cli;
   }
   return env;

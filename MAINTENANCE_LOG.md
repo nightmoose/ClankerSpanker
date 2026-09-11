@@ -2,6 +2,36 @@
 
 ---
 
+## Run: 2026-09-11 — RFC-019 stuck "Running" + phantom pending questions
+
+Confirmed sessions were stranded on `status: "running"` after Grok
+had clearly ended the turn (`stopReason: "end_turn"`, transcript
+final, `isLive: false`, persisted `pendingApproval` /
+`pendingQuestion` both `null`). Root cause in
+`host/src/acp/session-manager.ts`: the end-of-turn block gated
+the flip to `idle` on the in-memory `live.pendingApprovals` /
+`live.pendingQuestions` maps, and `maybeParkAskUserQuestionFromTool`
+cleared the persisted `pendingQuestion` on tool completion without
+draining the map. Phantom entry → the flip skipped forever.
+
+Fix: extracted two pure helpers — `shouldFlipToIdleAfterTurn(session)`
+reads the persisted `pendingApproval` / `pendingQuestion` only, and
+`drainPendingQuestionsByToolCall(map, toolCallId)` clears matching
+map entries when the underlying `AskUserQuestion` tool finishes.
+`handlePrompt` calls the first, `maybeParkAskUserQuestionFromTool`
+calls the second. 9 new vitest cases in
+`session-manager.stuck-running.test.ts`; baseline 198 → 207.
+
+Stuck session `a53072c3-ccae-4622-93e5-22d3107bd272` was hand-patched
+to `status: "idle"` on disk after the host bounce so it renders
+correctly without a follow-up turn.
+
+**Soak:** kickstart `com.nightmoose.grok-dispatch-host`, send a
+follow-up in any long-running Grok chat, verify the pill flips from
+Running → Your turn once `session/prompt` returns.
+
+---
+
 ## Run: 2026-09-11 — RFC-018 markdown link resolver with cwd context
 
 Grok emits `[foo.pdf](foo.pdf)` — bare relative paths. Tapping the

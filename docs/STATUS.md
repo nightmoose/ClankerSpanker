@@ -24,3 +24,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 016 | [Standalone Mac host tray](rfcs/016-host-tray.md) | Accepted | `nightly-maintenance-2026-09-09-rfc016-host-tray` |
 | 017 | [Duplicate Grok assistant messages](rfcs/017-grok-dupe.md) | Draft | `nightly-maintenance-2026-09-11-rfc017-grok-dupe` |
 | 018 | [Markdown link resolver with cwd context](rfcs/018-mdlink.md) | Accepted | `nightly-maintenance-2026-09-11-rfc018-mdlink` |
+| 019 | [Stuck "Running" + phantom pending questions](rfcs/019-stuck-running.md) | Accepted | `nightly-maintenance-2026-09-11-rfc019-stuck-running` |

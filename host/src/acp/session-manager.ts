@@ -300,6 +300,52 @@ export function lastUserTextIs(session: { transcript?: TranscriptEntry[] }, text
 }
 
 /**
+ * After `session/prompt` returns for a Grok turn, decide whether the session
+ * should flip to `idle`. Reads only the *persisted* session — the in-memory
+ * LiveSession bookkeeping maps used to be the source of truth here, but they
+ * drifted (see RFC-019) and stranded sessions on `running` forever when a
+ * cleared `AskUserQuestion` left a phantom entry behind.
+ *
+ * Returns `false` for terminal states (`cancelled` / `failed`), for states
+ * that are legitimately waiting on the user (`awaiting_approval` /
+ * `awaiting_question`), and for any session that still carries a persisted
+ * `pendingApproval` or `pendingQuestion`. Everything else flips.
+ */
+export function shouldFlipToIdleAfterTurn(
+  session: Pick<DispatchSession, "status" | "pendingApproval" | "pendingQuestion">,
+): boolean {
+  const s = session.status;
+  if (s === "cancelled" || s === "failed") return false;
+  if (s === "awaiting_approval" || s === "awaiting_question") return false;
+  if (session.pendingApproval != null) return false;
+  if (session.pendingQuestion != null) return false;
+  return true;
+}
+
+/**
+ * Remove every entry in a `pendingQuestions` map that belongs to a given
+ * `toolCallId`. Used when the underlying `AskUserQuestion` tool call
+ * finishes so the LiveSession bookkeeping doesn't lie to
+ * `shouldFlipToIdleAfterTurn` (RFC-019).
+ *
+ * Returns the count of drained entries so callers can log / assert.
+ */
+export function drainPendingQuestionsByToolCall(
+  map: Map<string, PendingQuestion & { rpcId?: number | string }>,
+  toolCallId: string | undefined,
+): number {
+  if (!toolCallId) return 0;
+  let drained = 0;
+  for (const [qid, q] of map) {
+    if (q.toolCallId === toolCallId) {
+      map.delete(qid);
+      drained += 1;
+    }
+  }
+  return drained;
+}
+
+/**
  * First-turn Grok ACP prompt. Profile instructions are injected here (ACP has
  * no systemPrompt field) and skipped on resume / follow-up.
  */
@@ -3626,24 +3672,19 @@ export class SessionManager extends EventEmitter {
       this.flushAssistant(live);
 
       session.stopReason = result.stopReason;
-      const statusNow = live.session.status;
-      if (statusNow !== "cancelled" && statusNow !== "failed") {
-        if (
-          statusNow !== "awaiting_approval" &&
-          statusNow !== "awaiting_question" &&
-          live.pendingApprovals.size === 0 &&
-          live.pendingQuestions.size === 0
-        ) {
-          // Idle = ready for another message (multi-turn). Not a terminal "Done".
-          live.session.status = "idle";
-          live.session.updatedAt = now();
-          this.persist(live.session);
-          this.emitEvent(live.session, "session.updated", {
-            stopReason: result.stopReason,
-            status: "idle",
-          });
-          this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
-        }
+      // Trust the persisted session — the in-memory LiveSession bookkeeping
+      // maps drift out of sync (RFC-019 chased a phantom question that
+      // stranded sessions on `running` forever).
+      if (shouldFlipToIdleAfterTurn(live.session)) {
+        // Idle = ready for another message (multi-turn). Not a terminal "Done".
+        live.session.status = "idle";
+        live.session.updatedAt = now();
+        this.persist(live.session);
+        this.emitEvent(live.session, "session.updated", {
+          stopReason: result.stopReason,
+          status: "idle",
+        });
+        this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
       }
     } catch (err) {
       if (live.session.status === "cancelled") return;
@@ -3916,13 +3957,16 @@ export class SessionManager extends EventEmitter {
     const ri = record.rawInput as { variant?: string; questions?: unknown } | undefined;
     if (!ri || ri.variant !== "AskUserQuestion") return;
     if (record.status === "completed" || record.status === "failed") {
-      // Clear soft pending if tool finished
+      // Clear soft pending if tool finished. Drain matching entries from
+      // `live.pendingQuestions` too — leaving them behind used to keep
+      // the end-of-turn block from flipping to idle (RFC-019).
       if (live.session.pendingQuestion?.toolCallId === record.toolCallId) {
         live.session.pendingQuestionId = undefined;
         live.session.pendingQuestion = null;
         if (live.session.status === "awaiting_question") live.session.status = "running";
         this.persist(live.session);
       }
+      drainPendingQuestionsByToolCall(live.pendingQuestions, record.toolCallId);
       return;
     }
     const questions = normalizeQuestions(ri.questions);

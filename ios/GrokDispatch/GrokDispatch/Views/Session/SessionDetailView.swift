@@ -803,6 +803,8 @@ struct SessionDetailView: View {
                 isRunning: detail.status == .running,
                 agentLabel: agentLabel(for: detail),
                 chatOnly: chatOnly,
+                cwd: detail.cwd,
+                onOpenLocalFile: { absolute in openFileInViewer(absolute, cwd: detail.cwd) },
                 onSaveAsTodo: { entry in captureSheet = .saveAsTodo(entry) },
                 onScanForTodo: { entry in captureSheet = .scanForTodo(entry) },
                 onMakeNote: { entry in captureSheet = .makeNote(entry) },

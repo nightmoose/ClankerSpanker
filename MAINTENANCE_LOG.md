@@ -2,6 +2,32 @@
 
 ---
 
+## Run: 2026-09-11 — RFC-018 markdown link resolver with cwd context
+
+Grok emits `[foo.pdf](foo.pdf)` — bare relative paths. Tapping the
+Markdown link in the expanded-message view (via
+`AttributedString(markdown:)`) forwarded that URL to
+`NSWorkspace.shared.open`, which macOS rejected with
+`-50 paramErr` and popped "The application can't be opened."
+
+New helper `MarkdownLinkResolver` decides: system-scheme URLs pass to
+the OS, iOS discards relative paths (no filesystem reach), and macOS
+resolves them against the session's `cwd`. Threaded `cwd` +
+`onOpenLocalFile` through `TranscriptView → ExpandedMessage →
+ExpandedMessageView → MarkdownView`, then wrapped the Markdown
+renderer's `.environment(\.openURL, OpenURLAction { … })` around the
+resolver. `SessionDetailView` passes `detail.cwd` and routes the
+callback through the existing `openFileInViewer(_:cwd:)` →
+`AppState.openInViewer(_:)` chain.
+
+**Soak:** in a Grok session with relative doc links, tap one in the
+Expand view — Preview / Safari opens the correct file under
+`detail.cwd`. Absolute `https://` links still open the browser. On
+the phone (RFC-002-era session with `cwd`), the tap is a no-op — no
+system alert. RFC-017 (dup response) is Draft, follow-up.
+
+---
+
 ## Run: 2026-09-09 — RFC-016 standalone Mac host tray
 
 New Xcode target `ClankerSpankerHostTray` (scheme + `.app`), a

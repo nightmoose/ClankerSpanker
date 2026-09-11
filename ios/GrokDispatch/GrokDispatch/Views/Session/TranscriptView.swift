@@ -13,6 +13,13 @@ struct TranscriptView: View {
     var agentLabel: String = "Agent"
     /// When true, hide tool rows, thoughts, and system lines — chat messages only.
     var chatOnly: Bool = false
+    /// Session working directory. Threaded into the expanded-message
+    /// Markdown renderer so Grok's `[foo.pdf](foo.pdf)` opens the right
+    /// absolute file instead of triggering macOS's "-50" alert.
+    var cwd: String? = nil
+    /// Handler for a resolved relative link tap. Callers route this
+    /// through `AppState.openInViewer(_:)`.
+    var onOpenLocalFile: ((String) -> Void)? = nil
 
     /// Long-press context-menu hooks. Set any or all to expose those actions
     /// on the bubble's long-press menu. Parent presents the corresponding
@@ -134,13 +141,13 @@ struct TranscriptView: View {
         // fullScreenCover is iOS-only; Mac uses a large sheet instead.
         #if os(iOS)
         .fullScreenCover(item: $expanded) { item in
-            ExpandedMessageView(item: item) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
                 expanded = nil
             }
         }
         #else
         .sheet(item: $expanded) { item in
-            ExpandedMessageView(item: item) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
                 expanded = nil
             }
             .frame(minWidth: 520, minHeight: 420)
@@ -158,7 +165,8 @@ struct TranscriptView: View {
             id: entry.id,
             role: entry.role,
             text: entry.text,
-            title: roleLabel(entry.role)
+            title: roleLabel(entry.role),
+            cwd: cwd
         )
     }
 
@@ -179,7 +187,8 @@ struct TranscriptView: View {
                                 id: id,
                                 role: role,
                                 text: text,
-                                title: roleLabel(role)
+                                title: roleLabel(role),
+                                cwd: cwd
                             )
                         } label: {
                             Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -326,10 +335,15 @@ struct ExpandedMessage: Identifiable, Hashable {
     let role: String
     let text: String
     let title: String
+    /// Session cwd for resolving relative Markdown links tapped inside
+    /// the expanded view. `nil` means "no resolver — discard relative
+    /// links" (safer than triggering macOS's "-50" alert).
+    var cwd: String? = nil
 }
 
 struct ExpandedMessageView: View {
     let item: ExpandedMessage
+    var onOpenLocalFile: ((String) -> Void)? = nil
     var onDismiss: () -> Void
     #if os(iOS)
     private enum Mode: String, CaseIterable {
@@ -394,7 +408,7 @@ struct ExpandedMessageView: View {
 
     private var renderedScroll: some View {
         ScrollView {
-            MarkdownView(text: item.text)
+            MarkdownView(text: item.text, cwd: item.cwd, onOpenLocalFile: onOpenLocalFile)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
         }
@@ -443,6 +457,13 @@ private struct SelectableMessageText: UIViewRepresentable {
 /// plain text on any parse error so a broken snippet never blanks the view.
 struct MarkdownView: View {
     let text: String
+    /// Session cwd for resolving relative link hrefs (`[foo](foo.pdf)`).
+    /// `nil` means "discard relative links" — safer than macOS's "-50" alert.
+    var cwd: String? = nil
+    /// Callback invoked with the absolute file path when a relative link
+    /// resolves to a local file. Callers route this through
+    /// `AppState.openInViewer(_:)`.
+    var onOpenLocalFile: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -450,6 +471,22 @@ struct MarkdownView: View {
                 render(block)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            #if os(macOS)
+            let isMac = true
+            #else
+            let isMac = false
+            #endif
+            switch MarkdownLinkResolver.resolve(url: url, cwd: cwd, platformIsMac: isMac) {
+            case .systemHandle:
+                return .systemAction
+            case .openLocalFile(let fileURL):
+                onOpenLocalFile?(fileURL.path)
+                return .handled
+            case .discard:
+                return .discarded
+            }
+        })
     }
 
     @ViewBuilder

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AgentProfile, HostConfigFile, PublicAgentProfile, SessionBackend } from "./types.js";
+import { normalizeMcpServers, publicMcpServers } from "./mcp.js";
 
 /** Built-in defaults until the user customizes ~/.grok-dispatch/config.json */
 export function defaultProfiles(): AgentProfile[] {
@@ -52,6 +53,69 @@ function defaultColorForBackend(backend: SessionBackend): string {
   return "#73B8FF";
 }
 
+function cleanStringList(raw?: string[] | null): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s) => String(s).trim()).filter((s) => s.length > 0);
+}
+
+/** Signatures look like `claude:bash:git status`; pre-flight tools are bare names. */
+export function looksLikeApprovalSignature(entry: string): boolean {
+  return entry.includes(":");
+}
+
+/**
+ * Split the old dual-use `toolAllowlist` into pre-flight tool names vs
+ * post-hoc auto-approve signatures. Signature-shaped entries migrate to
+ * `autoApprovalSignatures` for one release.
+ */
+export function splitProfileToolFields(p: {
+  toolAllowlist?: string[] | null;
+  autoApprovalSignatures?: string[] | null;
+}): { toolAllowlist?: string[]; autoApprovalSignatures?: string[] } {
+  const rawAllow = cleanStringList(p.toolAllowlist);
+  const rawAuto = cleanStringList(p.autoApprovalSignatures);
+  const signatures = rawAllow.filter(looksLikeApprovalSignature);
+  const tools = rawAllow.filter((s) => !looksLikeApprovalSignature(s));
+  const auto = [...new Set([...rawAuto, ...signatures])];
+  return {
+    toolAllowlist: tools.length ? tools : undefined,
+    autoApprovalSignatures: auto.length ? auto : undefined,
+  };
+}
+
+/** Empty allowlist means no extra restriction. Matching is case-insensitive. */
+export function isToolOnAllowlist(
+  allowlist: readonly string[] | undefined,
+  toolName: string,
+): boolean {
+  if (!allowlist?.length) return true;
+  const n = toolName.trim().toLowerCase();
+  if (!n) return true;
+  return allowlist.some((raw) => {
+    const e = raw.trim().toLowerCase();
+    return e === n || n.startsWith(e) || e.startsWith(n);
+  });
+}
+
+/** Whether a permission request is allowed by a pre-flight toolAllowlist. */
+export function allowlistAllowsTool(
+  allowlist: readonly string[] | undefined,
+  opts: { toolName?: string; kind?: string; title?: string },
+): boolean {
+  if (!allowlist?.length) return true;
+  const names: string[] = [];
+  if (opts.toolName?.trim()) names.push(opts.toolName.trim());
+  if (opts.title?.trim()) names.push(opts.title.trim().split(/[\s:]+/)[0]!);
+  const kind = opts.kind?.trim().toLowerCase();
+  if (kind) {
+    names.push(kind);
+    if (kind === "execute") names.push("Bash");
+    if (kind === "edit") names.push("Edit", "Write");
+    if (kind === "read") names.push("Read");
+  }
+  return names.some((n) => isToolOnAllowlist(allowlist, n));
+}
+
 export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
   if (!raw?.length) return defaultProfiles();
   const seen = new Set<string>();
@@ -70,11 +134,11 @@ export function normalizeProfiles(raw?: AgentProfile[] | null): AgentProfile[] {
       env: p.env && typeof p.env === "object" ? { ...p.env } : {},
       claudeConfigDir: p.claudeConfigDir?.trim() || undefined,
       antigravityConfigDir: p.antigravityConfigDir?.trim() || undefined,
+      grokHome: p.grokHome?.trim() || undefined,
       model: p.model?.trim() || undefined,
       systemPrompt: p.systemPrompt?.trim() || undefined,
-      toolAllowlist: Array.isArray(p.toolAllowlist)
-        ? p.toolAllowlist.map((s) => String(s).trim()).filter((s) => s.length > 0)
-        : undefined,
+      ...splitProfileToolFields(p),
+      mcpServers: normalizeMcpServers(p.mcpServers),
     });
   }
   return out.length ? out : defaultProfiles();
@@ -89,6 +153,8 @@ export function publicProfiles(config: HostConfigFile): PublicAgentProfile[] {
     model: p.model,
     systemPrompt: p.systemPrompt,
     toolAllowlist: p.toolAllowlist,
+    autoApprovalSignatures: p.autoApprovalSignatures,
+    mcpServers: publicMcpServers(p.mcpServers),
     hasCredentials: profileHasCredentials(p),
   }));
 }
@@ -131,7 +197,8 @@ export function profileHasCredentials(p: AgentProfile): boolean {
     if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || env.GOOGLE_GENAI_API_KEY?.trim()) {
       return true;
     }
-    // Same Grok CLI login NightMoose uses for ACP.
+    // Per-profile Grok home wins over the shared login when set.
+    if (p.grokHome?.trim() && existsSync(join(p.grokHome.trim(), "auth.json"))) return true;
     const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
     if (existsSync(join(grokHome, "auth.json"))) return true;
     if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
@@ -139,6 +206,7 @@ export function profileHasCredentials(p: AgentProfile): boolean {
   }
   // Grok: API key env OR CLI login (~/.grok/auth.json from `grok` sign-in)
   if (process.env.XAI_API_KEY?.trim() || p.env?.XAI_API_KEY?.trim()) return true;
+  if (p.grokHome?.trim() && existsSync(join(p.grokHome.trim(), "auth.json"))) return true;
   const grokHome = process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
   if (existsSync(join(grokHome, "auth.json"))) return true;
   if (existsSync(join(homedir(), ".config", "grok", "auth.json"))) return true;
@@ -174,6 +242,10 @@ export function profileProcessEnv(profile: AgentProfile): NodeJS.ProcessEnv {
     // Hint for future multi-login; also set XDG-style home override if useful
     env.ANTIGRAVITY_CONFIG_DIR = profile.antigravityConfigDir;
   }
+  if (profile.grokHome) {
+    // Grok CLI + ACP read GROK_HOME for auth.json, sessions, MCP creds
+    env.GROK_HOME = profile.grokHome;
+  }
   return env;
 }
 
@@ -188,14 +260,51 @@ export function defaultModelForBackend(backend: SessionBackend): string {
 /**
  * Model strings that mean "let the CLI pick its own default." When the
  * session model matches one of these, runners should NOT pass `--model` —
- * the CLI's own default (usually the newest Sonnet / Opus for the account
- * plan) is preferable to pinning an old slug.
+ * the CLI's own default is preferable to pinning a stale slug.
  */
-const CLAUDE_MODEL_SENTINELS: ReadonlySet<string> = new Set(["claude", "default", ""]);
+const MODEL_SENTINELS: Record<Exclude<SessionBackend, "bot">, ReadonlySet<string>> = {
+  claude: new Set(["claude", "default", ""]),
+  antigravity: new Set(["antigravity", "agy", "gemini", "default", ""]),
+  grok: new Set(["grok", "grok-build", "default", ""]),
+};
+
+/** True when `model` is a placeholder and this backend should omit `--model`. Bot has no CLI flag. */
+export function isModelSentinel(backend: SessionBackend, model?: string | null): boolean {
+  if (backend === "bot") return false;
+  return MODEL_SENTINELS[backend].has((model ?? "").trim().toLowerCase());
+}
 
 /** True when the given model string is a placeholder that should not be passed to `claude --model`. */
 export function isClaudeModelSentinel(model?: string | null): boolean {
-  return CLAUDE_MODEL_SENTINELS.has((model ?? "").trim().toLowerCase());
+  return isModelSentinel("claude", model);
+}
+
+/**
+ * `grok agent` flags that belong before the `stdio` subcommand.
+ * Sentinels skip `--model` so the CLI's account default applies.
+ */
+export function grokAgentModelArgs(model?: string | null): string[] {
+  const m = model?.trim();
+  if (!m || isModelSentinel("grok", m)) return [];
+  return ["--model", m];
+}
+
+/**
+ * Prepend `profile.systemPrompt` to a user turn on backends with no native
+ * append-system-prompt flag (Grok ACP, Antigravity). Claude uses
+ * `--append-system-prompt` instead.
+ *
+ * Only inject on a fresh session start. Skip resume / follow-up so the
+ * persona is not restated on every turn.
+ */
+export function wrapWithProfileSystemPrompt(
+  userText: string,
+  systemPrompt: string | undefined,
+  opts: { fresh: boolean },
+): string {
+  const persona = systemPrompt?.trim();
+  if (!persona || !opts.fresh) return userText;
+  return `[Profile instructions]\n${persona}\n\n${userText}`;
 }
 
 /** Grok ACP meta (plan mode / worktree / subagents) — not used by CLI backends. */

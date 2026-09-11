@@ -88,6 +88,12 @@ export interface DispatchRequest {
   botTools?: string[];
   /** Optional screenshots on the opening turn (same shape as follow-up images). */
   images?: PromptImage[];
+  /**
+   * Extra workspace folders besides `cwd`. Claude/Antigravity get `--add-dir`;
+   * Grok is told about them in-session. Validated like cwd (must exist; custom
+   * paths honor allowCustomPaths).
+   */
+  extraDirs?: string[];
 }
 
 export type SessionBackend = "grok" | "claude" | "antigravity" | "bot";
@@ -117,21 +123,56 @@ export interface AgentProfile {
    * Reserved for multi-account isolation when the CLI grows support.
    */
   antigravityConfigDir?: string;
+  /**
+   * Optional per-profile Grok home dir. Threaded to `GROK_HOME` when spawning
+   * Grok CLI / ACP so multiple Grok profiles don't share `~/.grok/auth.json`,
+   * sessions, or MCP credentials.
+   */
+  grokHome?: string;
   /** Default model id when dispatching with this profile. */
   model?: string;
   /**
-   * Optional persona / project-context text appended to the agent's system
-   * prompt (Claude: `--append-system-prompt`). Keeps recurring instructions
-   * out of every dispatch and shrinks the user prompt.
+   * Optional persona / project-context text. Claude: `--append-system-prompt`.
+   * Grok ACP and Antigravity: prepended once on a fresh session start.
+   * Bot: folded into `buildMessages`. Keeps recurring instructions out of
+   * every dispatch.
    */
   systemPrompt?: string;
   /**
-   * Per-profile auto-approve allowlist. Each entry is a Claude approval
-   * signature (see claudeApprovalSignature) that skips the phone gate for
-   * this account. Example: `"claude:bash:git status"`, `"claude:read"`.
-   * Broader than session-scoped auto-approve — persists across sessions.
+   * Pre-flight tool names this profile may invoke (Bot-style). Empty/omit
+   * means no extra restriction. Example: `["Read", "Grep"]` cannot fire
+   * `Write`. Distinct from `autoApprovalSignatures`.
    */
   toolAllowlist?: string[];
+  /**
+   * Post-hoc auto-approve signatures that skip the phone gate. Example:
+   * `"claude:bash:git status"`, `"claude:read"`, `"grok:edit:Edit foo.ts"`.
+   * On load, signature-shaped entries still sitting in `toolAllowlist` are
+   * migrated here for one release.
+   */
+  autoApprovalSignatures?: string[];
+  /**
+   * MCP servers billed to this profile. Claude: `--mcp-config`. Grok ACP:
+   * `session/new` mcpServers. Secrets in env/headers never go on the wire
+   * (public profile lists names only).
+   */
+  mcpServers?: ProfileMcpServer[];
+}
+
+/** One MCP server attached to an AgentProfile (stdio or HTTP/SSE). */
+export interface ProfileMcpServer {
+  name: string;
+  enabled?: boolean;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  transport?: "stdio" | "http" | "sse";
+  /** Pre-registered OAuth client (skips DCR). */
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  oauthScope?: string;
 }
 
 /** Safe profile for wire format (no secrets). */
@@ -143,10 +184,20 @@ export interface PublicAgentProfile {
   model?: string;
   /** True when a non-empty API key / env is configured for this profile. */
   hasCredentials: boolean;
-  /** Persona / append-system-prompt configured for this profile (Claude only). */
+  /** Persona / system-prompt fragment configured for this profile. */
   systemPrompt?: string;
-  /** Auto-approve signatures for this profile (persist across sessions). */
+  /** Pre-flight tool names this profile may invoke. */
   toolAllowlist?: string[];
+  /** Post-hoc auto-approve signatures (persist across sessions). */
+  autoApprovalSignatures?: string[];
+  /** MCP server names (no env/headers). */
+  mcpServers?: Array<{
+    name: string;
+    enabled?: boolean;
+    command?: string;
+    url?: string;
+    transport?: string;
+  }>;
   /**
    * Live quota / readiness. Populated by GET /profiles?usage=1 (Claude OAuth
    * 5h + weekly windows, Grok weekly credits, Gemini Cloud Code remainingFraction).
@@ -270,6 +321,8 @@ export interface DispatchSession {
   title: string;
   prompt: string;
   cwd: string;
+  /** Extra workspace folders besides cwd (Claude/Antigravity `--add-dir`). */
+  extraDirs?: string[];
   projectId?: string;
   model: string;
   planMode: boolean;
@@ -556,6 +609,31 @@ export interface AttachClaudeRequest {
   profileId?: string;
 }
 
+/** Open an Antigravity / Gemini CLI conversation (`agy --conversation`). */
+export interface AttachAgyRequest {
+  conversationId: string;
+  cwd: string;
+  title?: string;
+  /** Optional first message after attach. */
+  prompt?: string;
+  profileId?: string;
+}
+
+export interface ApnsConfig {
+  /** 10-char Key ID from Apple Developer → Keys. */
+  keyId?: string;
+  /** 10-char Team ID (Nightmoose: XHS7K665C9). */
+  teamId?: string;
+  /** PEM contents. Prefer `keyPath` so the secret is not in config.json. */
+  keyP8?: string;
+  /** Path to the .p8; relative to `dataDir` or absolute. */
+  keyPath?: string;
+  /** Default com.nightmoose.clankerspanker */
+  bundleId?: string;
+  /** sandbox | production | auto (sandbox first, then the other on BadDeviceToken). */
+  environment?: "sandbox" | "production" | "auto";
+}
+
 export interface HostConfigFile {
   hostToken: string;
   bindHost: string;
@@ -574,6 +652,11 @@ export interface HostConfigFile {
   notifyDesktop: boolean;
   /** @deprecated Use notifyDesktop */
   notifyMac?: boolean;
+  /**
+   * Outbound APNs so a killed iPhone still badges. Never returned on public
+   * profile/status payloads. Key file stays under dataDir/apns/.
+   */
+  apns?: ApnsConfig;
   dataDir: string;
   /**
    * Idle hang detection for open `session/prompt` turns (ms of no ACP activity).
@@ -617,7 +700,27 @@ export interface PublicSessionSummary {
   antigravityConversationId?: string;
 }
 
+export interface SessionFileEntry {
+  path: string;
+  kind: "file" | "folder" | "attachment";
+  title?: string;
+  updatedAt?: string;
+}
+
+export interface SessionFileContent {
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  encoding: "utf8" | "base64";
+  text?: string;
+  data?: string;
+  truncated?: boolean;
+  binary?: boolean;
+}
+
 export interface PublicSessionDetail extends PublicSessionSummary {
+  extraDirs?: string[];
   subagents: boolean;
   worktree: boolean;
   stopReason?: string;

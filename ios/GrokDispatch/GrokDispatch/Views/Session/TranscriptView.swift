@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct TranscriptView: View {
     let entries: [TranscriptEntry]
@@ -8,6 +11,15 @@ struct TranscriptView: View {
     var isRunning: Bool = false
     /// Display name for assistant bubbles (Claude / Grok / Antigravity).
     var agentLabel: String = "Agent"
+    /// When true, hide tool rows, thoughts, and system lines — chat messages only.
+    var chatOnly: Bool = false
+    /// Session working directory. Threaded into the expanded-message
+    /// Markdown renderer so Grok's `[foo.pdf](foo.pdf)` opens the right
+    /// absolute file instead of triggering macOS's "-50" alert.
+    var cwd: String? = nil
+    /// Handler for a resolved relative link tap. Callers route this
+    /// through `AppState.openInViewer(_:)`.
+    var onOpenLocalFile: ((String) -> Void)? = nil
 
     /// Long-press context-menu hooks. Set any or all to expose those actions
     /// on the bubble's long-press menu. Parent presents the corresponding
@@ -44,8 +56,14 @@ struct TranscriptView: View {
     }
 
     private var ordered: [Item] {
-        var items: [Item] = entries.map { .entry($0) }
-        items.append(contentsOf: toolCalls.map { .tool($0) })
+        let chatRoles: Set<String> = ["user", "assistant"]
+        let visibleEntries = chatOnly
+            ? entries.filter { chatRoles.contains($0.role) }
+            : entries
+        var items: [Item] = visibleEntries.map { .entry($0) }
+        if !chatOnly {
+            items.append(contentsOf: toolCalls.map { .tool($0) })
+        }
         return items.sorted { $0.timestamp < $1.timestamp }
     }
 
@@ -58,6 +76,11 @@ struct TranscriptView: View {
                         .id(entry.id)
                         .transition(.opacity)
                         .contextMenu {
+                            Button {
+                                DispatchClipboard.copy(entry.text)
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
                             if let onSaveAsTodo {
                                 Button {
                                     onSaveAsTodo(entry)
@@ -118,13 +141,13 @@ struct TranscriptView: View {
         // fullScreenCover is iOS-only; Mac uses a large sheet instead.
         #if os(iOS)
         .fullScreenCover(item: $expanded) { item in
-            ExpandedMessageView(item: item) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
                 expanded = nil
             }
         }
         #else
         .sheet(item: $expanded) { item in
-            ExpandedMessageView(item: item) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
                 expanded = nil
             }
             .frame(minWidth: 520, minHeight: 420)
@@ -142,7 +165,8 @@ struct TranscriptView: View {
             id: entry.id,
             role: entry.role,
             text: entry.text,
-            title: roleLabel(entry.role)
+            title: roleLabel(entry.role),
+            cwd: cwd
         )
     }
 
@@ -163,7 +187,8 @@ struct TranscriptView: View {
                                 id: id,
                                 role: role,
                                 text: text,
-                                title: roleLabel(role)
+                                title: roleLabel(role),
+                                cwd: cwd
                             )
                         } label: {
                             Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -310,20 +335,48 @@ struct ExpandedMessage: Identifiable, Hashable {
     let role: String
     let text: String
     let title: String
+    /// Session cwd for resolving relative Markdown links tapped inside
+    /// the expanded view. `nil` means "no resolver — discard relative
+    /// links" (safer than triggering macOS's "-50" alert).
+    var cwd: String? = nil
 }
 
 struct ExpandedMessageView: View {
     let item: ExpandedMessage
+    var onOpenLocalFile: ((String) -> Void)? = nil
     var onDismiss: () -> Void
+    #if os(iOS)
+    private enum Mode: String, CaseIterable {
+        case rendered = "Read"
+        case select = "Select"
+    }
+    @State private var mode: Mode = .rendered
+    #endif
+    @State private var didCopy = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 DispatchBackground()
-                ScrollView {
-                    MarkdownView(text: item.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+                VStack(spacing: 0) {
+                    #if os(iOS)
+                    Picker("View", selection: $mode) {
+                        ForEach(Mode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    if mode == .select {
+                        SelectableMessageText(text: item.text)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        renderedScroll
+                    }
+                    #else
+                    renderedScroll
+                    #endif
                 }
             }
             .navigationTitle(item.title)
@@ -335,15 +388,65 @@ struct ExpandedMessageView: View {
                     Button("Done") { onDismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ShareLink(item: item.text) {
-                        Image(systemName: "square.and.arrow.up")
+                    HStack(spacing: 16) {
+                        Button {
+                            DispatchClipboard.copy(item.text)
+                            didCopy = true
+                        } label: {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                        }
+                        .accessibilityLabel("Copy message")
+                        ShareLink(item: item.text) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
                     }
                 }
             }
         }
         .preferredColorScheme(.dark)
     }
+
+    private var renderedScroll: some View {
+        ScrollView {
+            MarkdownView(text: item.text, cwd: item.cwd, onOpenLocalFile: onOpenLocalFile)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+    }
 }
+
+#if os(iOS)
+/// System text view so iPhone can select a span and Copy (SwiftUI Text
+/// `.textSelection` is unreliable inside this sheet).
+private struct SelectableMessageText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.backgroundColor = .clear
+        tv.textColor = UIColor(white: 0.92, alpha: 1)
+        tv.tintColor = UIColor(red: 0.45, green: 0.72, blue: 1, alpha: 1)
+        tv.font = UIFont.preferredFont(forTextStyle: .body)
+        tv.adjustsFontForContentSizeCategory = true
+        tv.textContainerInset = UIEdgeInsets(top: 16, left: 14, bottom: 24, right: 14)
+        tv.alwaysBounceVertical = true
+        tv.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.defaultLow, for: .vertical)
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        tv.text = text
+        return tv
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+}
+#endif
 
 // MARK: - Markdown rendering
 
@@ -354,6 +457,13 @@ struct ExpandedMessageView: View {
 /// plain text on any parse error so a broken snippet never blanks the view.
 struct MarkdownView: View {
     let text: String
+    /// Session cwd for resolving relative link hrefs (`[foo](foo.pdf)`).
+    /// `nil` means "discard relative links" — safer than macOS's "-50" alert.
+    var cwd: String? = nil
+    /// Callback invoked with the absolute file path when a relative link
+    /// resolves to a local file. Callers route this through
+    /// `AppState.openInViewer(_:)`.
+    var onOpenLocalFile: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -361,6 +471,22 @@ struct MarkdownView: View {
                 render(block)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            #if os(macOS)
+            let isMac = true
+            #else
+            let isMac = false
+            #endif
+            switch MarkdownLinkResolver.resolve(url: url, cwd: cwd, platformIsMac: isMac) {
+            case .systemHandle:
+                return .systemAction
+            case .openLocalFile(let fileURL):
+                onOpenLocalFile?(fileURL.path)
+                return .handled
+            case .discard:
+                return .discarded
+            }
+        })
     }
 
     @ViewBuilder
@@ -375,12 +501,24 @@ struct MarkdownView: View {
                 .font(.body)
                 .textSelection(.enabled)
         case .code(let body):
-            Text(body)
-                .font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .trailing, spacing: 0) {
+                Button {
+                    DispatchClipboard.copy(body)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy code block")
+                Text(body)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
         case .quote(let content):
             HStack(alignment: .top, spacing: 8) {
                 RoundedRectangle(cornerRadius: 1.5)

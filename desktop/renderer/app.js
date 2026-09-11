@@ -3,11 +3,13 @@
 const RECENT_LIMIT = 5;
 const AUTH_MARKERS = [
   "please run /login",
-  "oauth",
-  "not authenticated",
-  "unauthorized",
+  "not logged in",
+  "failed to authenticate",
+  "run grok login",
+  "oauth token missing",
+  "oauth token revoked",
+  "oauth token expired",
   "login required",
-  "auth login",
 ];
 
 const state = {
@@ -21,6 +23,7 @@ const state = {
   archived: [],
   disk: [],
   claude: [],
+  agy: [],
   projects: [],
   profiles: [],
   profileId: null,
@@ -28,6 +31,9 @@ const state = {
   detail: null,
   selectedId: null,
   tab: "transcript",
+  chatOnly: false,
+  sessionFiles: [],
+  sessionFilesFor: null,
   diff: null,
   diffLoading: false,
   approvalDraftComment: "",
@@ -42,6 +48,7 @@ const state = {
     worktree: true,
     subagents: true,
     images: [],
+    extraDirs: [],
   },
   wsStatus: "offline",
   hostStatus: null,
@@ -155,10 +162,15 @@ function projectNameFor(session) {
 function needsReLogin(detail) {
   if (!detail) return false;
   if (state.loginAckedFor === `${detail.id}:${detail.updatedAt || ""}`) return false;
-  const blob = [detail.error, ...(detail.transcript || []).map((e) => e.text)]
-    .filter(Boolean)
-    .join("\n")
-    .toLowerCase();
+  const lastNonUser = [...(detail.transcript || [])].reverse().find((e) => e.role !== "user");
+  const blob = [detail.error, lastNonUser?.text].filter(Boolean).join("\n").toLowerCase();
+  if (
+    blob.includes("oauth-protected-resource") ||
+    blob.includes("resource_metadata") ||
+    blob.includes("mcp connector needs sign in")
+  ) {
+    return false;
+  }
   return AUTH_MARKERS.some((m) => blob.includes(m));
 }
 
@@ -314,9 +326,11 @@ function setNav(nav) {
     projects: "Projects",
     tasks: "Tasks",
     bots: "Bots",
+    terminal: "Terminal",
     compose: "Compose",
     grok: "Grok disk",
     claude: "Claude disk",
+    agy: "Gemini disk",
     profiles: "Profiles",
     host: "Host",
     settings: "Desktop",
@@ -340,8 +354,9 @@ function setNav(nav) {
   $("#view-projects")?.classList.toggle("hidden", nav !== "projects");
   $("#view-tasks")?.classList.toggle("hidden", nav !== "tasks");
   $("#view-bots")?.classList.toggle("hidden", nav !== "bots");
+  $("#view-terminal")?.classList.toggle("hidden", nav !== "terminal");
   $("#view-compose").classList.toggle("hidden", nav !== "compose");
-  $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude");
+  $("#view-disk").classList.toggle("hidden", nav !== "grok" && nav !== "claude" && nav !== "agy");
   $("#view-host").classList.toggle("hidden", nav !== "host");
   $("#view-profiles")?.classList.toggle("hidden", nav !== "profiles");
   $("#view-settings").classList.toggle("hidden", nav !== "settings");
@@ -354,8 +369,9 @@ function setNav(nav) {
   } else if (nav === "projects") renderProjects();
   else if (nav === "tasks") renderTasks();
   else if (nav === "bots") renderBots();
+  else if (nav === "terminal") renderTerminal();
   else if (nav === "compose") renderCompose();
-  else if (nav === "grok" || nav === "claude") renderDisk(nav);
+  else if (nav === "grok" || nav === "claude" || nav === "agy") renderDisk(nav);
   else if (nav === "profiles") renderProfilesAdmin();
   else if (nav === "host") renderHost();
   else if (nav === "settings") renderDesktopSettings();
@@ -600,6 +616,8 @@ async function openSession(id, messageId) {
     state.pendingImages = [];
     state.noteDraft = "";
     state.taskDraft = "";
+    state.sessionFiles = [];
+    state.sessionFilesFor = null;
   }
   if (messageId) {
     state.tab = "transcript";
@@ -684,6 +702,7 @@ function renderDetail() {
 
     <div class="detail-tabs" role="tablist">
       <button type="button" data-tab="transcript" class="${state.tab === "transcript" ? "active" : ""}">Transcript</button>
+      ${state.tab === "transcript" ? `<label class="check chat-only-toggle"><input type="checkbox" id="chat-only" ${state.chatOnly ? "checked" : ""}/> Chat only</label>` : ""}
       <button type="button" data-tab="tools" class="${state.tab === "tools" ? "active" : ""}">Tools <span class="tab-count">${(d.toolCalls || []).length}</span></button>
       <button type="button" data-tab="plan" class="${state.tab === "plan" ? "active" : ""}" ${hasPlan ? "" : ""}>Plan${hasPlan ? ` <span class="tab-count">${d.plan.length}</span>` : ""}</button>
       <button type="button" data-tab="diff" class="${state.tab === "diff" ? "active" : ""}">Diff</button>
@@ -738,6 +757,12 @@ function renderDetail() {
       renderDetail();
       if (state.tab === "diff" && !state.diff && !state.diffLoading) loadDiff();
     });
+  });
+  $("#chat-only")?.addEventListener("change", (e) => {
+    state.chatOnly = Boolean(e.target.checked);
+    renderTabBody(d, running);
+    wireTranscriptCapture(d);
+    wireOpenPaths(d);
   });
 
   wireSessionMenu(d);
@@ -835,6 +860,18 @@ function renderTabBody(d, running) {
   if (state.tab === "notes") {
     el.innerHTML = renderNotesTab(d);
     wireNotesTab(d);
+    if (state.sessionFilesFor !== d.id) {
+      Api.sessionFiles(d.id)
+        .then((res) => {
+          state.sessionFiles = res.files || [];
+          state.sessionFilesFor = d.id;
+          if (state.tab === "notes" && state.detail?.id === d.id) {
+            el.innerHTML = renderNotesTab(d);
+            wireNotesTab(d);
+          }
+        })
+        .catch(() => undefined);
+    }
     return;
   }
 }
@@ -847,8 +884,12 @@ function scrollTranscriptToEnd() {
 // Merge transcript + tool calls sorted by timestamp so the reader sees
 // what the agent is actually doing between assistant turns instead of a blank gap.
 function mergedItems(d) {
-  const entries = (d.transcript || []).map((e) => ({ kind: "entry", at: e.at, data: e }));
-  const tools = (d.toolCalls || []).map((t) => ({ kind: "tool", at: t.updatedAt, data: t }));
+  const entries = (d.transcript || [])
+    .filter((e) => !state.chatOnly || e.role === "user" || e.role === "assistant")
+    .map((e) => ({ kind: "entry", at: e.at, data: e }));
+  const tools = state.chatOnly
+    ? []
+    : (d.toolCalls || []).map((t) => ({ kind: "tool", at: t.updatedAt, data: t }));
   return [...entries, ...tools].sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
@@ -1040,7 +1081,25 @@ function renderNotesTab(d) {
       <input id="note-draft" placeholder="Add a note…" value="${escapeAttr(state.noteDraft || "")}" />
       <button type="button" class="secondary" id="btn-add-note">Add note</button>
     </div>
+    <h4 class="section-h">Files (${(state.sessionFilesFor === d.id ? state.sessionFiles : []).length})</h4>
+    ${renderFilesList(d)}
+    <div class="note-add">
+      <button type="button" class="secondary" id="btn-add-extra-dirs">Add folders…</button>
+    </div>
   </div>`;
+}
+
+function renderFilesList(d) {
+  const files = state.sessionFilesFor === d.id ? state.sessionFiles || [] : [];
+  if (!files.length) {
+    return `<p class="hint">No files yet. Tool paths, extra folders, and attachments show up here.</p>`;
+  }
+  return `<ul class="notes-list files-list">${files
+    .map(
+      (f) =>
+        `<li class="note-item"><button type="button" class="ghost file-open" data-file-path="${escapeAttr(f.path)}" data-file-kind="${escapeAttr(f.kind || "file")}">${escapeHtml(f.title || f.path)}</button><span class="hint" title="${escapeAttr(f.path)}">${escapeHtml(shortPath(f.path))}</span></li>`,
+    )
+    .join("")}</ul>`;
 }
 
 function wireNotesTab(d) {
@@ -1121,6 +1180,25 @@ function wireNotesTab(d) {
   $("#note-draft")?.addEventListener("input", (e) => { state.noteDraft = e.target.value; });
   $("#task-draft")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
   $("#note-draft")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addNote(); } });
+  body.querySelectorAll("[data-file-path]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openInViewer(btn.getAttribute("data-file-path"));
+    });
+  });
+  $("#btn-add-extra-dirs")?.addEventListener("click", async () => {
+    const dirs = (await window.clanker.pickDirectories?.()) || [];
+    const extra = dirs.filter((p) => p && p !== d.cwd);
+    if (!extra.length) return;
+    try {
+      const detail = await Api.addExtraDirs(d.id, extra);
+      state.detail = { ...d, ...detail };
+      state.sessionFilesFor = null;
+      banner(`Added ${extra.length} folder(s)`);
+      renderDetail();
+    } catch (e) {
+      banner(e.message, true);
+    }
+  });
 }
 
 // ——— Approval ———
@@ -1247,6 +1325,7 @@ async function refreshSessions() {
     state.archived = sessions.archivedSessions || [];
     state.disk = sessions.diskSessions || [];
     state.claude = sessions.claudeSessions || [];
+    state.agy = sessions.agySessions || [];
     state.projects = projects.projects || [];
     state.profiles = profiles.profiles || [];
     state.admin = profiles.admin === true;
@@ -1631,8 +1710,13 @@ function wireSessionMenu(d) {
             if (!title) return;
             state.detail = await Api.renameSession(d.id, title);
           } else if (act === "close") {
-            state.detail = await Api.close(d.id);
+            await Api.close(d.id);
             banner("Closed as done");
+            state.detail = null;
+            state.selectedId = null;
+            await refreshSessions();
+            renderDetail();
+            return;
           } else if (act === "cancel") {
             state.detail = await Api.cancel(d.id);
           } else if (act === "transfer") {
@@ -1791,6 +1875,16 @@ function renderCompose() {
         </div>
         <label class="field">Custom cwd (optional)</label>
         <input id="c-cwd" placeholder="/absolute/path when host allows custom paths" value="${escapeAttr(draft.cwd || "")}" />
+        <label class="field">Extra folders</label>
+        <div class="row-inline">
+          <button type="button" class="secondary" id="c-extra-folders">Pick extra folders…</button>
+        </div>
+        <ul class="notes-list" id="c-extra-list">${(draft.extraDirs || [])
+          .map(
+            (dir, i) =>
+              `<li class="note-item"><span>${escapeHtml(dir)}</span><button type="button" class="ghost" data-rm-extra="${i}">✕</button></li>`,
+          )
+          .join("")}</ul>
         <label class="field">Title (optional)</label>
         <input id="c-title" placeholder="Short name" value="${escapeAttr(draft.title || "")}" />
         <label class="field">Prompt</label>
@@ -1822,6 +1916,7 @@ function renderCompose() {
       worktree: $("#c-wt") ? $("#c-wt").checked : state.composeDraft.worktree,
       subagents: $("#c-sub")?.checked !== false,
       images: state.composeDraft.images || [],
+      extraDirs: state.composeDraft.extraDirs || [],
     };
   };
   root.querySelectorAll("input, textarea, select").forEach((el) => {
@@ -1834,6 +1929,30 @@ function renderCompose() {
       state.profileId = p.defaultProfileId;
       renderProfiles();
     }
+  });
+  $("#c-extra-folders")?.addEventListener("click", async () => {
+    persist();
+    const dirs = (await window.clanker.pickDirectories?.()) || [];
+    const cwd = (state.composeDraft.cwd || "").trim();
+    const extra = dirs.filter((p) => p && p !== cwd);
+    if (!extra.length) return;
+    const have = new Set(state.composeDraft.extraDirs || []);
+    state.composeDraft.extraDirs = [...(state.composeDraft.extraDirs || [])];
+    for (const dir of extra) {
+      if (!have.has(dir)) {
+        have.add(dir);
+        state.composeDraft.extraDirs.push(dir);
+      }
+    }
+    renderCompose();
+  });
+  root.querySelectorAll("[data-rm-extra]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      persist();
+      const i = Number(btn.getAttribute("data-rm-extra"));
+      (state.composeDraft.extraDirs || []).splice(i, 1);
+      renderCompose();
+    });
   });
   $("#c-add-folder")?.addEventListener("click", async () => {
     const dir = await window.clanker.pickDirectory();
@@ -1918,6 +2037,7 @@ function renderCompose() {
             : `Please review these ${images.length} screenshots for debugging.`),
         projectId: state.composeDraft.projectId || undefined,
         cwd: state.composeDraft.cwd.trim() || undefined,
+        extraDirs: (state.composeDraft.extraDirs || []).filter((p) => p && p !== state.composeDraft.cwd.trim()),
         title: state.composeDraft.title.trim() || undefined,
         subagents: state.composeDraft.subagents,
         profileId: state.profileId || undefined,
@@ -1932,6 +2052,7 @@ function renderCompose() {
       state.composeDraft.prompt = "";
       state.composeDraft.title = "";
       state.composeDraft.images = [];
+      state.composeDraft.extraDirs = [];
       await refreshSessions();
       setNav("sessions");
       openSession(detail.id);
@@ -1945,13 +2066,23 @@ function renderCompose() {
 
 function renderDisk(kind) {
   const root = $("#view-disk");
-  const rows = kind === "claude" ? state.claude : state.disk;
+  const rows = kind === "claude" ? state.claude : kind === "agy" ? state.agy || [] : state.disk;
   if (!rows.length) {
-    root.innerHTML = `<div class="list-empty">No ${kind === "claude" ? "Claude" : "Grok"} sessions on disk.</div>`;
+    const label = kind === "claude" ? "Claude" : kind === "agy" ? "Gemini CLI" : "Grok";
+    root.innerHTML = `<div class="list-empty">No ${label} sessions on disk.</div>`;
     return;
   }
   root.innerHTML = `<div class="stack-gap" style="max-width:720px">${rows
     .map((d) => {
+      if (kind === "agy") {
+        return `<article class="card">
+          <h3>${escapeHtml(d.title || d.id.slice(0, 8))}</h3>
+          <div class="meta"><span>${escapeHtml(shortPath(d.cwd || ""))}</span></div>
+          <div class="inline-actions">
+            <button type="button" class="primary" data-attach-agy="${escapeAttr(d.id)}" data-cwd="${escapeAttr(d.cwd || "")}" data-title="${escapeAttr(d.title || "")}">Resume Gemini CLI</button>
+          </div>
+        </article>`;
+      }
       if (kind === "claude") {
         return `<article class="card">
           <h3>${escapeHtml(d.title || d.id.slice(0, 8))}</h3>
@@ -1981,6 +2112,24 @@ function renderDisk(kind) {
           title: el.getAttribute("data-title") || undefined,
         });
         banner("Attached Grok session");
+        await refreshSessions();
+        setNav("sessions");
+        openSession(detail.id);
+      } catch (e) {
+        banner(e.message, true);
+      }
+    });
+  });
+  root.querySelectorAll("[data-attach-agy]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      try {
+        const detail = await Api.attachAgy({
+          conversationId: el.getAttribute("data-attach-agy"),
+          cwd: el.getAttribute("data-cwd"),
+          title: el.getAttribute("data-title") || undefined,
+          profileId: state.profileId || undefined,
+        });
+        banner("Attached Gemini CLI conversation");
         await refreshSessions();
         setNav("sessions");
         openSession(detail.id);
@@ -2078,8 +2227,31 @@ async function loadViewer(path) {
   const run = async (p) => {
     state.viewerPath = p;
     const res = await window.clanker.readLocalFile(p);
-    const html = res?.ok ? FileViewer.render(res) : FileViewer.error(res?.error || "Unreadable");
-    frame.srcdoc = html;
+    if (res?.ok) {
+      frame.srcdoc = FileViewer.render(res);
+      return;
+    }
+    if (state.detail?.id) {
+      try {
+        const remote = await Api.sessionFile(state.detail.id, p);
+        const ext = String(remote.name || p)
+          .split(".")
+          .pop();
+        frame.srcdoc = FileViewer.render({
+          path: remote.path,
+          filename: remote.name,
+          ext,
+          text: remote.text,
+          dataUrl: remote.data ? `data:${remote.mimeType};base64,${remote.data}` : undefined,
+          binary: remote.binary,
+        });
+        return;
+      } catch (err) {
+        frame.srcdoc = FileViewer.error(err.message || res?.error || "Unreadable");
+        return;
+      }
+    }
+    frame.srcdoc = FileViewer.error(res?.error || "Unreadable");
   };
   $("#viewer-go")?.addEventListener("click", () => run($("#viewer-path").value.trim()));
   $("#viewer-path")?.addEventListener("keydown", (e) => {
@@ -2383,6 +2555,19 @@ async function loadBotOutbox(botId) {
   } catch (e) {
     state.botOutbox[botId] = [];
   }
+}
+
+function renderTerminal() {
+  const root = $("#view-terminal");
+  if (!root) return;
+  const { hostURL, token } = Api.getConnection();
+  if (!hostURL || !token) {
+    root.innerHTML = `<p class="hint">Connect a host in Desktop settings first.</p>`;
+    return;
+  }
+  const src = `${String(hostURL).replace(/\/$/, "")}/app/terminal.html#token=${encodeURIComponent(token)}&autostart=1`;
+  if (root.querySelector("iframe")?.getAttribute("src") === src) return;
+  root.innerHTML = `<iframe class="term-frame" src="${escapeAttr(src)}" title="Host terminal"></iframe>`;
 }
 
 async function renderBots() {

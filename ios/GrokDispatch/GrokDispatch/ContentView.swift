@@ -53,9 +53,10 @@ struct ContentView: View {
 #if os(iOS)
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        // Top tab strip on every page (Sessions → Settings), including when a
+        // Top tab strip on every page (Sessions → Bots → Settings), including when a
         // session is open. No system bottom tab bar — frees the thumb zone.
         VStack(spacing: 0) {
             PhoneMainTabStrip()
@@ -68,6 +69,15 @@ struct MainTabView: View {
                     ProjectsView()
                 case .tasks:
                     TasksView()
+                case .bots:
+                    BotsView()
+                case .terminal:
+                    NavigationStack {
+                        TerminalView()
+                            #if os(iOS)
+                            .toolbar(.hidden, for: .navigationBar)
+                            #endif
+                    }
                 case .compose:
                     TaskComposerView()
                 case .settings:
@@ -80,6 +90,10 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .tint(DispatchColors.accent)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await appState.refreshSessions() }
+        }
     }
 }
 #endif

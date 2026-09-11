@@ -446,6 +446,31 @@ actor APIClient {
         try await get("/sessions/\(id)/diff", host: host)
     }
 
+    struct SessionFilesResponse: Codable, Sendable { var files: [SessionFileEntry] }
+
+    func sessionFiles(id: String, host: HostEndpoint) async throws -> [SessionFileEntry] {
+        let res: SessionFilesResponse = try await get("/sessions/\(id)/files", host: host)
+        return res.files
+    }
+
+    func sessionFile(id: String, path: String, host: HostEndpoint) async throws -> SessionFileContent {
+        try await get(
+            "/sessions/\(id)/file",
+            host: host,
+            queryItems: [URLQueryItem(name: "path", value: path)]
+        )
+    }
+
+    func addExtraDirs(sessionId: String, extraDirs: [String], host: HostEndpoint) async throws -> SessionDetail {
+        struct Body: Codable { var extraDirs: [String] }
+        return try await request(
+            method: "PATCH",
+            path: "/sessions/\(sessionId)/extra-dirs",
+            body: Body(extraDirs: extraDirs),
+            host: host
+        )
+    }
+
     func toolCall(sessionId: String, toolCallId: String, host: HostEndpoint) async throws -> ToolCallDetail {
         try await get("/sessions/\(sessionId)/tool-calls/\(toolCallId)", host: host)
     }
@@ -473,6 +498,34 @@ actor APIClient {
             "/sessions/attach",
             body: Body(
                 grokSessionId: grokSessionId,
+                cwd: cwd,
+                title: title,
+                prompt: prompt,
+                profileId: profileId
+            ),
+            host: host
+        )
+    }
+
+    func attachAgy(
+        conversationId: String,
+        cwd: String,
+        title: String?,
+        prompt: String?,
+        profileId: String?,
+        host: HostEndpoint
+    ) async throws -> SessionDetail {
+        struct Body: Codable {
+            var conversationId: String
+            var cwd: String
+            var title: String?
+            var prompt: String?
+            var profileId: String?
+        }
+        return try await post(
+            "/sessions/attach-agy",
+            body: Body(
+                conversationId: conversationId,
                 cwd: cwd,
                 title: title,
                 prompt: prompt,
@@ -670,6 +723,38 @@ actor APIClient {
 
     func botOutbox(id: String, host: HostEndpoint) async throws -> BotOutboxResponse {
         try await get("/bots/\(id)/outbox", host: host)
+    }
+
+    // MARK: - APNs
+
+    struct PushRegisterBody: Codable, Sendable {
+        var token: String
+        var clientHostId: String
+        var name: String?
+    }
+
+    struct PushRegisterResponse: Codable, Sendable {
+        var ok: Bool?
+        var token: String?
+        var name: String?
+    }
+
+    struct PushStatusResponse: Codable, Sendable {
+        var configured: Bool
+        var deviceCount: Int
+        var bundleId: String?
+    }
+
+    func registerPush(token: String, clientHostId: String, name: String?, host: HostEndpoint) async throws {
+        _ = try await post(
+            "/push/register",
+            body: PushRegisterBody(token: token, clientHostId: clientHostId, name: name),
+            host: host
+        ) as PushRegisterResponse
+    }
+
+    func pushStatus(host: HostEndpoint) async throws -> PushStatusResponse {
+        try await get("/push/status", host: host)
     }
 
     // MARK: - Internals

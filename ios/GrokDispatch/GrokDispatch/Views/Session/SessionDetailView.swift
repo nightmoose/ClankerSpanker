@@ -12,6 +12,7 @@ struct SessionDetailView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var vm: SessionDetailViewModel
     @State private var selectedTab = DetailTab.transcript
+    @State private var chatOnly = false
     @State private var isEditingTitle = false
     @State private var draftTitle = ""
     @State private var photoPickerItems: [PhotosPickerItem] = []
@@ -288,16 +289,14 @@ struct SessionDetailView: View {
                 Task { await startProfileLogin() }
             }
             .disabled(isStartingLogin)
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                loginAckedForUpdatedAt = vm.detail?.updatedAt
+            }
         } message: {
             Text(loginMessage ?? "This profile’s OAuth session expired or was revoked. Sign in on the host Mac, then retry.")
         }
-        .onChange(of: vm.detail?.error) { _, newVal in
-            if let d = vm.detail, needsReLogin(d), !showLoginSheet {
-                loginMessage = reLoginMessage(for: d)
-                showLoginSheet = true
-            }
-        }
+        // Do not auto-present this alert. MCP AuthRequired used to match
+        // "oauth" and pop it on every follow-up. Banner is enough; tap Sign in.
         .alert("Session name", isPresented: $isEditingTitle) {
             TextField("Name", text: $draftTitle)
             Button("Cancel", role: .cancel) {}
@@ -572,14 +571,26 @@ struct SessionDetailView: View {
     }
 
     private func containsAuthMarker(_ e: String) -> Bool {
-        e.contains("oauth")
-            || e.contains("access token")
+        // MCP connector OAuth (Vercel …) is not NightMoose / Grok CLI login.
+        if e.contains("oauth-protected-resource")
+            || e.contains("resource_metadata")
+            || (e.contains("authrequired") && (e.contains("mcp.") || e.contains("www_authenticate"))) {
+            return false
+        }
+        if e.contains("mcp connector needs sign in") { return false }
+        return e.contains("please run /login")
+            || e.contains("not logged in")
             || e.contains("failed to authenticate")
             || e.contains("authentication_error")
-            || e.contains("not logged in")
-            || e.contains("sign-in required")
-            || e.contains("please run /login")
-            || (e.contains("401") && (e.contains("auth") || e.contains("token")))
+            || e.contains("authentication credentials")
+            || e.contains("run `grok login`")
+            || e.contains("run grok login")
+            || e.contains("oauth token missing")
+            || e.contains("oauth token revoked")
+            || e.contains("oauth token expired")
+            || e.contains("oauth session expired")
+            || e.contains("sign-in required for")
+            || (e.contains("401") && (e.contains("unauthorized") || e.contains("invalid api key") || e.contains("invalid_api_key")))
     }
 
     private func reLoginMessage(for detail: SessionDetail) -> String {
@@ -648,21 +659,15 @@ struct SessionDetailView: View {
                 $0.profile.id == profileId && $0.host.endpointKey == vm.host.endpointKey
             })?.profile.usage?.accountEmail
             let res = try await appState.api.loginProfile(id: profileId, host: vm.host, email: email)
+            loginAckedForUpdatedAt = vm.detail?.updatedAt
             if res.ok == false {
-                loginMessage = res.error ?? "Login failed"
-                showLoginSheet = true
+                vm.errorMessage = res.error ?? "Login failed"
             } else {
-                loginMessage = res.message ?? "Browser opened on host — finish sign-in, then retry."
-                // Keep sheet message updated via alert already dismissed; show non-blocking via errorMessage
-                vm.errorMessage = nil
-                // Suppress the login banner until a newer session snapshot
-                // arrives from the server. If auth is genuinely still broken,
-                // the next turn's failure will re-trigger it.
-                loginAckedForUpdatedAt = vm.detail?.updatedAt
+                vm.errorMessage = res.message ?? "Browser opened on host — finish sign-in, then send another message in this chat."
             }
         } catch {
-            loginMessage = error.localizedDescription
-            showLoginSheet = true
+            loginAckedForUpdatedAt = vm.detail?.updatedAt
+            vm.errorMessage = error.localizedDescription
         }
     }
 
@@ -765,12 +770,22 @@ struct SessionDetailView: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Section", selection: $selectedTab) {
-            ForEach(DetailTab.allCases, id: \.self) { tab in
-                Text(tab.rawValue).tag(tab)
+        VStack(spacing: 6) {
+            Picker("Section", selection: $selectedTab) {
+                ForEach(DetailTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            if selectedTab == .transcript {
+                Toggle(isOn: $chatOnly) {
+                    Text("Chat only")
+                        .font(.caption.weight(.semibold))
+                }
+                .toggleStyle(.switch)
+                .accessibilityHint("Hide tool calls, thoughts, and system lines")
             }
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal)
         .padding(.top, 4)
         .padding(.bottom, 8)
@@ -787,6 +802,9 @@ struct SessionDetailView: View {
                 streaming: vm.streamingText,
                 isRunning: detail.status == .running,
                 agentLabel: agentLabel(for: detail),
+                chatOnly: chatOnly,
+                cwd: detail.cwd,
+                onOpenLocalFile: { absolute in openFileInViewer(absolute, cwd: detail.cwd) },
                 onSaveAsTodo: { entry in captureSheet = .saveAsTodo(entry) },
                 onScanForTodo: { entry in captureSheet = .scanForTodo(entry) },
                 onMakeNote: { entry in captureSheet = .makeNote(entry) },
@@ -851,6 +869,7 @@ struct SessionDetailView: View {
             SessionNotesTab(
                 detail: detail,
                 host: vm.host,
+                projects: projectChoices,
                 onJumpToMessage: { messageId in
                     // Switch tab first so the transcript's LazyVStack starts
                     // materializing its rows. The ScrollViewReader's onChange
@@ -859,6 +878,9 @@ struct SessionDetailView: View {
                     selectedTab = .transcript
                     pendingScrollToMessageId = messageId
                     expandMessageId = messageId
+                },
+                onOpenLocalFile: { path in
+                    openFileInViewer(path, cwd: detail.cwd)
                 }
             )
             .environmentObject(appState)
@@ -1368,6 +1390,18 @@ private struct SessionDetailsSheet: View {
                         Text(detail.cwd.isEmpty ? "—" : detail.cwd)
                             .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
+                    }
+                    if !detail.effectiveExtraDirs.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Extra folders")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.effectiveExtraDirs, id: \.self) { dir in
+                                Text(dir)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
                     if let projectId = detail.projectId, !projectId.isEmpty {
                         LabeledContent("Project id", value: projectId)

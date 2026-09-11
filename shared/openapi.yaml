@@ -18,7 +18,7 @@ paths:
       security: [{ bearerAuth: [] }]
   /sessions:
     get:
-      summary: List dispatched sessions
+      summary: List dispatched sessions (omits Grok subagent/helper chats)
       security: [{ bearerAuth: [] }]
   /sessions/{id}:
     get:
@@ -27,6 +27,18 @@ paths:
   /sessions/{id}/diff:
     get:
       summary: git diff in session cwd
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/files:
+    get:
+      summary: Session-relevant files (cwd, extra dirs, tool locations, attachments)
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/file:
+    get:
+      summary: Read a workspace file (path query; must be under cwd/extraDirs/attachments)
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/extra-dirs:
+    patch:
+      summary: Add extra workspace folders mid-session
       security: [{ bearerAuth: [] }]
   /bots:
     get:
@@ -47,9 +59,28 @@ paths:
     get:
       summary: List .bot-outbox markdown drafts for this bot's project
       security: [{ bearerAuth: [] }]
+  /push/register:
+    post:
+      summary: Register an APNs device token for this host
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Unregister an APNs device token
+      security: [{ bearerAuth: [] }]
+  /push/status:
+    get:
+      summary: Whether APNs is configured and how many devices are registered (no secrets)
+      security: [{ bearerAuth: [] }]
+  /push/test:
+    post:
+      summary: Send a one-shot test alert to registered devices
+      security: [{ bearerAuth: [] }]
   /dispatch:
     post:
       summary: Create and start a task
+      security: [{ bearerAuth: [] }]
+  /sessions/attach-agy:
+    post:
+      summary: Attach an Antigravity / Gemini CLI conversation (agy --conversation)
       security: [{ bearerAuth: [] }]
   /sessions/{id}/tool-calls/{toolCallId}:
     get:
@@ -74,6 +105,23 @@ paths:
   /ws:
     get:
       summary: WebSocket event stream (?token=)
+  /ws/terminal:
+    get:
+      summary: Interactive host PTY (login shell). Same host token as /ws (?token=). JSON frames in/out/resize.
+  /app/terminal.html:
+    get:
+      summary: xterm.js page for the host terminal (static; socket is the auth gate)
+  /profiles/{id}/mcp/{name}/oauth/start:
+    post:
+      summary: Start MCP OAuth (PKCE). This machine only. Returns { authorizeUrl, state }.
+      security: [{ bearerAuth: [] }]
+  /mcp/oauth/callback:
+    get:
+      summary: Loopback OAuth redirect (no host token). Exchanges code, stores tokens, HTML result.
+  /profiles/{id}/mcp/{name}/oauth/logout:
+    post:
+      summary: Delete stored MCP OAuth tokens for this profile server. This machine only.
+      security: [{ bearerAuth: [] }]
 components:
   securitySchemes:
     bearerAuth:

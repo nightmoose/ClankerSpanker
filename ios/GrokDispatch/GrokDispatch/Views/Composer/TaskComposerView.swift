@@ -6,6 +6,7 @@ struct TaskComposerView: View {
     @StateObject private var vm = ComposerViewModel()
     @State private var navigateTo: SessionRoute?
     @State private var photoPickerItems: [PhotosPickerItem] = []
+    @State private var showExtraFolders = false
 
     private var selectedProject: ProjectInfo? {
         vm.projects.first { $0.id == vm.selectedProjectId }
@@ -211,6 +212,47 @@ struct TaskComposerView: View {
                                         .font(.caption2)
                                         .foregroundStyle(DispatchColors.warning)
                                 }
+
+                                if !vm.extraDirs.isEmpty {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Extra folders")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                        ForEach(vm.extraDirs, id: \.self) { dir in
+                                            HStack {
+                                                Text(shortenPath(dir))
+                                                    .font(.system(.caption, design: .monospaced))
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                                Spacer()
+                                                Button {
+                                                    vm.removeExtraDir(dir)
+                                                } label: {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
+                                }
+                                Button {
+                                    #if os(macOS)
+                                    let urls = FolderPicker.pickDirectories(
+                                        message: "Choose extra workspace folders besides the working directory",
+                                        prompt: "Add"
+                                    )
+                                    vm.addExtraFolderPaths(urls.map(\.path))
+                                    #else
+                                    showExtraFolders = true
+                                    #endif
+                                } label: {
+                                    Label("Add extra folders", systemImage: "folder.badge.plus")
+                                }
+                                .buttonStyle(.plain)
+                                Text("Besides the working directory. Claude gets --add-dir; Grok/Gemini are told in the prompt.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                         }
 
@@ -285,6 +327,14 @@ struct TaskComposerView: View {
                         scrollToMessageId: route.messageId
                     )
                 }
+            }
+            .sheet(isPresented: $showExtraFolders) {
+                ExtraFoldersSheet(
+                    projects: vm.projects,
+                    cwd: vm.resolvedCwd,
+                    already: vm.extraDirs,
+                    onAdd: { vm.addExtraFolderPaths($0) }
+                )
             }
             .task { await vm.load(appState: appState) }
             .onChange(of: appState.selectedBoundProfileId) { _, _ in

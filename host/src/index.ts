@@ -2,6 +2,7 @@ import { loadConfig, DEFAULT_CONFIG_PATH } from "./config.js";
 import { SessionManager } from "./acp/session-manager.js";
 import { startBotRuntime } from "./bot/index.js";
 import { startServer } from "./server.js";
+import { isApnsConfigured } from "./notify/apns.js";
 
 async function main() {
   const config = loadConfig();
@@ -14,6 +15,7 @@ async function main() {
   console.log(`[boot] Data dir: ${config.dataDir}`);
   console.log(`[boot] Auto-approve kinds: ${config.autoApproveKinds.join(", ")}`);
   console.log(`[boot] Host token (first 8): ${config.hostToken.slice(0, 8)}…`);
+  console.log(`[boot] APNs: ${isApnsConfigured(config) ? "configured" : "not configured"}`);
 
   const manager = new SessionManager(config);
   const bots = startBotRuntime(config, manager);

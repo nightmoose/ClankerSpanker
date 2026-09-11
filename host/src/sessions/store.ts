@@ -122,6 +122,7 @@ export class SessionStore {
         locations: t.locations,
         // drop rawInput/content from wire response
       })),
+      extraDirs: slim.extraDirs,
       plan: slim.plan,
       pendingApproval: pending ?? null,
       pendingQuestion: pendingQuestion ?? slim.pendingQuestion ?? null,

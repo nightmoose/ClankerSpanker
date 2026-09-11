@@ -9,7 +9,7 @@ import { findClaudeBinaryCandidates, firstExistingBinary } from "../platform.js"
 
 const execFileAsync = promisify(execFile);
 
-export type SessionSource = "grok" | "claude";
+export type SessionSource = "grok" | "claude" | "antigravity";
 
 export interface DiskSessionHint {
   id: string;
@@ -22,15 +22,55 @@ export interface DiskSessionHint {
   transcriptPath?: string;
 }
 
+/** Decode a Grok sessions group dir (`%2FUsers%2F…`) or a raw path. */
+function decodeMaybe(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * True when `cwd` (or a Grok sessions group name) is a subagent worktree.
+ * Grok writes helpers under `~/.grok/worktrees/<repo>/subagent-<id>`.
+ */
+export function isGrokHelperCwd(cwd?: string | null): boolean {
+  if (!cwd) return false;
+  const n = decodeMaybe(cwd).replace(/\\/g, "/");
+  return /(^|\/)subagent-[^/]+(\/|$)/i.test(n);
+}
+
+/**
+ * Grok Build helper / subagent chats. Operators should not attach or
+ * prompt these — talk to the parent session instead.
+ */
+export function isGrokHelperSession(input: {
+  cwd?: string | null;
+  sessionKind?: string | null;
+  worktreeLabel?: string | null;
+  group?: string | null;
+}): boolean {
+  const kind = (input.sessionKind ?? "").trim().toLowerCase();
+  if (kind.startsWith("subagent")) return true;
+  const label = (input.worktreeLabel ?? "").trim();
+  if (/^subagent-/i.test(label)) return true;
+  return isGrokHelperCwd(input.cwd) || isGrokHelperCwd(input.group);
+}
+
+export function defaultGrokSessionsRoot(): string {
+  return join(homedir(), ".grok", "sessions");
+}
+
 /** Best-effort scan of ~/.grok/sessions for display / resume hints. */
-export function listDiskSessions(limit = 200): DiskSessionHint[] {
-  const root = join(homedir(), ".grok", "sessions");
+export function listDiskSessions(limit = 200, root = defaultGrokSessionsRoot()): DiskSessionHint[] {
   if (!existsSync(root)) return [];
 
   const results: DiskSessionHint[] = [];
 
   for (const group of readdirSync(root)) {
     if (group.startsWith(".") || group.endsWith(".sqlite")) continue;
+    if (isGrokHelperCwd(group)) continue;
     const groupPath = join(root, group);
     let st;
     try {
@@ -50,7 +90,20 @@ export function listDiskSessions(limit = 200): DiskSessionHint[] {
           generated_title?: string;
           updated_at?: string;
           current_model_id?: string;
+          session_kind?: string;
+          worktree_label?: string;
         };
+        const cwd = summary.info?.cwd;
+        if (
+          isGrokHelperSession({
+            cwd,
+            sessionKind: summary.session_kind,
+            worktreeLabel: summary.worktree_label,
+            group,
+          })
+        ) {
+          continue;
+        }
         const title =
           summary.generated_title?.trim() ||
           summary.session_summary?.trim() ||
@@ -67,7 +120,7 @@ export function listDiskSessions(limit = 200): DiskSessionHint[] {
         results.push({
           id: summary.info?.session_id ?? sid,
           source: "grok",
-          cwd: summary.info?.cwd,
+          cwd,
           title,
           updatedAt,
           model: summary.current_model_id,
@@ -144,6 +197,135 @@ export function listClaudeSessions(limit = 100): DiskSessionHint[] {
     }
   }
   return top;
+}
+
+/** Default Antigravity CLI data dir (`agy` conversations live here). */
+export function defaultAgyRoot(): string {
+  return join(homedir(), ".gemini", "antigravity-cli");
+}
+
+function cwdFromFileUri(uri: string): string | undefined {
+  const raw = String(uri ?? "").trim();
+  if (!raw) return undefined;
+  if (raw.startsWith("/") && existsSync(raw)) return raw;
+  if (!raw.startsWith("file:")) return undefined;
+  try {
+    const u = new URL(raw);
+    const p = decodeURIComponent(u.pathname);
+    if (existsSync(p)) return p;
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
+/**
+ * Antigravity / Gemini CLI conversations:
+ *   ~/.gemini/antigravity-cli/conversations/<uuid>.db
+ * Metadata: cache/conversation_metadata.json, cache/last_conversations.json
+ * Resume: `agy --conversation <id>`
+ */
+export function listAgySessions(limit = 100, root = defaultAgyRoot()): DiskSessionHint[] {
+  const convDir = join(root, "conversations");
+  if (!existsSync(convDir) && !existsSync(join(root, "cache"))) return [];
+
+  const byId = new Map<string, DiskSessionHint>();
+
+  const lastPath = join(root, "cache", "last_conversations.json");
+  const lastById = new Map<string, string>();
+  if (existsSync(lastPath)) {
+    try {
+      const last = JSON.parse(readFileSync(lastPath, "utf8")) as Record<string, string>;
+      for (const [cwd, id] of Object.entries(last)) {
+        if (!id || !cwd) continue;
+        lastById.set(id, cwd);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const metaPath = join(root, "cache", "conversation_metadata.json");
+  if (existsSync(metaPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(metaPath, "utf8")) as {
+        conversations?: Record<
+          string,
+          {
+            summary?: {
+              ID?: string;
+              Title?: string;
+              Preview?: string;
+              UpdatedAt?: string;
+              WorkspaceURIs?: string[];
+            };
+            last_modified_time?: string;
+          }
+        >;
+      };
+      for (const [id, rec] of Object.entries(raw.conversations ?? {})) {
+        const summary = rec?.summary ?? {};
+        const title =
+          String(summary.Title ?? "").trim() ||
+          String(summary.Preview ?? "").trim() ||
+          undefined;
+        let cwd: string | undefined;
+        for (const uri of summary.WorkspaceURIs ?? []) {
+          cwd = cwdFromFileUri(uri);
+          if (cwd) break;
+        }
+        if (!cwd) cwd = lastById.get(id);
+        const updatedAt = summary.UpdatedAt || rec.last_modified_time;
+        byId.set(id, {
+          id,
+          source: "antigravity",
+          cwd,
+          title: title ? (title.length > 90 ? title.slice(0, 87) + "…" : title) : undefined,
+          updatedAt,
+          model: "antigravity",
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (existsSync(convDir)) {
+    for (const name of readdirSync(convDir)) {
+      if (!name.endsWith(".db") || name.includes("-shm") || name.includes("-wal")) continue;
+      const id = name.replace(/\.db$/, "");
+      if (!/^[0-9a-f-]{20,}$/i.test(id)) continue;
+      const filePath = join(convDir, name);
+      let mtime: string | undefined;
+      try {
+        mtime = new Date(statSync(filePath).mtimeMs).toISOString();
+      } catch {
+        continue;
+      }
+      const existing = byId.get(id);
+      if (existing) {
+        if (!existing.updatedAt) existing.updatedAt = mtime;
+        if (!existing.cwd) existing.cwd = lastById.get(id);
+        if (!existing.title) existing.title = `Gemini ${id.slice(0, 8)}`;
+        continue;
+      }
+      byId.set(id, {
+        id,
+        source: "antigravity",
+        cwd: lastById.get(id),
+        title: `Gemini ${id.slice(0, 8)}`,
+        updatedAt: mtime,
+        model: "antigravity",
+      });
+    }
+  }
+
+  const results = [...byId.values()].map((s) => ({
+    ...s,
+    title: s.title || `Gemini ${s.id.slice(0, 8)}`,
+  }));
+  results.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  return results.slice(0, limit);
 }
 
 /** Reverse Claude's project folder encoding; verify path exists when possible. */

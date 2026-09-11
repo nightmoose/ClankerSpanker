@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import { findAgyBinary } from "../platform.js";
 import { agentPathEnv } from "../platform.js";
+import { isModelSentinel, wrapWithProfileSystemPrompt } from "../profiles.js";
 
 export interface AntigravityRunnerOptions {
   cwd: string;
@@ -22,6 +23,65 @@ export interface AntigravityRunnerOptions {
   binary?: string;
   /** Print-mode timeout string for agy (default 30m for agent work). */
   printTimeout?: string;
+  /**
+   * Profile persona. `agy` has no system-instruction flag, so this is
+   * prepended to the first `-p` turn of a fresh conversation only.
+   */
+  systemPrompt?: string;
+  /**
+   * Pre-flight tool names. `agy` has no `--tools` flag — this is prepended
+   * as an instruction on a fresh conversation (advisory, not enforced).
+   */
+  toolAllowlist?: string[];
+}
+
+/**
+ * CLI args for one `agy` print-mode turn. Extracted so tests can assert
+ * model sentinels and systemPrompt injection without spawning the binary.
+ */
+export function buildAntigravityArgs(opts: {
+  prompt: string;
+  conversationId?: string;
+  model?: string;
+  skipPermissions: boolean;
+  printTimeout?: string;
+  systemPrompt?: string;
+  toolAllowlist?: string[];
+}): string[] {
+  const fresh = !opts.conversationId?.trim();
+  const tools = (opts.toolAllowlist ?? []).map((s) => s.trim()).filter(Boolean);
+  const toolNote =
+    fresh && tools.length
+      ? `[Profile tool allowlist — you may only use: ${tools.join(", ")}. Do not attempt other tools.]\n\n`
+      : "";
+  const prompt = wrapWithProfileSystemPrompt(
+    toolNote + opts.prompt,
+    opts.systemPrompt,
+    { fresh },
+  );
+  const args = [
+    "-p",
+    prompt,
+    "--output-format",
+    "stream-json",
+    "--print-timeout",
+    opts.printTimeout?.trim() || "30m",
+  ];
+
+  if (opts.conversationId?.trim()) {
+    args.push("--conversation", opts.conversationId.trim());
+  }
+
+  const model = opts.model?.trim();
+  if (model && !isModelSentinel("antigravity", model)) {
+    args.push("--model", model);
+  }
+
+  if (opts.skipPermissions) {
+    args.push("--dangerously-skip-permissions");
+  }
+
+  return args;
 }
 
 /**
@@ -42,27 +102,15 @@ export class AntigravityRunner extends EventEmitter {
 
   async run(): Promise<{ text: string; conversationId?: string }> {
     const bin = this.opts.binary?.trim() || findAgyBinary();
-    const args = [
-      "-p",
-      this.opts.prompt,
-      "--output-format",
-      "stream-json",
-      "--print-timeout",
-      this.opts.printTimeout?.trim() || "30m",
-    ];
-
-    if (this.opts.conversationId) {
-      args.push("--conversation", this.opts.conversationId);
-    }
-
-    const model = this.opts.model?.trim();
-    if (model && model !== "antigravity" && model !== "agy" && model !== "gemini") {
-      args.push("--model", model);
-    }
-
-    if (this.opts.skipPermissions) {
-      args.push("--dangerously-skip-permissions");
-    }
+    const args = buildAntigravityArgs({
+      prompt: this.opts.prompt,
+      conversationId: this.opts.conversationId,
+      model: this.opts.model,
+      skipPermissions: this.opts.skipPermissions,
+      printTimeout: this.opts.printTimeout,
+      systemPrompt: this.opts.systemPrompt,
+      toolAllowlist: this.opts.toolAllowlist,
+    });
 
     this.proc = spawn(bin, args, {
       cwd: this.opts.cwd,

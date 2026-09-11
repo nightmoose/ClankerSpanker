@@ -16,15 +16,14 @@ export interface GrokCliCreds {
   expiresAtMs?: number;
 }
 
+/** Auth.json locations for a profile's grok home (or the process default). */
+export function grokAuthJsonPaths(grokHome?: string): string[] {
+  const home = grokHome?.trim() || process.env.GROK_HOME?.trim() || join(homedir(), ".grok");
+  return [join(home, "auth.json"), join(homedir(), ".config", "grok", "auth.json")];
+}
+
 function authPaths(paths?: string[]): string[] {
-  return (
-    paths ?? [
-      process.env.GROK_HOME?.trim()
-        ? join(process.env.GROK_HOME.trim(), "auth.json")
-        : join(homedir(), ".grok", "auth.json"),
-      join(homedir(), ".config", "grok", "auth.json"),
-    ]
-  );
+  return paths ?? grokAuthJsonPaths();
 }
 
 function parseExpiresAt(raw: unknown, jwt: string): number | undefined {

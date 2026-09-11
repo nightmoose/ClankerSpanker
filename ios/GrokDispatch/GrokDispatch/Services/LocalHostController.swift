@@ -100,45 +100,53 @@ enum LocalHostConfigFile {
     }
 }
 
-/// macOS: start/stop a local ClankerSpanker host process and read its config.
-/// iOS: lightweight stub so shared Settings/onboarding compile.
+/// macOS: kickstart / observe the LaunchAgent-owned host and read its config.
+/// The app never runs `node` in-process — the gateway is a launchd job so it
+/// survives Cmd-Q, upgrades, and reboots. iOS: lightweight stub so shared
+/// Settings/onboarding compile.
 @MainActor
 final class LocalHostController: ObservableObject {
     static let shared = LocalHostController()
 
-    @Published private(set) var isRunning = false
-    @Published private(set) var pid: Int32?
-    /// PID listening on bind port when we did not spawn the process (npm start, launchd, other terminal).
-    @Published private(set) var externalPid: Int32?
+    /// PID listening on bind port, discovered via `lsof`. Owned by launchd,
+    /// not this app.
+    @Published private(set) var listenerPid: Int32?
     @Published var lastError: String?
     @Published private(set) var logs: [String] = []
     @Published private(set) var apiReachable = false
     @Published var hostPackagePath: String = ""
+    /// Which LaunchAgent (if any) is loaded. Refreshed each health poll.
+    @Published private(set) var loadedAgentLabel: String?
 
     /// Human-readable process ownership for the Host panel.
     var processStatusLabel: String {
-        if isRunning, let pid {
-            return "Owned by this app · pid \(pid)"
-        }
         if apiReachable {
-            if let externalPid {
-                return "Running externally · pid \(externalPid)"
+            let owner = loadedAgentLabel ?? "external"
+            if let listenerPid {
+                return "LaunchAgent \(owner) · pid \(listenerPid)"
             }
-            return "Running externally (not started by this app)"
+            return "Reachable (owner \(owner))"
         }
-        if let externalPid {
-            return "Port in use · pid \(externalPid) (API not responding)"
+        if let listenerPid {
+            return "Port in use · pid \(listenerPid) (API not responding)"
         }
         return "Not running"
     }
 
-    /// True when something is serving (owned or external).
-    var gatewayAlive: Bool { apiReachable || isRunning }
+    /// True when something is serving on the local bind port.
+    var gatewayAlive: Bool { apiReachable }
 
     #if os(macOS)
-    private var process: Process?
     private let maxLogs = 200
     private var healthTimer: Timer?
+
+    /// LaunchAgent labels this app knows about, in preference order.
+    /// The app-managed install (`clankerspanker-host`) wins over the repo
+    /// standalone (`grok-dispatch-host`) when both are present.
+    static let knownAgentLabels: [String] = [
+        LocalHostConfigFile.launchAgentLabel,
+        "com.nightmoose.grok-dispatch-host",
+    ]
 
     var hostConfigURL: URL { LocalHostConfigFile.configURL }
 
@@ -195,115 +203,94 @@ final class LocalHostController: ObservableObject {
 
     func refreshStatus() async {
         await probeAPI()
-        if let process, process.isRunning {
-            isRunning = true
-            pid = process.processIdentifier
-            externalPid = nil
-        } else {
-            if process != nil {
-                self.process = nil
-            }
-            isRunning = false
-            pid = nil
-            // Discover who owns the port when API is up (or port is busy)
-            externalPid = await Self.findListenerPid(port: readBindPort())
-        }
+        listenerPid = await Self.findListenerPid(port: readBindPort())
+        loadedAgentLabel = await Self.firstLoadedAgentLabel(Self.knownAgentLabels)
     }
 
+    /// Kickstart the gateway via launchd. Never spawns node in-process.
+    /// Tries `clankerspanker-host` first, then falls back to
+    /// `grok-dispatch-host`. If neither is loaded, points the user at the
+    /// two install paths.
     func start() {
         lastError = nil
-        if let process, process.isRunning {
-            lastError = "Host already running (pid \(process.processIdentifier))"
-            return
-        }
         if apiReachable {
-            lastError =
-                "Gateway already reachable at \(localBaseURL) — started outside this app (terminal, launchd, etc.). Stop that process first if you want this app to own it."
+            appendLog("[desktop] gateway already reachable at \(localBaseURL) — no kickstart needed")
             return
         }
-
-        let root = hostPackagePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !root.isEmpty else {
-            lastError = "Set the host package path (folder containing package.json)."
-            return
-        }
-        let entry = (root as NSString).appendingPathComponent("dist/index.js")
-        guard FileManager.default.fileExists(atPath: entry) else {
-            lastError = "Missing \(entry). Run: cd host && npm run build"
-            return
-        }
-
-        let node = Self.findNode()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: node)
-        proc.arguments = [entry]
-        proc.currentDirectoryURL = URL(fileURLWithPath: root)
-        proc.environment = ProcessInfo.processInfo.environment.merging([
-            "PATH": [
-                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok/bin").path,
-                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
-                "/opt/homebrew/bin",
-                "/usr/local/bin",
-                "/usr/bin",
-                "/bin",
-                ProcessInfo.processInfo.environment["PATH"] ?? "",
-            ].joined(separator: ":"),
-        ]) { _, new in new }
-
-        let out = Pipe()
-        let err = Pipe()
-        proc.standardOutput = out
-        proc.standardError = err
-        out.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in self?.appendLog(s) }
-        }
-        err.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in self?.appendLog(s) }
-        }
-        proc.terminationHandler = { [weak self] p in
-            Task { @MainActor in
-                self?.appendLog("[desktop] host exited code=\(p.terminationStatus)")
-                self?.isRunning = false
-                self?.pid = nil
-                self?.process = nil
+        let uid = getuid()
+        for label in Self.knownAgentLabels {
+            appendLog("[desktop] kickstart gui/\(uid)/\(label)")
+            let (ok, output) = Self.launchctl(["kickstart", "-k", "gui/\(uid)/\(label)"])
+            if ok {
+                appendLog("[desktop] kickstarted \(label)")
+                Task { await refreshStatus() }
+                return
+            }
+            if !output.isEmpty {
+                appendLog("[desktop] launchctl: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
         }
+        lastError = """
+            No host LaunchAgent is loaded. Install one from Host → Install / update host,
+            or from the repo: ./host/scripts/install-launchd.sh
+            """
+        Task { await refreshStatus() }
+    }
 
-        do {
-            appendLog("[desktop] starting \(node) \(entry)")
-            try proc.run()
-            process = proc
-            isRunning = true
-            pid = proc.processIdentifier
-        } catch {
-            lastError = error.localizedDescription
-            appendLog("[desktop] start failed: \(error.localizedDescription)")
+    /// The host is a LaunchAgent — nothing to terminate from inside this app.
+    /// Surface an actionable hint instead of silently doing nothing.
+    func stop() {
+        let uid = getuid()
+        if let label = loadedAgentLabel {
+            lastError = """
+                Host is a LaunchAgent (\(label)). To stop it:
+                  launchctl bootout gui/\(uid)/\(label)
+                Or use Host → Unload LaunchAgent (app-managed install only).
+                """
+        } else if let pid = listenerPid {
+            lastError = "Something is listening on port \(readBindPort()) as pid \(pid). Stop it from where it was started."
+        } else {
+            lastError = "No gateway is running."
         }
     }
 
-    func stop() {
-        if let process {
-            appendLog("[desktop] stopping host (owned)…")
-            process.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
-                if let p = self?.process, p.isRunning {
-                    p.interrupt()
+    /// Run `/bin/launchctl` synchronously. Returns (success, combined output).
+    /// Success means the process exited 0.
+    @discardableResult
+    static func launchctl(_ args: [String]) -> (ok: Bool, output: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        do {
+            try p.run()
+            p.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let text = String(data: data, encoding: .utf8) ?? ""
+            return (p.terminationStatus == 0, text)
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
+    /// First LaunchAgent label in `candidates` that `launchctl print` reports
+    /// as loaded for the current GUI session. Nil if none are loaded.
+    static func firstLoadedAgentLabel(_ candidates: [String]) async -> String? {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .utility).async {
+                let uid = getuid()
+                for label in candidates {
+                    let (ok, _) = launchctl(["print", "gui/\(uid)/\(label)"])
+                    if ok {
+                        cont.resume(returning: label)
+                        return
+                    }
                 }
+                cont.resume(returning: nil)
             }
-            return
         }
-        // Optionally stop external listener we discovered
-        if let externalPid {
-            lastError =
-                "Host is external (pid \(externalPid)). Stop it from the terminal that started it, or: kill \(externalPid)"
-            appendLog("[desktop] will not SIGTERM external pid \(externalPid) — stop it yourself if needed")
-            return
-        }
-        lastError = "No host process owned by this app"
     }
 
     /// Best-effort: PID listening on TCP port (macOS `lsof`).
@@ -375,18 +362,6 @@ final class LocalHostController: ObservableObject {
         if logs.count > maxLogs {
             logs.removeFirst(logs.count - maxLogs)
         }
-    }
-
-    private static func findNode() -> String {
-        let candidates = [
-            "/opt/homebrew/bin/node",
-            "/usr/local/bin/node",
-            "/usr/bin/node",
-        ]
-        for c in candidates where FileManager.default.isExecutableFile(atPath: c) {
-            return c
-        }
-        return "node"
     }
 
     #else

@@ -25,6 +25,7 @@ targets:
         excludes:
           - Info.plist
           - Info-macOS.plist
+          - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker
@@ -40,6 +41,11 @@ targets:
         # Critical: do not generate+merge Info.plist — ATS for LAN HTTP was lost in the merge.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: GrokDispatch/Info.plist
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Release.entitlements
     info:
       path: GrokDispatch/Info.plist
       properties:
@@ -73,6 +79,7 @@ targets:
         excludes:
           - Info.plist
           - Info-macOS.plist
+          - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker.mac
@@ -105,6 +112,42 @@ targets:
               - grokdispatch
         NSPrincipalClass: NSApplication
 
+  # ── Menu-bar-only host configurator (no session UI) ──
+  # Ships as its own .app so laptops without ClankerSpankerMac still
+  # get an icon that surfaces host status / kickstart / /setup.
+  ClankerSpankerHostTray:
+    type: application
+    platform: macOS
+    sources:
+      - path: HostTray
+        excludes:
+          - Info-HostTray.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker.hosttray
+        PRODUCT_NAME: ClankerSpankerHostTray
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "XHS7K665C9"
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ClankerSpanker Host Tray
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.developer-tools"
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © nightmoose"
+    info:
+      path: HostTray/Info-HostTray.plist
+      properties:
+        CFBundleDisplayName: ClankerSpanker Host Tray
+        CFBundleName: ClankerSpankerHostTray
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSUIElement: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSPrincipalClass: NSApplication
+
 # Two schemes with explicit names — never use “My Mac (Designed for iPad)” for phone.
 schemes:
   # Mac laptop command center (native)
@@ -119,5 +162,12 @@ schemes:
     build:
       targets:
         ClankerSpanker: all
+    run:
+      config: Debug
+  # Menu-bar host tray (no session UI). Ship on laptops that only host.
+  ClankerSpankerHostTray:
+    build:
+      targets:
+        ClankerSpankerHostTray: all
     run:
       config: Debug

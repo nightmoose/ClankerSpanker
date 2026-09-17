@@ -500,13 +500,18 @@ export function extraDirsForClaude(dirs?: string[]): string[] {
   return out;
 }
 
+/** PreToolUse matcher. MCP tools (`mcp_*` / `mcp__*`) used to miss this and
+ *  hang on Claude's headless TTY prompt — never reaching the phone bar. */
+export const CLAUDE_PRETOOL_MATCHER =
+  "Edit|Write|MultiEdit|NotebookEdit|Bash|Delete|mcp_.*|mcp__.*";
+
 /** Settings.json body: PreToolUse hook + optional extra-dir Read grants. */
 export function buildClaudeHookSettings(hookPath: string, extraDirs: string[] = []): Record<string, unknown> {
   const settings: Record<string, unknown> = {
     hooks: {
       PreToolUse: [
         {
-          matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|Delete",
+          matcher: CLAUDE_PRETOOL_MATCHER,
           hooks: [
             {
               type: "command",

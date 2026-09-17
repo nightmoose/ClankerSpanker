@@ -80,6 +80,33 @@ describe("toMcpJson", () => {
       transport: "http",
     });
   });
+
+  it("omits HTTP servers with no Authorization", () => {
+    const json = toMcpJson(
+      [
+        { name: "fly", command: "flyctl", args: ["mcp", "server"] },
+        { name: "vercel", url: "https://mcp.vercel.com", transport: "http" },
+      ],
+      {},
+    );
+    expect(Object.keys(json.mcpServers)).toEqual(["fly"]);
+  });
+
+  it("omits stdio servers whose env expands empty", () => {
+    const json = toMcpJson(
+      [
+        {
+          name: "databricks",
+          command: "npx",
+          args: ["-y", "databricks-mcp"],
+          env: { DATABRICKS_TOKEN: "${DATABRICKS_TOKEN}" },
+        },
+        { name: "azure", command: "npx", args: ["-y", "@azure/mcp@latest", "server", "start"] },
+      ],
+      {},
+    );
+    expect(Object.keys(json.mcpServers)).toEqual(["azure"]);
+  });
 });
 
 describe("toAcpMcpServers", () => {
@@ -105,6 +132,18 @@ describe("toAcpMcpServers", () => {
         headers: [{ name: "Authorization", value: "Bearer tok" }],
       },
     ]);
+  });
+
+  it("omits HTTP servers with no Authorization (Grok AuthRequired is fatal)", () => {
+    const acp = toAcpMcpServers(
+      [
+        { name: "fly", command: "flyctl", args: ["mcp", "server"] },
+        { name: "vercel", url: "https://mcp.vercel.com", transport: "http" },
+        { name: "github", url: "https://api.githubcopilot.com/mcp/", transport: "http" },
+      ],
+      {},
+    );
+    expect(acp.map((s) => s.name)).toEqual(["fly"]);
   });
 });
 

@@ -7,6 +7,11 @@ import { promisify } from "node:util";
 import type { AgentProfile, DispatchSession, ProfileUsage, PublicAgentProfile } from "./types.js";
 import { profileHasCredentials } from "./profiles.js";
 import { getAgyAccessToken } from "./bot/gemini-cli-auth.js";
+import {
+  getGrokCliAccessToken,
+  grokAuthJsonPathsForProfile,
+  readGrokCliCreds,
+} from "./bot/grok-cli-auth.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -74,14 +79,15 @@ interface ClaudeOAuthCreds {
 export async function profilesWithUsage(
   profiles: PublicAgentProfile[],
   full: AgentProfile[],
-  opts?: { sessions?: DispatchSession[] },
+  opts?: { sessions?: DispatchSession[]; dataDir?: string },
 ): Promise<PublicAgentProfile[]> {
   const sessions = opts?.sessions ?? [];
+  const dataDir = opts?.dataDir;
   return Promise.all(
     profiles.map(async (pub) => {
       const fullProfile = full.find((p) => p.id === pub.id);
       if (!fullProfile) return pub;
-      const usage = await usageForProfile(fullProfile, sessions);
+      const usage = await usageForProfile(fullProfile, sessions, dataDir);
       return { ...pub, usage };
     }),
   );
@@ -90,6 +96,7 @@ export async function profilesWithUsage(
 export async function usageForProfile(
   profile: AgentProfile,
   sessions: DispatchSession[] = [],
+  dataDir?: string,
 ): Promise<ProfileUsage> {
   const cacheKey = `${profile.id}:${profile.backend}:${profile.claudeConfigDir ?? ""}`;
   const hit = usageCache.get(cacheKey);
@@ -116,7 +123,7 @@ export async function usageForProfile(
         fetchedAt: new Date().toISOString(),
       };
     } else {
-      usage = await grokUsage(profile, sessions);
+      usage = await grokUsage(profile, sessions, dataDir);
     }
   } catch (err) {
     if (hit?.lastGood && now - hit.at < STALE_OK_MS) {
@@ -168,10 +175,15 @@ function withCachedSuffix(u: ProfileUsage): ProfileUsage {
 async function grokUsage(
   profile: AgentProfile,
   _sessions: DispatchSession[] = [],
+  dataDir?: string,
 ): Promise<ProfileUsage> {
   const fetchedAt = new Date().toISOString();
-  const auth = readGrokAuth();
-  if (!auth?.accessToken) {
+  const paths = grokAuthJsonPathsForProfile(profile, dataDir);
+  const creds = readGrokCliCreds(paths);
+  const accessToken = await getGrokCliAccessToken(paths);
+  const email =
+    typeof creds?.entry.email === "string" ? creds.entry.email.trim() : undefined;
+  if (!accessToken) {
     const ok = profileHasCredentials(profile);
     return {
       status: ok ? "ok" : "unknown",
@@ -187,7 +199,7 @@ async function grokUsage(
       {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${auth.accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
           Accept: "application/json",
           "User-Agent": "clankerspanker-host/0.6",
         },
@@ -199,7 +211,7 @@ async function grokUsage(
         return {
           status: "error",
           label: "Grok re-login needed",
-          accountEmail: auth.email,
+          accountEmail: email,
           canWork: false,
           error: `billing HTTP ${res.status}`,
           fetchedAt,
@@ -209,7 +221,7 @@ async function grokUsage(
       return {
         status: "error",
         label: `Grok usage HTTP ${res.status}`,
-        accountEmail: auth.email,
+        accountEmail: email,
         canWork: true,
         error: body.slice(0, 200),
         fetchedAt,
@@ -236,7 +248,7 @@ async function grokUsage(
       sevenDayPercent: weekUsed ?? undefined,
       sevenDayResetsAt: periodEnd,
       label: weekUsed != null ? `${Math.round(weekUsed)}%` : "Grok ready",
-      accountEmail: auth.email,
+      accountEmail: email,
       canWork: !limited,
       fetchedAt,
     };
@@ -244,7 +256,7 @@ async function grokUsage(
     return {
       status: "error",
       label: "Grok usage error",
-      accountEmail: auth.email,
+      accountEmail: email,
       canWork: true,
       error: err instanceof Error ? err.message : String(err),
       fetchedAt,
@@ -277,34 +289,6 @@ function productUsagePercent(
     (p) => (p.product ?? "").toLowerCase() === name.toLowerCase(),
   );
   return clampPct(hit?.usagePercent);
-}
-
-function readGrokAuth(): { accessToken: string; email?: string } | null {
-  const candidates = [
-    process.env.GROK_HOME?.trim()
-      ? join(process.env.GROK_HOME.trim(), "auth.json")
-      : join(homedir(), ".grok", "auth.json"),
-    join(homedir(), ".config", "grok", "auth.json"),
-  ];
-  const envKey = process.env.XAI_API_KEY?.trim();
-  for (const path of candidates) {
-    if (!existsSync(path)) continue;
-    try {
-      const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-      for (const v of Object.values(raw)) {
-        if (!v || typeof v !== "object") continue;
-        const o = v as Record<string, unknown>;
-        const key = typeof o.key === "string" ? o.key.trim() : "";
-        if (!key) continue;
-        const email = typeof o.email === "string" ? o.email.trim() : undefined;
-        return { accessToken: key, email };
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  if (envKey) return { accessToken: envKey };
-  return null;
 }
 
 /**
@@ -510,6 +494,11 @@ async function claudeUsage(
       creds = refreshed;
       res = await fetchOAuthUsage(creds.accessToken, ua);
     }
+  }
+
+  if (res.status === 429) {
+    await new Promise((r) => setTimeout(r, 1500));
+    res = await fetchOAuthUsage(creds.accessToken, ua);
   }
 
   if (!res.ok) {

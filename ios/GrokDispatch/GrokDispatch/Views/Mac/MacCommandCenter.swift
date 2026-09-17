@@ -175,13 +175,15 @@ struct MacCommandCenter: View {
                 Task { await botsVM.load(appState: appState) }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { _ in
-            Task {
-                await listVM.load(appState: appState)
-                if rootTab == .bots {
-                    await botsVM.load(appState: appState, quiet: true)
-                }
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { note in
+            // Session sidebar already updates via AppState.refreshSessions.
+            // Do not refetch the list on streaming chunks — that is what
+            // froze the Mac client after a long Grok turn.
+            guard let data = note.object as? Data,
+                  let type = DispatchSocket.eventType(from: data),
+                  type.hasPrefix("bot.")
+            else { return }
+            Task { await botsVM.load(appState: appState, quiet: true) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .macShowCompose)) { _ in
             showCompose = true

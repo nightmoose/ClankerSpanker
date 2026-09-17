@@ -60,7 +60,11 @@ struct BotsView: View {
                     .environmentObject(appState)
             }
             .task { await vm.load(appState: appState) }
-            .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { note in
+                guard let data = note.object as? Data,
+                      let type = DispatchSocket.eventType(from: data),
+                      type.hasPrefix("bot.")
+                else { return }
                 Task { await vm.load(appState: appState, quiet: true) }
             }
             .onChange(of: appState.selectedHost?.id) { _, _ in
@@ -297,7 +301,11 @@ struct BotsSidebar: View {
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         #endif
         .task { await vm.load(appState: appState) }
-        .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { note in
+            guard let data = note.object as? Data,
+                  let type = DispatchSocket.eventType(from: data),
+                  type.hasPrefix("bot.")
+            else { return }
             Task { await vm.load(appState: appState, quiet: true) }
         }
         .onChange(of: appState.selectedHost?.id) { _, _ in

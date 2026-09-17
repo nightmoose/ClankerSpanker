@@ -1,12 +1,25 @@
 # Next steps
 
-**Last updated:** 2026-09-09 (NightMoose)
+**Last updated:** 2026-09-16 (NightMoose)
 
 Client ownership is locked in [CLIENTS.md](CLIENTS.md). One host gateway only.
 
 This file is the in-repo status of play for ClankerSpanker. Snapshot:
 [PROJECT_STATUS.md](../PROJECT_STATUS.md). Estate-wide notes:
 `~/mercenary/STATUS-2026-08-23.md`.
+
+---
+
+## Done — 2026-09-16 (RFC-020 apply MCP catalog)
+
+`/app/` → Profiles (this Mac): catalog chips, **Apply catalog defaults**,
+Grok home field. `GET /mcp/catalog` + `POST /profiles/:id/mcp/apply-catalog`.
+NightMoose Grok ACP now uses `~/.grok-dispatch/grok-homes/nightmoose` so
+Claude's unsigned Vercel plugin MCP is not inherited. After deploy, **Install /
+update host** in the Mac Host panel (that copies `host/` into Application
+Support and loads `com.nightmoose.clankerspanker-host`). Then `/app/` →
+Apply catalog on NightMoose / Personal / FullScore and **Sign in** HTTP
+rows. See [MCP.md](MCP.md) and [MCP-CATALOG.md](MCP-CATALOG.md).
 
 ---
 
@@ -42,8 +55,9 @@ Mac. See RFC-012.
 Paste JSON: [MCP-CATALOG.md](MCP-CATALOG.md). NightMoose = GitHub /
 Vercel / Fly / Supabase / Notion. Personal = GitHub + Notion (own Sign
 in). FullScore = Databricks / Azure DevOps / Azure. Gemini = none.
-**Do not paste NightMoose until `grokHome` is set** (Grok still inherits
-`~/.grok`). `/app/` → Profiles (this Mac) → paste → Sign in HTTP rows.
+RFC-020 lifted the `grokHome` paste block — NightMoose Grok home can
+stay blank. `/app/` → Profiles (this Mac) → Apply catalog → Sign in HTTP
+rows.
 
 ---
 

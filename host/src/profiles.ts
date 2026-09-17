@@ -1,8 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AgentProfile, HostConfigFile, PublicAgentProfile, SessionBackend } from "./types.js";
 import { normalizeMcpServers, publicMcpServers } from "./mcp.js";
+import { applyGrokHomeToEnv } from "./grok-home.js";
 
 /** Built-in defaults until the user customizes ~/.grok-dispatch/config.json */
 export function defaultProfiles(): AgentProfile[] {
@@ -232,7 +233,10 @@ export function resolveProfile(
 }
 
 /** Env map for spawning an agent process under this profile. */
-export function profileProcessEnv(profile: AgentProfile): NodeJS.ProcessEnv {
+export function profileProcessEnv(
+  profile: AgentProfile,
+  opts?: { dataDir?: string },
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...(profile.env ?? {}) };
   if (profile.claudeConfigDir) {
     // Claude Code respects CLAUDE_CONFIG_DIR for multi-account isolation when set
@@ -242,10 +246,27 @@ export function profileProcessEnv(profile: AgentProfile): NodeJS.ProcessEnv {
     // Hint for future multi-login; also set XDG-style home override if useful
     env.ANTIGRAVITY_CONFIG_DIR = profile.antigravityConfigDir;
   }
-  if (profile.grokHome) {
-    // Grok CLI + ACP read GROK_HOME for auth.json, sessions, MCP creds
-    env.GROK_HOME = profile.grokHome;
-  }
+  applyGrokHomeToEnv(env, profile, opts?.dataDir);
+  applyNpmAuthToEnv(env, profile, opts?.dataDir);
+  return env;
+}
+
+/** Non-interactive npm publish: userconfig so agents never run `npm login`. */
+export function applyNpmAuthToEnv(
+  env: NodeJS.ProcessEnv,
+  profile: AgentProfile,
+  dataDir?: string,
+): NodeJS.ProcessEnv {
+  const token = (env.NPM_TOKEN || env.NODE_AUTH_TOKEN || "").trim();
+  if (!token) return env;
+  env.NPM_TOKEN = token;
+  env.NODE_AUTH_TOKEN = token;
+  if (!dataDir?.trim()) return env;
+  const dir = join(dataDir.trim(), "npm");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${profile.id}.npmrc`);
+  writeFileSync(path, `//registry.npmjs.org/:_authToken=${token}\n`, { mode: 0o600 });
+  env.NPM_CONFIG_USERCONFIG = path;
   return env;
 }
 

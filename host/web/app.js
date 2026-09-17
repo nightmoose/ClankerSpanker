@@ -27,6 +27,7 @@ const state = {
   admin: false,
   adminProfiles: [],
   profileEditor: null,
+  mcpCatalog: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -38,7 +39,7 @@ function banner(msg, isError = false) {
   el.classList.toggle("error", isError);
   el.classList.remove("hidden");
   clearTimeout(banner._t);
-  banner._t = setTimeout(() => el.classList.add("hidden"), 3500);
+  banner._t = setTimeout(() => el.classList.add("hidden"), isError ? 10000 : 3500);
 }
 
 function authHeaders() {
@@ -586,9 +587,11 @@ function renderProfiles() {
           ? p.claudeConfigDir
           : p.backend === "antigravity"
             ? p.antigravityConfigDir
-            : null;
+            : p.grokHome;
       const envCount = p.env ? Object.keys(p.env).filter((k) => k.trim()).length : 0;
       const canLogin = p.backend === "claude";
+      const mcpNames = (p.mcpServers || []).map((s) => s && s.name).filter(Boolean);
+      const assigned = (state.mcpCatalog?.assignments?.[p.id] || []).length;
       return `
         <div class="profile-row">
           <span class="profile-dot" style="background:${escapeAttr(p.color || "#73B8FF")}"></span>
@@ -599,10 +602,12 @@ function renderProfiles() {
               ${p.model ? `<span>model: ${escapeHtml(p.model)}</span>` : ""}
               ${configDir ? `<span>dir: ${escapeHtml(shortPath(configDir))}</span>` : ""}
               ${envCount ? `<span>env: ${envCount}</span>` : ""}
+              ${mcpNames.length ? `<span>mcp: ${escapeHtml(mcpNames.join(", "))}</span>` : '<span>mcp: none</span>'}
             </div>
           </div>
           <div class="row-actions">
             ${canLogin ? `<button type="button" class="secondary" data-login="${escapeAttr(p.id)}">Login</button>` : ""}
+            ${assigned ? `<button type="button" class="secondary" data-apply-catalog="${escapeAttr(p.id)}">Apply catalog</button>` : ""}
             <button type="button" class="secondary" data-edit="${escapeAttr(p.id)}">Edit</button>
             <button type="button" class="danger" data-delete="${escapeAttr(p.id)}">Delete</button>
           </div>
@@ -634,6 +639,9 @@ function renderProfiles() {
   root.querySelectorAll("[data-login]").forEach((btn) =>
     btn.addEventListener("click", () => loginProfile(btn.getAttribute("data-login"))),
   );
+  root.querySelectorAll("[data-apply-catalog]").forEach((btn) =>
+    btn.addEventListener("click", () => applyCatalogToProfile(btn.getAttribute("data-apply-catalog"))),
+  );
   $("#btn-new-profile")?.addEventListener("click", () => openProfileEditor(null));
 
   if (state.profileEditor) openProfileEditor(state.profileEditor.id, state.profileEditor.draft);
@@ -651,6 +659,7 @@ function openProfileEditor(id, draftOverride) {
         systemPrompt: "",
         claudeConfigDir: "",
         antigravityConfigDir: "",
+        grokHome: "",
         env: {},
       }
     : (state.adminProfiles || []).find((p) => p.id === id);
@@ -664,6 +673,7 @@ function openProfileEditor(id, draftOverride) {
     systemPrompt: source.systemPrompt || "",
     claudeConfigDir: source.claudeConfigDir || "",
     antigravityConfigDir: source.antigravityConfigDir || "",
+    grokHome: source.grokHome || "",
     envText: envToText(source.env || {}),
     mcpText: mcpToText(source.mcpServers),
   };
@@ -674,7 +684,9 @@ function openProfileEditor(id, draftOverride) {
       ? { label: "Claude config dir", key: "claudeConfigDir", hint: "Sets CLAUDE_CONFIG_DIR for this profile so a second Claude account uses its own OAuth store. Leave blank for the default ~/.claude." }
       : draft.backend === "antigravity"
         ? { label: "Antigravity config dir", key: "antigravityConfigDir", hint: "Reserved for multi-account isolation once the agy CLI supports it — today it still uses the global ~/.gemini keyring." }
-        : null;
+        : draft.backend === "grok" || draft.backend === "bot"
+          ? { label: "Grok home", key: "grokHome", hint: "Leave blank to use an isolated GROK_HOME under ~/.grok-dispatch/grok-homes (shares this Mac's Grok login, does not inherit Claude's Vercel plugin MCP). Set a path only for a second Grok account." }
+          : null;
 
   const envHint =
     draft.backend === "claude"
@@ -713,6 +725,7 @@ function openProfileEditor(id, draftOverride) {
       <p class="preview">${escapeHtml(envHint)}</p>
       <label class="field">System prompt (Claude persona — appended)</label>
       <textarea id="pe-sysprompt" rows="3">${escapeHtml(draft.systemPrompt)}</textarea>
+      ${catalogChipBlock(draft)}
       <label class="field">MCP servers (JSON array — billed to this profile)</label>
       <textarea id="pe-mcp" rows="6" spellcheck="false" placeholder='[{"name":"databricks","command":"npx","args":["-y","databricks-mcp"]}]'>${escapeHtml(draft.mcpText || "")}</textarea>
       <p class="preview">stdio: command/args/env. HTTP: url/headers/transport. Use \${VAR} from Environment above. Secrets stay on this machine. HTTP servers can Sign in with MCP OAuth after you save the profile.</p>
@@ -731,8 +744,9 @@ function openProfileEditor(id, draftOverride) {
     model: $("#pe-model").value.trim(),
     systemPrompt: $("#pe-sysprompt").value.trim(),
     mcpText: $("#pe-mcp")?.value ?? "",
-    claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : source.claudeConfigDir || "",
-    antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : source.antigravityConfigDir || "",
+    claudeConfigDir: dir?.key === "claudeConfigDir" ? $("#pe-configdir")?.value.trim() : (draft.claudeConfigDir || source.claudeConfigDir || ""),
+    antigravityConfigDir: dir?.key === "antigravityConfigDir" ? $("#pe-configdir")?.value.trim() : (draft.antigravityConfigDir || source.antigravityConfigDir || ""),
+    grokHome: dir?.key === "grokHome" ? $("#pe-configdir")?.value.trim() : (draft.grokHome || source.grokHome || ""),
     envText: $("#pe-env").value,
   });
 
@@ -758,6 +772,33 @@ function openProfileEditor(id, draftOverride) {
       else startMcpOAuth(source.id, name);
     });
   });
+  host.querySelectorAll("[data-mcp-chip]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = readDraft();
+      try {
+        next.mcpText = mcpToText(toggleCatalogServer(parseMcpText(next.mcpText), btn.getAttribute("data-mcp-chip")));
+      } catch (err) {
+        banner(err instanceof Error ? err.message : String(err), true);
+        return;
+      }
+      openProfileEditor(id, next);
+    });
+  });
+  $("#pe-mcp-apply")?.addEventListener("click", () => {
+    const next = readDraft();
+    if (!isNew && id) {
+      applyCatalogToProfile(id, next);
+      return;
+    }
+    try {
+      const profileId = id || next.id || slugHint(next.name);
+      next.mcpText = mcpToText(mergeCatalogDefaults(profileId, parseMcpText(next.mcpText)));
+      openProfileEditor(id, next);
+      banner("Catalog defaults filled in JSON — Save, then Sign in HTTP rows");
+    } catch (err) {
+      banner(err instanceof Error ? err.message : String(err), true);
+    }
+  });
   $("#pe-save").addEventListener("click", async () => {
     const d = readDraft();
     if (!d.name) {
@@ -780,6 +821,7 @@ function openProfileEditor(id, draftOverride) {
       systemPrompt: d.systemPrompt || null,
       claudeConfigDir: d.claudeConfigDir || null,
       antigravityConfigDir: d.antigravityConfigDir || null,
+      grokHome: d.grokHome || null,
       env,
       mcpServers,
     };
@@ -838,6 +880,13 @@ function envToText(env) {
     .join("\n");
 }
 
+function headerHasAuthorization(headers) {
+  if (!headers || typeof headers !== "object") return false;
+  return Object.keys(headers).some(
+    (k) => k.toLowerCase() === "authorization" && String(headers[k] || "").trim(),
+  );
+}
+
 function mcpOAuthBlock(source) {
   if (!source?.id) {
     return `<p class="preview">Save this profile first, then Sign in to HTTP MCP servers.</p>`;
@@ -847,6 +896,12 @@ function mcpOAuthBlock(source) {
   const status = source.mcpOAuth || {};
   const rows = servers
     .map((s) => {
+      if (headerHasAuthorization(s.headers)) {
+        return `<div class="mcp-oauth-row">
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="meta">token from Environment — no Sign in</span>
+      </div>`;
+      }
       const st = status[s.name] || {};
       const connected = st.connected === true;
       const label = connected
@@ -870,15 +925,49 @@ function mcpOAuthBlock(source) {
 
 async function startMcpOAuth(profileId, serverName) {
   if (!profileId || !serverName) return;
+  const src = (state.adminProfiles || []).find((p) => p.id === profileId);
+  const server = (src?.mcpServers || []).find((s) => s && s.name === serverName);
+  if (headerHasAuthorization(server?.headers)) {
+    banner(`${serverName} already uses a token from Environment — no Sign in`, true);
+    return;
+  }
+  // Open the tab in the click gesture. Discovery/DCR can take seconds, and
+  // window.open after await is treated as a popup and silently blocked.
+  const popup = window.open("about:blank", `mcp-oauth-${profileId}-${serverName}`);
   try {
     const r = await api(
       `/profiles/${encodeURIComponent(profileId)}/mcp/${encodeURIComponent(serverName)}/oauth/start`,
       { method: "POST", body: "{}" },
     );
-    if (r?.authorizeUrl) window.open(r.authorizeUrl, "_blank", "noopener");
-    banner(`Complete ${serverName} sign-in in the browser tab`);
-    pollMcpOAuth(profileId, serverName);
+    if (r?.authorizeUrl) {
+      if (popup && !popup.closed) {
+        popup.location.replace(r.authorizeUrl);
+      } else {
+        banner(`Popup blocked — click Open ${serverName} sign-in`, true);
+      }
+      const row = document.querySelector(`[data-mcp-oauth="${CSS.escape(serverName)}"]`)?.closest(".mcp-oauth-row");
+      if (row && !row.querySelector("[data-mcp-open]")) {
+        const a = document.createElement("a");
+        a.className = "secondary";
+        a.href = r.authorizeUrl;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.setAttribute("data-mcp-open", serverName);
+        a.textContent = "Open sign-in";
+        a.style.cssText = "display:inline-block;padding:8px 12px;border-radius:8px;text-decoration:none";
+        row.appendChild(a);
+      }
+      banner(`Complete ${serverName} sign-in in the browser tab`);
+      pollMcpOAuth(profileId, serverName);
+    } else {
+      popup?.close();
+    }
   } catch (e) {
+    try {
+      popup?.close();
+    } catch {
+      /* */
+    }
     banner(e.message, true);
   }
 }
@@ -940,6 +1029,113 @@ function parseMcpText(text) {
   }
   if (!Array.isArray(v)) throw new Error("MCP servers must be a JSON array");
   return v;
+}
+
+function slugHint(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function catalogServerPayload(id) {
+  const s = (state.mcpCatalog?.servers || []).find((x) => x.id === id);
+  if (!s) return null;
+  const entry = { name: s.id, transport: s.transport || (s.url ? "http" : "stdio") };
+  if (s.url) entry.url = s.url;
+  if (s.command) entry.command = s.command;
+  if (Array.isArray(s.args) && s.args.length) entry.args = s.args;
+  if (s.env && typeof s.env === "object") entry.env = s.env;
+  if (s.headers && typeof s.headers === "object") entry.headers = s.headers;
+  if (s.id === "github" && !headerHasAuthorization(entry.headers)) {
+    entry.headers = { ...(entry.headers || {}), Authorization: "Bearer ${GITHUB_TOKEN}" };
+  }
+  return entry;
+}
+
+function toggleCatalogServer(servers, id) {
+  const name = String(id || "").trim();
+  if (!name) return servers;
+  const list = Array.isArray(servers) ? [...servers] : [];
+  const idx = list.findIndex((s) => s && s.name === name);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    return list;
+  }
+  const entry = catalogServerPayload(name);
+  if (!entry) throw new Error(`Unknown catalog server "${name}"`);
+  list.push(entry);
+  return list;
+}
+
+function mergeCatalogDefaults(profileId, existing) {
+  const ids = state.mcpCatalog?.assignments?.[profileId] || [];
+  const list = Array.isArray(existing) ? [...existing] : [];
+  const have = new Set(list.map((s) => s && s.name).filter(Boolean));
+  for (const id of ids) {
+    if (have.has(id)) continue;
+    const entry = catalogServerPayload(id);
+    if (entry) {
+      list.push(entry);
+      have.add(id);
+    }
+  }
+  return list;
+}
+
+function catalogChipBlock(draft) {
+  const servers = state.mcpCatalog?.servers || [];
+  if (!servers.length) return "";
+  let current = new Set();
+  try {
+    parseMcpText(draft.mcpText).forEach((s) => {
+      if (s?.name) current.add(s.name);
+    });
+  } catch {
+    current = new Set();
+  }
+  const assigned = new Set(state.mcpCatalog?.assignments?.[draft.id] || []);
+  const chips = servers
+    .map((s) => {
+      const on = current.has(s.id);
+      const def = assigned.has(s.id);
+      const cls = ["mcp-chip", on ? "on" : "", def ? "default" : "", s.optional ? "optional" : ""]
+        .filter(Boolean)
+        .join(" ");
+      const title = [s.vendor, s.auth, s.notes].filter(Boolean).join(" — ");
+      return `<button type="button" class="${cls}" data-mcp-chip="${escapeAttr(s.id)}" title="${escapeAttr(title)}">${on ? "✓" : "+"} ${escapeHtml(s.id)}</button>`;
+    })
+    .join("");
+  return `<label class="field">Catalog</label>
+    <div class="mcp-chips">${chips}</div>
+    <div class="row-actions" style="margin:8px 0 4px">
+      <button type="button" class="secondary" id="pe-mcp-apply">Apply catalog defaults</button>
+    </div>
+    <p class="preview">Highlighted chips are this profile’s payer defaults. Click to add/remove in the JSON. Apply catalog defaults POSTs the merge (existing same-name rows stay) then reloads; new profiles fill JSON until you save. HTTP rows Sign in after save.</p>`;
+}
+
+async function applyCatalogToProfile(id, draftOverride) {
+  if (!id) return;
+  try {
+    const r = await api(`/profiles/${encodeURIComponent(id)}/mcp/apply-catalog`, {
+      method: "POST",
+      body: "{}",
+    });
+    banner("Catalog defaults merged — Sign in HTTP rows");
+    await refresh();
+    if (state.profileEditor?.id === id || draftOverride) {
+      const src = (state.adminProfiles || []).find((p) => p.id === id);
+      const draft = draftOverride
+        ? { ...draftOverride, mcpText: mcpToText(r.mcpServers || src?.mcpServers) }
+        : undefined;
+      openProfileEditor(id, draft);
+    } else {
+      renderProfiles();
+    }
+  } catch (e) {
+    banner(e.message, true);
+  }
 }
 
 function envFromText(text) {
@@ -1005,11 +1201,12 @@ function renderSettings() {
 async function refresh() {
   if (!state.token) return;
   try {
-    const [sessions, projects, profiles] = await Promise.all([
+    const [sessions, projects, profiles, catalog] = await Promise.all([
       api("/sessions"),
       api("/projects").catch(() => ({ projects: [] })),
       // Ask for admin payload; server ignores it for non-loopback callers.
       api("/profiles?admin=1").catch(() => ({ profiles: [], admin: false })),
+      api("/mcp/catalog").catch(() => null),
     ]);
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
@@ -1019,8 +1216,16 @@ async function refresh() {
     state.profiles = profiles.profiles || [];
     state.admin = profiles.admin === true;
     state.adminProfiles = profiles.adminProfiles || [];
+    if (catalog?.servers) state.mcpCatalog = catalog;
     if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
     setConn(true);
+    // WS / ↻ used to call renderList() whenever no session detail was open,
+    // which yanked Profiles (and the editor) back to the session list.
+    if (state.tab === "profiles") {
+      if (!state.profileEditor) renderProfiles();
+      return;
+    }
+    if (state.tab === "settings" || state.tab === "compose") return;
     if (!state.detail) renderList();
     else if (state.detail?.id) {
       try {
@@ -1122,12 +1327,33 @@ function boot() {
     history.replaceState({}, "", location.pathname);
   }
 
-  if (!state.token) {
-    renderSettings();
-  } else {
-    connectWs();
-    refresh().then(() => renderList());
+  const start = () => {
+    if (!state.token) {
+      renderSettings();
+    } else {
+      connectWs();
+      refresh().then(() => renderList());
+    }
+  };
+
+  if (state.token) {
+    start();
+    return;
   }
+  // Same-origin /app/ (tray "Open web UI") — /connect.json already
+  // exposes the token on this host, same as /setup.
+  fetch("/connect.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((c) => {
+      if (c?.hostToken) {
+        state.token = c.hostToken;
+        localStorage.setItem(STORAGE_TOKEN, state.token);
+        state.baseURL = window.location.origin;
+        localStorage.setItem(STORAGE_URL, state.baseURL);
+      }
+    })
+    .catch(() => {})
+    .finally(start);
 }
 
 boot();

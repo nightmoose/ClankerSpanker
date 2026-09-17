@@ -3,8 +3,10 @@
 RFC: [rfcs/013-profile-mcp-catalog.md](rfcs/013-profile-mcp-catalog.md).
 Mechanism: [MCP.md](MCP.md) (RFC-008/009).
 
-`/app/` → Profiles (this Mac) → MCP JSON textarea. HTTP rows then
-**Sign in**. Do not put Gmail / M365 / QuickBooks on NightMoose.
+`/app/` → Profiles (this Mac) → **Apply catalog defaults** (or chips /
+JSON textarea). HTTP rows then **Sign in**. Do not put Gmail / M365 /
+QuickBooks on NightMoose. NightMoose Grok home can stay blank (RFC-020
+isolates spawn under `~/.grok-dispatch/grok-homes/nightmoose`).
 
 Placeholders: replace `YOUR_ADO_ORG`. Tokens belong in that profile’s
 **Environment** field (`${DATABRICKS_TOKEN}`), never in git.
@@ -18,6 +20,7 @@ Placeholders: replace `YOUR_ADO_ORG`. Tokens belong in that profile’s
   {
     "name": "github",
     "url": "https://api.githubcopilot.com/mcp/",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
     "transport": "http"
   },
   {
@@ -43,8 +46,9 @@ Placeholders: replace `YOUR_ADO_ORG`. Tokens belong in that profile’s
 ]
 ```
 
-Sign in: GitHub, Vercel, Supabase, Notion. Fly uses the `flyctl` login
-already on this Mac (`fly auth whoami`).
+GitHub: put `GITHUB_TOKEN=…` in Environment (PAT or `gh auth token`).
+There is no Sign in — GitHub MCP has no registration endpoint. Vercel /
+Supabase / Notion Sign in. Fly uses `flyctl` on this Mac.
 
 Optional later: `stripe`, `sentry`, `context7`
 (`https://mcp.context7.com/mcp`), `linear`
@@ -59,6 +63,7 @@ Optional later: `stripe`, `sentry`, `context7`
   {
     "name": "github",
     "url": "https://api.githubcopilot.com/mcp/",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
     "transport": "http"
   },
   {
@@ -69,7 +74,8 @@ Optional later: `stripe`, `sentry`, `context7`
 ]
 ```
 
-Sign in **again** on this chip (separate OAuth files under
+GitHub: `GITHUB_TOKEN` in Environment (this profile’s token, not
+NightMoose’s unless you reuse it). Notion: Sign in (separate OAuth under
 `mcp-oauth/personal/`). Add Gmail/Slack here, not on NightMoose.
 
 ---
@@ -86,27 +92,22 @@ Sign in **again** on this chip (separate OAuth files under
   },
   {
     "name": "azure-devops",
-    "url": "https://mcp.dev.azure.com/YOUR_ADO_ORG",
-    "transport": "http"
+    "command": "npx",
+    "args": ["-y", "@azure-devops/mcp", "ShoreCP"],
+    "transport": "stdio"
   },
   {
     "name": "azure",
-    "url": "https://mcp.management.azure.com",
-    "transport": "http"
+    "command": "npx",
+    "args": ["-y", "@azure/mcp@latest", "server", "start"],
+    "transport": "stdio"
   }
 ]
 ```
 
-If Azure DevOps remote Sign in fails (Entra often wants a
-pre-registered client, not DCR), use local stdio instead:
-
-```json
-{
-  "name": "azure-devops",
-  "command": "npx",
-  "args": ["-y", "@azure-devops/mcp"]
-}
-```
+Remote HTTP Sign in for Azure / Azure DevOps fails here: Entra has no
+`registration_endpoint`. Stdio is the catalog default. First Azure DevOps
+tool use opens a browser; Azure uses this Mac's `az login`.
 
 Databricks workspace URL, if the vendor HTTP server is used instead of
 npx, is per-customer — keep it in FullScore env, not in this file.
@@ -136,7 +137,7 @@ Leave `[]` until Antigravity grows `--mcp-config`.
 
 ## Soak
 
-1. Paste NightMoose JSON, Sign in Vercel, dispatch, tools include Vercel.
+1. Apply catalog on NightMoose, Sign in Vercel, dispatch, tools include Vercel.
 2. FullScore turn on the same host: **no** Vercel tools.
 3. Unsigned Vercel must **not** pop “NightMoose needs to sign in”
    (RFC-012). Prefer Sign in or `enabled: false` over a dead worker.

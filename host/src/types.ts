@@ -381,6 +381,16 @@ export interface DispatchSession {
    * first turn completes with metrics.
    */
   usage?: SessionUsage;
+  /**
+   * RFC-021 per-session Grok credit meter. Grok backend only; snapshotted from
+   * `/v1/billing?format=credits` at session open and after each `end_turn`.
+   * Delta ≈ share of weekly plan this chat has burned. Undefined for other
+   * backends and for sessions that predate the RFC (no baseline).
+   */
+  creditsUsedStartPct?: number;
+  creditsUsedLastPct?: number;
+  creditsUsedDeltaPct?: number;
+  creditsUsedAt?: string;
 }
 
 export interface TranscriptEntry {
@@ -670,6 +680,16 @@ export interface HostConfigFile {
   promptMaxMs?: number;
 }
 
+/**
+ * RFC-021 per-session credit meter thresholds. Kept as a plain shape (not on
+ * HostConfigFile yet) so the classifier is unit-testable with overrides.
+ * Clients currently use RFC defaults (green < 5%, amber ≥ 5%, red ≥ 10%).
+ */
+export interface SessionMeterConfig {
+  warnPct?: number;
+  amberPct?: number;
+}
+
 export interface PublicSessionSummary {
   id: string;
   grokSessionId?: string;
@@ -698,6 +718,9 @@ export interface PublicSessionSummary {
   profileColor?: string;
   claudeSessionId?: string;
   antigravityConversationId?: string;
+  /** RFC-021 Grok credit meter delta (weekly % this session has burned). */
+  creditsUsedDeltaPct?: number;
+  creditsUsedAt?: string;
 }
 
 export interface SessionFileEntry {

@@ -1,5 +1,33 @@
 import SwiftUI
 
+/// RFC-021 per-session Grok credit meter. Green < 5%, amber ≥ 5%, red ≥ 10%.
+/// Grok-only; other backends carry `nil` and no badge is drawn.
+enum SessionCreditMeter {
+    struct Badge {
+        let label: String
+        let tooltip: String
+        let color: Color
+    }
+
+    static func badge(for delta: Double?) -> Badge? {
+        guard let delta, delta.isFinite else { return nil }
+        let rounded = delta < 1 ? String(format: "%.1f", delta) : "\(Int(delta.rounded()))"
+        let color: Color
+        let tooltip: String
+        if delta >= 10 {
+            color = .red
+            tooltip = "This chat has burned \(rounded)% of the weekly Grok plan. Consider reincarnating."
+        } else if delta >= 5 {
+            color = .orange
+            tooltip = "This chat has burned \(rounded)% of the weekly Grok plan. Consider reincarnating."
+        } else {
+            color = .green
+            tooltip = "This chat has burned \(rounded)% of the weekly Grok plan."
+        }
+        return Badge(label: "wk +\(rounded)%", tooltip: tooltip, color: color)
+    }
+}
+
 struct SessionRowView: View {
     let session: SessionSummary
 
@@ -40,6 +68,16 @@ struct SessionRowView: View {
                 }
                 if session.toolCallCount > 0 {
                     Label("\(session.toolCallCount)", systemImage: "wrench.and.screwdriver")
+                }
+                if let badge = SessionCreditMeter.badge(for: session.creditsUsedDeltaPct) {
+                    Text(badge.label)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .foregroundStyle(badge.color)
+                        .background(badge.color.opacity(0.15))
+                        .clipShape(Capsule())
+                        .help(badge.tooltip)
                 }
             }
             .font(.caption)

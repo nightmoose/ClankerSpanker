@@ -111,6 +111,14 @@ paths:
   /app/terminal.html:
     get:
       summary: xterm.js page for the host terminal (static; socket is the auth gate)
+  /mcp/catalog:
+    get:
+      summary: Checked-in MCP catalog (names, urls, default profile assignment). No secrets.
+      security: [{ bearerAuth: [] }]
+  /profiles/{id}/mcp/apply-catalog:
+    post:
+      summary: Merge this profile's default catalog servers by name. This machine only. Body { replace?: boolean }.
+      security: [{ bearerAuth: [] }]
   /profiles/{id}/mcp/{name}/oauth/start:
     post:
       summary: Start MCP OAuth (PKCE). This machine only. Returns { authorizeUrl, state }.

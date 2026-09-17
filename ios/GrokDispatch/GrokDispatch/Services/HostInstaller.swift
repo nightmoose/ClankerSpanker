@@ -55,16 +55,20 @@ enum HostInstaller {
         }
 
         try fm.createDirectory(at: installRoot, withIntermediateDirectories: true)
-        // Fresh package tree
-        for name in ["dist", "package.json", "package-lock.json", "node_modules"] {
+        // Fresh package tree. `web/` is the /app/ UI (not emitted by tsc).
+        for name in ["dist", "web", "package.json", "package-lock.json", "node_modules"] {
             let dest = installRoot.appendingPathComponent(name)
             if fm.fileExists(atPath: dest.path) {
                 try? fm.removeItem(at: dest)
             }
         }
 
-        log("Copying dist + package manifests…")
+        log("Copying dist + web + package manifests…")
         try copyItem(src.appendingPathComponent("dist"), to: installRoot.appendingPathComponent("dist"))
+        let web = src.appendingPathComponent("web")
+        if fm.fileExists(atPath: web.path) {
+            try copyItem(web, to: installRoot.appendingPathComponent("web"))
+        }
         try copyItem(src.appendingPathComponent("package.json"), to: installRoot.appendingPathComponent("package.json"))
         let lock = src.appendingPathComponent("package-lock.json")
         if fm.fileExists(atPath: lock.path) {

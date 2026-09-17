@@ -3388,7 +3388,7 @@ export class SessionManager extends EventEmitter {
           ? session.backend
           : "grok";
       const profile = resolveProfile(this.config, session.profileId, preferred);
-      return profileProcessEnv(profile);
+      return profileProcessEnv(profile, { dataDir: this.config.dataDir });
     } catch {
       return { ...process.env };
     }

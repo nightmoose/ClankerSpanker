@@ -137,13 +137,15 @@ async function installHost(opts = {}) {
   }
 
   fs.mkdirSync(dest, { recursive: true });
-  for (const name of ["dist", "package.json", "package-lock.json", "node_modules"]) {
+  for (const name of ["dist", "web", "package.json", "package-lock.json", "node_modules"]) {
     const p = path.join(dest, name);
     if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
   }
 
-  onLog("Copying dist + package manifests…");
+  onLog("Copying dist + web + package manifests…");
   copyDir(path.join(src, "dist"), path.join(dest, "dist"));
+  const web = path.join(src, "web");
+  if (fs.existsSync(web)) copyDir(web, path.join(dest, "web"));
   fs.copyFileSync(path.join(src, "package.json"), path.join(dest, "package.json"));
   const lock = path.join(src, "package-lock.json");
   if (fs.existsSync(lock)) fs.copyFileSync(lock, path.join(dest, "package-lock.json"));

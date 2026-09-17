@@ -5,9 +5,9 @@ final class DashboardViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    func load(appState: AppState) async {
-        isLoading = true
-        defer { isLoading = false }
+    func load(appState: AppState, quiet: Bool = false) async {
+        if !quiet { isLoading = true }
+        defer { if !quiet { isLoading = false } }
         await appState.refreshSessions()
         errorMessage = appState.lastRefreshError
     }

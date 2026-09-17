@@ -908,6 +908,16 @@ private struct MacSessionRow: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(DispatchColors.accent)
                 }
+                if let badge = SessionCreditMeter.badge(for: session.creditsUsedDeltaPct) {
+                    Text(badge.label)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .foregroundStyle(badge.color)
+                        .background(badge.color.opacity(0.15))
+                        .clipShape(Capsule())
+                        .help(badge.tooltip)
+                }
             }
         }
         .padding(.vertical, 4)

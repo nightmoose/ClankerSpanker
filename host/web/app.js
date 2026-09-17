@@ -86,6 +86,21 @@ function statusClass(s) {
   return `status ${String(s || "").replace(/[^a-z_]/g, "")}`;
 }
 
+// RFC-021: per-session Grok credit meter badge. Grok-only; other backends
+// (Claude / Antigravity / Bot) never surface a delta. Green < 5%, amber ≥ 5%,
+// red ≥ 10%. Tooltip nudges reincarnation once the chat has grown expensive.
+function creditBadge(s) {
+  const delta = typeof s?.creditsUsedDeltaPct === "number" ? s.creditsUsedDeltaPct : null;
+  if (delta == null || !Number.isFinite(delta)) return "";
+  const tier = delta >= 10 ? "red" : delta >= 5 ? "amber" : "green";
+  const rounded = delta < 1 ? delta.toFixed(1) : Math.round(delta).toString();
+  const title =
+    tier === "green"
+      ? `This chat has burned ${rounded}% of the weekly Grok plan.`
+      : `This chat has burned ${rounded}% of the weekly Grok plan. Consider reincarnating.`;
+  return `<span class="credit-badge credit-${tier}" title="${escapeAttr(title)}">wk +${rounded}%</span>`;
+}
+
 // ——— Renderers ———
 
 function renderList() {
@@ -172,6 +187,7 @@ function sessionCard(s) {
             <span class="${statusClass(s.status)}">${escapeHtml(s.status)}</span>
             <span>${escapeHtml(s.model || "")}</span>
             <span>${escapeHtml(shortPath(s.cwd))}</span>
+            ${creditBadge(s)}
           </div>
           <div class="preview">${escapeHtml(s.transcriptPreview || s.prompt || "")}</div>
         </div>

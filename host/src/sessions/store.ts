@@ -97,6 +97,8 @@ export class SessionStore {
       profileColor: s.profileColor,
       claudeSessionId: s.claudeSessionId,
       antigravityConversationId: s.antigravityConversationId,
+      creditsUsedDeltaPct: s.creditsUsedDeltaPct,
+      creditsUsedAt: s.creditsUsedAt,
     };
   }
 

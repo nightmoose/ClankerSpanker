@@ -2,6 +2,31 @@
 
 ---
 
+## Run: 2026-09-16 — RFC-020 apply MCP catalog per profile
+
+Mechanism (RFC-008/009) and paste map (RFC-013) were shipped; every live
+profile still had `mcpServers: null`, and NightMoose Grok ACP inherited
+Claude's unsigned **Vercel plugin MCP** (`~/.claude/plugins`, not
+`grok mcp list`). That AuthRequired still killed workers.
+
+Canonical catalog is now `host/src/mcp-catalog.ts`. `/app/` Profiles
+gets chips + **Apply catalog defaults**. `GET /mcp/catalog` and
+`POST /profiles/:id/mcp/apply-catalog` (this machine). Grok spawn with
+a blank `grokHome` uses `{dataDir}/grok-homes/{profileId}` with
+`[compat.claude] mcps = false` and `[plugins] disabled = ["vercel", …]`,
+auth.json symlinked to `~/.grok/auth.json`.
+
+**Soak:** Mac Host panel **Install / update host** (Application Support +
+`com.nightmoose.clankerspanker-host`). Do not kick the repo
+`grok-dispatch-host` agent. `/app/` → Profiles → Apply catalog on
+NightMoose / Personal / FullScore → Sign in HTTP rows. A NightMoose
+turn must see Vercel only after Sign in; a FullScore turn must not.
+HostInstaller now copies `host/web/` with `dist/` so `/app/` catalog
+chips ship in the installed package.
+
+---
+
+
 ## Run: 2026-09-11 — RFC-019 stuck "Running" + phantom pending questions
 
 Confirmed sessions were stranded on `status: "running"` after Grok

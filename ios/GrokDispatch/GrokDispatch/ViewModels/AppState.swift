@@ -73,6 +73,10 @@ final class AppState: ObservableObject {
     @Published var lastRefreshError: String?
 
     private var cancellables = Set<AnyCancellable>()
+    /// Coalesce socket-driven list refreshes. A live Grok turn emits hundreds
+    /// of events; refetching GET /sessions on each one is what made the Mac
+    /// client crawl until relaunch.
+    private var sessionRefreshTask: Task<Void, Never>?
     #if os(iOS)
     private var pendingDeviceToken: String?
     private var lastPushRegistration: String?
@@ -607,6 +611,15 @@ final class AppState: ObservableObject {
         return count
     }
 
+    private func scheduleSessionRefresh() {
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.refreshSessions()
+        }
+    }
+
     /// Refresh profiles from all hosts; sessions for the selected host.
     func refreshSessions() async {
         defer {
@@ -776,7 +789,7 @@ final class AppState: ObservableObject {
         switch type {
         case "session.created", "session.updated", "session.completed", "session.failed",
              "approval.needed", "approval.resolved", "question.needed", "question.answered":
-            Task { await refreshSessions() }
+            scheduleSessionRefresh()
             let sessionId = event["sessionId"] as? String
             let payload = event["payload"] as? [String: Any]
             let hostId = selectedHost?.id.uuidString

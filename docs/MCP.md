@@ -4,14 +4,21 @@ MCP servers are billed to the **profile**, not the host. Configure them on
 this Mac in `/app/` → Profiles (loopback only). Public API lists **names
 only** — env, headers, and OAuth tokens never leave the machine.
 
-See RFC-008 (server list), RFC-009 (remote OAuth), and the
-paste-ready map in [MCP-CATALOG.md](MCP-CATALOG.md) (RFC-013): NightMoose
-gets GitHub / Vercel / Fly / Supabase / Notion; Personal gets GitHub +
-Notion (separate Sign in); FullScore gets Databricks / Azure DevOps /
-Azure. No Gmail / M365 / QuickBooks on NightMoose.
+See RFC-008 (server list), RFC-009 (remote OAuth), RFC-013 (paste map),
+and RFC-020 (catalog chips + Grok spawn isolation). NightMoose gets
+GitHub / Vercel / Fly / Supabase / Notion; Personal gets GitHub + Notion
+(separate Sign in); FullScore gets Databricks / Azure DevOps / Azure. No
+Gmail / M365 / QuickBooks on NightMoose.
 
-Do not paste NightMoose MCP until that profile has `grokHome` (RFC-006).
-Without it, Grok still inherits `~/.grok` marketplace connectors.
+`/app/` → Profiles (this Mac) → **Apply catalog defaults** (or tap chips)
+→ **Sign in** HTTP rows. `GET /mcp/catalog` is the same list.
+
+Grok ACP no longer inherits Claude's Vercel plugin MCP. When `grokHome`
+is blank, spawn uses `{dataDir}/grok-homes/{profileId}` with an isolation
+`config.toml` and a symlink to this Mac's `~/.grok/auth.json`. Leave
+NightMoose's Grok home blank. Point a *second* Grok profile at its own
+dir and Sign in there — do not set NightMoose to `~/.grok` or the Claude
+plugin comes back.
 
 ## JSON shape
 
@@ -61,13 +68,28 @@ If the server does not support dynamic client registration, add
 `oauthClientId` (and optional `oauthClientSecret` / `oauthScope`) to the
 server object.
 
+**GitHub** is that case. Do not Sign in. On any profile: Environment
+`GITHUB_TOKEN=<pat or gh auth token>`, and the GitHub catalog chip already
+sets `Authorization: Bearer ${GITHUB_TOKEN}`. Each profile can use a
+different token. Same Mac `gh` login can be reused, or a PAT per GitHub
+user from github.com/settings/tokens.
+
+**npm publish:** do not `npm login` in a session. Put `NPM_TOKEN` (automation
+token from npmjs.com, or the value already in `~/.npmrc`) in that profile's
+Environment. Spawn writes `~/.grok-dispatch/npm/{profileId}.npmrc` and sets
+`NPM_CONFIG_USERCONFIG`. Project `.npmrc` may use
+`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.
+
 Hosted claude.ai connectors (`mcp__claude_ai_*`) are not CLI MCP and are
 out of scope.
 
 ## Operator
 
 ```bash
-launchctl kickstart -k "gui/$(id -u)/com.nightmoose.grok-dispatch-host"
+launchctl kickstart -k "gui/$(id -u)/com.nightmoose.clankerspanker-host"
 ```
 
-Then `/app/` on this machine → Profiles → save an HTTP server → Sign in.
+That is the Application Support LaunchAgent. Do not kick
+`com.nightmoose.grok-dispatch-host` on a Mac that already has the app-managed
+install. Then `/app/` on this machine → Profiles → **Apply catalog** → Sign in
+each HTTP row.

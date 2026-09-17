@@ -45,6 +45,12 @@ function mergeHeaders(
   return out;
 }
 
+function hasAuthorizationHeader(headers: Record<string, string>): boolean {
+  return Object.entries(headers).some(
+    ([k, v]) => k.toLowerCase() === "authorization" && v.trim().length > 0,
+  );
+}
+
 export function normalizeMcpServers(raw?: ProfileMcpServer[] | null): ProfileMcpServer[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const out: ProfileMcpServer[] = [];
@@ -129,15 +135,19 @@ export function toMcpJson(
   for (const s of enabledMcpServers(servers)) {
     const entry: Record<string, unknown> = {};
     if (s.url) {
-      entry.url = expandVars(s.url, env);
       const merged = mergeHeaders(pairsToRecord(recordToPairs(s.headers, env)), oauthHeaders?.[s.name]);
+      // Grok ACP treats HTTP 401 AuthRequired as a fatal worker exit (RFC-012).
+      if (!hasAuthorizationHeader(merged)) continue;
+      entry.url = expandVars(s.url, env);
       if (Object.keys(merged).length) entry.headers = merged;
       if (s.transport === "sse") entry.transport = "sse";
       else if (s.transport === "http") entry.transport = "http";
     } else if (s.command) {
+      const e = recordToPairs(s.env, env);
+      // Empty ${DATABRICKS_TOKEN} (etc.) made Claude exit 1.
+      if (e.some((p) => !p.value.trim())) continue;
       entry.command = expandVars(s.command, env);
       entry.args = (s.args ?? []).map((a) => expandVars(a, env));
-      const e = recordToPairs(s.env, env);
       if (e.length) entry.env = pairsToRecord(e);
     } else {
       continue;
@@ -171,6 +181,7 @@ export function toAcpMcpServers(
   for (const s of enabledMcpServers(servers)) {
     if (s.url) {
       const merged = mergeHeaders(pairsToRecord(recordToPairs(s.headers, env)), oauthHeaders?.[s.name]);
+      if (!hasAuthorizationHeader(merged)) continue;
       out.push({
         type: s.transport === "sse" ? "sse" : "http",
         name: s.name,
@@ -178,11 +189,13 @@ export function toAcpMcpServers(
         headers: Object.entries(merged).map(([name, value]) => ({ name, value })),
       });
     } else if (s.command) {
+      const e = recordToPairs(s.env, env);
+      if (e.some((p) => !p.value.trim())) continue;
       out.push({
         name: s.name,
         command: expandVars(s.command, env),
         args: (s.args ?? []).map((a) => expandVars(a, env)),
-        env: recordToPairs(s.env, env),
+        env: e,
       });
     }
   }
@@ -196,14 +209,15 @@ export function writeProfileMcpJson(
 ): string | undefined {
   const enabled = enabledMcpServers(profile.mcpServers);
   if (!enabled.length) return undefined;
-  const dir = join(dataDir, "mcp");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${profile.id}.mcp.json`);
   const body = toMcpJson(
     profile.mcpServers,
     env,
     oauthHeaderMap(dataDir, profile.id, profile.mcpServers),
   );
+  if (!Object.keys(body.mcpServers).length) return undefined;
+  const dir = join(dataDir, "mcp");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${profile.id}.mcp.json`);
   writeFileSync(path, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
   return path;
 }

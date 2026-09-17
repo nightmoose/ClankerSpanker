@@ -1,10 +1,11 @@
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getGrokCliAccessToken,
+  grokAuthJsonPathsForProfile,
   readGrokCliAccessToken,
   readGrokCliCreds,
   refreshGrokCliCreds,
@@ -21,6 +22,31 @@ function writeAuth(dir: string, entry: Record<string, unknown>): string {
   );
   return file;
 }
+
+describe("grokAuthJsonPathsForProfile", () => {
+  it("prefers isolated grok-homes then ~/.grok", () => {
+    const paths = grokAuthJsonPathsForProfile({ id: "nightmoose" }, "/data");
+    expect(paths[0]).toBe(join("/data", "grok-homes", "nightmoose", "auth.json"));
+    expect(paths).toContain(join(homedir(), ".grok", "auth.json"));
+  });
+});
+
+describe("readGrokCliCreds newest expiry", () => {
+  it("picks the unexpired copy when ~/.grok is stale", () => {
+    const staleDir = mkdtempSync(join(tmpdir(), "grok-stale-"));
+    const freshDir = mkdtempSync(join(tmpdir(), "grok-fresh-"));
+    const stale = writeAuth(staleDir, {
+      key: "old",
+      expires_at: "2020-01-01T00:00:00.000Z",
+    });
+    const fresh = writeAuth(freshDir, {
+      key: "new",
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    const creds = readGrokCliCreds([stale, fresh]);
+    expect(creds?.accessToken).toBe("new");
+  });
+});
 
 describe("readGrokCliAccessToken", () => {
   it("reads key from grok CLI auth.json", () => {

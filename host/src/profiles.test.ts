@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -158,6 +158,32 @@ describe("profileHasCredentials bot", () => {
   });
 });
 
+describe("profile npm auth", () => {
+  it("profileProcessEnv writes a userconfig npmrc when NPM_TOKEN is set", () => {
+    const dataDir = join(tmpdir(), `cs-npm-${Date.now()}`);
+    mkdirSync(dataDir, { recursive: true });
+    try {
+      const env = profileProcessEnv(
+        {
+          id: "nightmoose",
+          name: "NightMoose",
+          backend: "grok",
+          color: "#73B8FF",
+          env: { NPM_TOKEN: "npm_test_token" },
+        },
+        { dataDir },
+      );
+      expect(env.NPM_TOKEN).toBe("npm_test_token");
+      expect(env.NODE_AUTH_TOKEN).toBe("npm_test_token");
+      const rc = env.NPM_CONFIG_USERCONFIG!;
+      expect(rc).toBe(join(dataDir, "npm", "nightmoose.npmrc"));
+      expect(readFileSync(rc, "utf8")).toContain("npm_test_token");
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("profile grokHome isolation", () => {
   it("normalizeProfiles trims and preserves grokHome", () => {
     const [p] = normalizeProfiles([
@@ -196,6 +222,29 @@ describe("profile grokHome isolation", () => {
       expect(env.GROK_HOME).toBeUndefined();
     } finally {
       if (prev !== undefined) process.env.GROK_HOME = prev;
+    }
+  });
+
+  it("profileProcessEnv seeds an isolated GROK_HOME when dataDir is passed and grokHome is unset", () => {
+    const prev = process.env.GROK_HOME;
+    delete process.env.GROK_HOME;
+    const dataDir = mkdtempSync(join(tmpdir(), "cs-profile-data-"));
+    try {
+      const env = profileProcessEnv(
+        {
+          id: "nightmoose",
+          name: "NightMoose",
+          backend: "grok",
+          color: "#73B8FF",
+        },
+        { dataDir },
+      );
+      expect(env.GROK_HOME).toBe(join(dataDir, "grok-homes", "nightmoose"));
+      expect(env.GROK_CLAUDE_MCPS_ENABLED).toBe("false");
+    } finally {
+      if (prev !== undefined) process.env.GROK_HOME = prev;
+      else delete process.env.GROK_HOME;
+      rmSync(dataDir, { recursive: true, force: true });
     }
   });
 

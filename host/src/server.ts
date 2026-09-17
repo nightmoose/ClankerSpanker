@@ -33,6 +33,7 @@ import { isGrokHelperCwd, listAgySessions, listClaudeSessions, listDiskSessions 
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
 import { mcpEnvFor, normalizeMcpServers } from "./mcp.js";
+import { applyCatalogDefaults, publicMcpCatalog } from "./mcp-catalog.js";
 import {
   completeMcpOAuth,
   logoutMcpOAuth,
@@ -545,6 +546,12 @@ async function handleHttp(
     return;
   }
 
+  // GET /mcp/catalog — checked-in connector list + default assignment (no secrets).
+  if (method === "GET" && path === "/mcp/catalog") {
+    json(res, 200, publicMcpCatalog());
+    return;
+  }
+
   // GET /profiles — public agent accounts for nav segments (no secrets)
   // ?usage=1 attaches Claude OAuth 5h/weekly utilization (cached ~45s).
   // ?admin=1 (this machine only) additionally returns full profile records
@@ -586,7 +593,10 @@ async function handleHttp(
       } catch {
         sessions = [];
       }
-      const profiles = await profilesWithUsage(base, config.profiles ?? [], { sessions });
+      const profiles = await profilesWithUsage(base, config.profiles ?? [], {
+        sessions,
+        dataDir: config.dataDir,
+      });
       json(res, 200, { profiles, usage: true, ...adminPayload });
     } catch (err) {
       json(res, 200, {
@@ -803,6 +813,43 @@ async function handleHttp(
     config.profiles = profiles.filter((_, i) => i !== idx);
     saveConfig(config);
     json(res, 200, { ok: true, deleted: profileId });
+    return;
+  }
+
+  // POST /profiles/:id/mcp/apply-catalog — this machine only. Merge RFC-013 defaults.
+  const mcpApplyCatalogMatch = path.match(/^\/profiles\/([^/]+)\/mcp\/apply-catalog$/);
+  if (method === "POST" && mcpApplyCatalogMatch) {
+    if (!isLocalMachineReq(req)) {
+      json(res, 403, { error: "MCP catalog apply is only allowed from the host machine" });
+      return;
+    }
+    const profileId = decodeURIComponent(mcpApplyCatalogMatch[1] ?? "");
+    try {
+      const body = (await readJson(req).catch(() => ({}))) as { replace?: boolean };
+      const profiles = config.profiles ?? [];
+      const idx = profiles.findIndex((p) => p.id === profileId);
+      if (idx < 0) {
+        json(res, 404, { error: "Profile not found" });
+        return;
+      }
+      const current = profiles[idx]!;
+      const next: AgentProfile = {
+        ...current,
+        mcpServers: applyCatalogDefaults(current.id, current.mcpServers, {
+          replace: body.replace === true,
+        }),
+      };
+      profiles[idx] = next;
+      config.profiles = profiles;
+      saveConfig(config);
+      json(res, 200, {
+        profile: publicProfiles(config).find((p) => p.id === profileId),
+        adminProfile: next,
+        mcpServers: next.mcpServers ?? [],
+      });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
 
@@ -2059,7 +2106,7 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
   <h1>ClankerSpanker</h1>
   <p>Local-first control plane for Grok Build and Claude Code on this machine. Use the browser UI, or connect the iOS app over LAN / Tailscale.</p>
 
-  <a class="btn" href="${escapeHtml(webApp)}">Open browser UI</a>
+  <a class="btn" href="${escapeHtml(webApp)}?token=${encodeURIComponent(token)}">Open browser UI</a>
 
   <div class="card">
     <label>1 · Host URL</label>

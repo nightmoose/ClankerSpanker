@@ -8,6 +8,7 @@ import {
   buildPreToolUseDecision,
   claudeToolRestrictArgs,
   extraDirsForClaude,
+  CLAUDE_PRETOOL_MATCHER,
 } from "./runner.js";
 
 describe("buildPreToolUseDecision", () => {
@@ -60,6 +61,15 @@ describe("APPROVAL_HOOK_SOURCE", () => {
 });
 
 describe("buildClaudeHookSettings extra dirs", () => {
+  it("matches MCP tools so they park on the phone bar instead of a TTY prompt", () => {
+    const settings = buildClaudeHookSettings("/hooks/pretool.mjs");
+    const pre = (settings.hooks as { PreToolUse: { matcher: string }[] }).PreToolUse[0];
+    expect(pre?.matcher).toBe(CLAUDE_PRETOOL_MATCHER);
+    expect(pre?.matcher).toMatch(/mcp_/);
+    expect("mcp_azure-devops_search_workItem").toMatch(new RegExp(pre!.matcher));
+    expect("mcp__azure-devops__search_workItem").toMatch(new RegExp(pre!.matcher));
+  });
+
   it("grants Read + additionalDirectories so screenshot attachments are not sandboxed", () => {
     const dir = "/tmp/cs-attachments";
     const settings = buildClaudeHookSettings("/hooks/pretool.mjs", [dir]);

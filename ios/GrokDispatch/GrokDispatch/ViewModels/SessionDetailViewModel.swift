@@ -47,6 +47,10 @@ final class SessionDetailViewModel: ObservableObject {
     /// `replayMissedEvents` on socket reconnect to fetch anything that fired
     /// during the WS gap.
     private var lastEventSeq: Int = 0
+    /// Socket events must run one at a time. Overlapping Tasks raced
+    /// `streamingText += chunk` against the flush that clears it, so Grok
+    /// showed a second bubble that was a suffix of the first while tools ran.
+    private var socketChain: Task<Void, Never>?
 
     /// Debounced reload task. Non-critical socket events (tool_call updates,
     /// plan snapshots, usage updates) coalesce into a single load so the
@@ -511,6 +515,9 @@ final class SessionDetailViewModel: ObservableObject {
         if type == "transcript",
            payload?["streaming"] as? Bool == true,
            let text = payload?["text"] as? String {
+            if isRedundantStreamingChunk(text) {
+                return
+            }
             streamingText += text
             isSending = false
             return
@@ -562,6 +569,30 @@ final class SessionDetailViewModel: ObservableObject {
 
         if type == "session.completed" || type == "tool_call_update" {
             await loadDiff(api: api)
+        }
+    }
+
+    /// In-flight delta that arrived after `flushAssistant` already persisted
+    /// the same words. Grok ACP emits overlapping `agent_message_chunk`s;
+    /// applying them after a clear looks like a stalled duplicate bubble.
+    private func isRedundantStreamingChunk(_ text: String) -> Bool {
+        let chunk = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if chunk.count < 8 { return false }
+        if let last = detail?.transcript.last(where: { $0.role == "assistant" }),
+           last.text.contains(chunk) {
+            return true
+        }
+        return false
+    }
+
+    /// Process socket events in arrival order. `onReceive` used to spawn an
+    /// unstructured Task per envelope, so a late streaming chunk could land
+    /// after the flush that cleared `streamingText`.
+    func enqueueSocketEvent(api: APIClient, data: Data) {
+        socketChain = Task { [socketChain] in
+            await socketChain?.value
+            guard !Task.isCancelled else { return }
+            await handleSocketAndReload(api: api, data: data)
         }
     }
 

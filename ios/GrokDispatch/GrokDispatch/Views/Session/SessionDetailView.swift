@@ -442,7 +442,7 @@ struct SessionDetailView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketEvent)) { note in
             guard let data = note.object as? Data else { return }
-            Task { await vm.handleSocketAndReload(api: appState.api, data: data) }
+            vm.enqueueSocketEvent(api: appState.api, data: data)
         }
         .onReceive(NotificationCenter.default.publisher(for: .dispatchSocketReconnected)) { _ in
             Task { await vm.replayMissedEvents(api: appState.api) }

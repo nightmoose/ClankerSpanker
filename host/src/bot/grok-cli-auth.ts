@@ -22,6 +22,25 @@ export function grokAuthJsonPaths(grokHome?: string): string[] {
   return [join(home, "auth.json"), join(homedir(), ".config", "grok", "auth.json")];
 }
 
+/** Isolated ACP home first, then ~/.grok. Usage and bots must not use an expired copy. */
+export function grokAuthJsonPathsForProfile(
+  profile?: { id?: string; grokHome?: string },
+  dataDir?: string,
+): string[] {
+  const out: string[] = [];
+  const explicit = profile?.grokHome?.trim();
+  if (explicit) out.push(join(explicit, "auth.json"));
+  const id = profile?.id?.trim();
+  if (dataDir?.trim() && id) {
+    out.push(join(dataDir.trim(), "grok-homes", id, "auth.json"));
+  }
+  out.push(...grokAuthJsonPaths(explicit));
+  // Always include the machine login even when this process has GROK_HOME set
+  // (ACP workers inherit the isolated home).
+  out.push(join(homedir(), ".grok", "auth.json"));
+  return [...new Set(out)];
+}
+
 function authPaths(paths?: string[]): string[] {
   return paths ?? grokAuthJsonPaths();
 }
@@ -53,6 +72,7 @@ function padB64(s: string): string {
 }
 
 export function readGrokCliCreds(paths?: string[]): GrokCliCreds | null {
+  const found: GrokCliCreds[] = [];
   for (const path of authPaths(paths)) {
     if (!existsSync(path)) continue;
     try {
@@ -66,7 +86,7 @@ export function readGrokCliCreds(paths?: string[]): GrokCliCreds | null {
           typeof entry.refresh_token === "string" ? entry.refresh_token.trim() : undefined;
         const clientId =
           typeof entry.oidc_client_id === "string" ? entry.oidc_client_id.trim() : undefined;
-        return {
+        found.push({
           path,
           accountKey,
           file,
@@ -75,13 +95,15 @@ export function readGrokCliCreds(paths?: string[]): GrokCliCreds | null {
           refreshToken: refresh,
           clientId,
           expiresAtMs: parseExpiresAt(entry.expires_at, key),
-        };
+        });
       }
     } catch {
       /* ignore malformed */
     }
   }
-  return null;
+  if (!found.length) return null;
+  found.sort((a, b) => (b.expiresAtMs ?? 0) - (a.expiresAtMs ?? 0));
+  return found[0] ?? null;
 }
 
 /**

@@ -136,6 +136,18 @@ pre.preview {
 .status.failed { color: var(--danger); }
 .status.idle, .status.completed { color: var(--ok); }
 
+/* RFC-021 per-session Grok credit meter badge */
+.credit-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  letter-spacing: 0.02em;
+}
+.credit-badge.credit-green { color: var(--ok); background: rgba(46, 160, 67, 0.14); }
+.credit-badge.credit-amber { color: var(--warn); background: rgba(210, 153, 34, 0.16); }
+.credit-badge.credit-red { color: var(--danger); background: rgba(248, 81, 73, 0.16); }
+
 .list-empty {
   text-align: center;
   color: var(--muted);

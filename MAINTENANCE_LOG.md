@@ -2,6 +2,42 @@
 
 ---
 
+## Run: 2026-09-17 — RFC-021 per-session Grok credit meter
+
+Long-lived Grok sessions burn credits quadratically because each turn
+re-sends the full transcript + tool outputs. 2026-09-17 spot-check on
+NightMoose showed 40% of the weekly plan gone in <24h across two
+sessions running 26–30h each. The profile-wide chip (RFC-013) never
+tells the operator *which* chat is expensive.
+
+`fetchGrokWeeklyCreditPct(profile, dataDir)` is a thin wrapper around
+`/v1/billing?format=credits` that returns `number | null` (never
+throws). `session-manager.ts` snapshots the profile's weekly
+`creditUsagePercent` after `session/new` and after each `end_turn`
+(30 s cool-down guards billing on tool-heavy bursts). `session-meter.ts`
+owns the pure helpers: `applyOpenCreditSnapshot`,
+`applyEndTurnCreditSnapshot`, `computeCreditDelta`,
+`classifyCreditDelta`, `shouldSnapshotEndTurnCredits`.
+
+`SessionStore.toSummary` publishes `creditsUsedDeltaPct` +
+`creditsUsedAt` on every session row. `/app/`, Electron, Mac and iOS
+each render a small `wk +N%` badge next to the status pill: green <5%,
+amber ≥5%, red ≥10%, with a tooltip that nudges reincarnation on the
+amber/red tiers. Grok-only — Claude/Antigravity/Bot rows carry `nil`.
+
+**Soak:** open a NightMoose Grok chat, watch the badge appear at
+`wk +0.0%`; run tool-heavy turns and confirm the delta climbs on the
+same tile without paging any other session's usage.
+
+Deviations from the RFC: `HostConfigFile.sessionMeter` was dropped as
+dead code (no consumer today; clients use RFC defaults). `openapi.yaml`
+has no schemas section — the `/sessions` summary got a note instead.
+
+Tests baseline 228 → 247 (19 new cases in `session-meter.test.ts`).
+
+---
+
+
 ## Run: 2026-09-16 — RFC-020 apply MCP catalog per profile
 
 Mechanism (RFC-008/009) and paste map (RFC-013) were shipped; every live

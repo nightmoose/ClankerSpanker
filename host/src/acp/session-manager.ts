@@ -54,6 +54,12 @@ import {
 import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
+import { fetchGrokWeeklyCreditPct } from "../usage.js";
+import {
+  applyEndTurnCreditSnapshot,
+  applyOpenCreditSnapshot,
+  shouldSnapshotEndTurnCredits,
+} from "../session-meter.js";
 import { AcpClient } from "./client.js";
 import {
   buildQuestionAnswers,
@@ -3407,6 +3413,34 @@ export class SessionManager extends EventEmitter {
     }
   }
 
+  /**
+   * RFC-021: snapshot the profile's weekly Grok credit % at session open so
+   * later end_turn snapshots can compute a per-session delta. Grok backend
+   * only. Never throws — a billing failure leaves start undefined and the
+   * meter renders as "unknown" on clients.
+   */
+  private async snapshotSessionOpenCredits(session: DispatchSession): Promise<void> {
+    if (!isGrokBackend(session.backend)) return;
+    const profile = this.profileFor(session);
+    if (!profile) return;
+    const pct = await fetchGrokWeeklyCreditPct(profile, this.config.dataDir);
+    applyOpenCreditSnapshot(session, pct, now());
+  }
+
+  /**
+   * RFC-021: refresh the "last" snapshot after end_turn and recompute delta.
+   * Skips the fetch when the last snapshot is younger than 30 s to protect
+   * the billing endpoint on tool-heavy fast-turn bursts.
+   */
+  private async snapshotEndTurnCredits(session: DispatchSession): Promise<void> {
+    if (!isGrokBackend(session.backend)) return;
+    if (!shouldSnapshotEndTurnCredits(session, Date.now())) return;
+    const profile = this.profileFor(session);
+    if (!profile) return;
+    const pct = await fetchGrokWeeklyCreditPct(profile, this.config.dataDir);
+    applyEndTurnCreditSnapshot(session, pct, now());
+  }
+
   private async spawnAndLoad(session: DispatchSession, grokSessionId: string): Promise<LiveSession> {
     const client = this.newAcpClient(session);
     const live: LiveSession = {
@@ -3589,6 +3623,7 @@ export class SessionManager extends EventEmitter {
       session.grokSessionId = result.sessionId ?? randomUUID();
       session.status = "running";
       session.updatedAt = now();
+      await this.snapshotSessionOpenCredits(session);
       this.persist(session);
       this.emitEvent(session, "session.updated", { grokSessionId: session.grokSessionId, status: "running" });
 
@@ -3679,10 +3714,13 @@ export class SessionManager extends EventEmitter {
         // Idle = ready for another message (multi-turn). Not a terminal "Done".
         live.session.status = "idle";
         live.session.updatedAt = now();
+        await this.snapshotEndTurnCredits(live.session);
         this.persist(live.session);
         this.emitEvent(live.session, "session.updated", {
           stopReason: result.stopReason,
           status: "idle",
+          creditsUsedDeltaPct: live.session.creditsUsedDeltaPct,
+          creditsUsedAt: live.session.creditsUsedAt,
         });
         this.maybeNotify("ClankerSpanker", `Your turn: ${live.session.title}`);
       }

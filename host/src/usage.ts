@@ -264,6 +264,40 @@ async function grokUsage(
   }
 }
 
+/**
+ * RFC-021 lightweight fetch of just Grok's weekly `creditUsagePercent`.
+ * Used by the per-session credit meter (snapshot at open + after each turn).
+ * Returns null on any failure — never throws; the meter degrades gracefully
+ * to "unknown" rather than blocking a session on billing.
+ */
+export async function fetchGrokWeeklyCreditPct(
+  profile: AgentProfile,
+  dataDir?: string,
+): Promise<number | null> {
+  const paths = grokAuthJsonPathsForProfile(profile, dataDir);
+  const token = await getGrokCliAccessToken(paths).catch(() => null);
+  if (!token) return null;
+  try {
+    const res = await fetch(
+      "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "User-Agent": "clankerspanker-host/0.6",
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as GrokCreditsResponse;
+    const cfg = data.config ?? data;
+    return clampPct(cfg.creditUsagePercent);
+  } catch {
+    return null;
+  }
+}
+
 interface GrokCreditsResponse {
   config?: GrokCreditsConfig;
   creditUsagePercent?: number;

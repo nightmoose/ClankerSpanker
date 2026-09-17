@@ -272,6 +272,9 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     var profileColor: String?
     var claudeSessionId: String?
     var antigravityConversationId: String?
+    // RFC-021 per-session Grok credit meter (weekly-% this chat has burned).
+    var creditsUsedDeltaPct: Double?
+    var creditsUsedAt: String?
 
     var isArchived: Bool { archived == true }
 
@@ -432,6 +435,9 @@ struct SessionDetail: Codable, Identifiable, Sendable {
     var tasks: [SessionTask]?
     var notes: [SessionNote]?
     var usage: SessionUsage?
+    // RFC-021 per-session Grok credit meter (weekly-% this chat has burned).
+    var creditsUsedDeltaPct: Double?
+    var creditsUsedAt: String?
 
     var isArchived: Bool { archived == true }
 

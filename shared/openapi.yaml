@@ -18,7 +18,7 @@ paths:
       security: [{ bearerAuth: [] }]
   /sessions:
     get:
-      summary: List dispatched sessions (omits Grok subagent/helper chats)
+      summary: List dispatched sessions (omits Grok subagent/helper chats). Grok rows carry creditsUsedDeltaPct (RFC-021 weekly-% burned this session).
       security: [{ bearerAuth: [] }]
   /sessions/{id}:
     get:

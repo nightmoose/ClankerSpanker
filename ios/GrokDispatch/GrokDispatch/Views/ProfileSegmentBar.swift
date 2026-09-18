@@ -1,5 +1,64 @@
 import SwiftUI
 
+/// RFC-022: build the chip hover tooltip from a profile's usage.
+/// Mirrors `host/src/reset-time.ts` — keep in sync.
+enum ResetTimeFormatter {
+    static func tooltip(for profile: AgentProfile, now: Date = Date()) -> String {
+        var parts: [String] = [profile.displayName]
+        if let usage = profile.usage {
+            if let label = usage.label, !label.isEmpty {
+                parts.append(label)
+            } else if let status = usage.status, !status.isEmpty {
+                parts.append("Usage \(status)")
+            }
+            if let line = resetLine(usage, now: now), !line.isEmpty {
+                parts.append(line)
+            }
+        }
+        return parts.joined(separator: " — ")
+    }
+
+    static func resetLine(_ usage: ProfileUsage, now: Date = Date()) -> String? {
+        let five = formatRelative(usage.fiveHourResetsAt, now: now)
+        let seven = formatRelative(usage.sevenDayResetsAt, now: now)
+        let same =
+            usage.fiveHourResetsAt != nil
+            && usage.sevenDayResetsAt != nil
+            && usage.fiveHourResetsAt == usage.sevenDayResetsAt
+        if same, let seven { return "Weekly plan resets \(seven)" }
+        if let five, let seven { return "5h resets \(five) · weekly resets \(seven)" }
+        if let seven { return "Weekly plan resets \(seven)" }
+        if let five { return "5h window resets \(five)" }
+        return nil
+    }
+
+    static func formatRelative(_ iso: String?, now: Date = Date()) -> String? {
+        guard let iso, let ts = ISO8601DateFormatter.flexible.date(from: iso) else { return nil }
+        let diff = ts.timeIntervalSince(now)
+        let MIN: TimeInterval = 60
+        let HOUR: TimeInterval = 3600
+        let DAY: TimeInterval = 86_400
+        let WEEK: TimeInterval = 7 * DAY
+        if diff <= 0 || diff >= WEEK {
+            let df = DateFormatter()
+            df.dateFormat = "MMM d"
+            return df.string(from: ts)
+        }
+        if diff < MIN { return "in <1m" }
+        if diff < HOUR { return "in \(Int(diff / MIN))m" }
+        if diff < 6 * HOUR {
+            let h = Int(diff / HOUR)
+            let m = Int(diff.truncatingRemainder(dividingBy: HOUR) / MIN)
+            return m > 0 ? "in \(h)h \(m)m" : "in \(h)h"
+        }
+        if diff < DAY { return "in \(Int(diff / HOUR))h" }
+        let d = Int(diff / DAY)
+        if d >= 4 { return "in \(d)d" }
+        let h = Int(diff.truncatingRemainder(dividingBy: DAY) / HOUR)
+        return h > 0 ? "in \(d)d \(h)h" : "in \(d)d"
+    }
+}
+
 /// Horizontal colored profile pills.
 ///
 /// Two modes:
@@ -81,6 +140,7 @@ struct ProfileSegmentBar: View {
                             }
                             .id(b.id)
                             .fixedSize(horizontal: true, vertical: false)
+                            .help(ResetTimeFormatter.tooltip(for: b.profile))
                         }
                     }
                     .padding(.vertical, 2)

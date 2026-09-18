@@ -4,7 +4,7 @@ import SwiftUI
 /// Mirrors `host/src/reset-time.ts` — keep in sync.
 enum ResetTimeFormatter {
     static func tooltip(for profile: AgentProfile, now: Date = Date()) -> String {
-        var parts: [String] = [profile.displayName]
+        var parts: [String] = [profile.name]
         if let usage = profile.usage {
             if let label = usage.label, !label.isEmpty {
                 parts.append(label)

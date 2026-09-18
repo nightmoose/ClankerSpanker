@@ -30,6 +30,11 @@ the single weekly line.
 
 Tests baseline 247 → 262 (15 new cases in `reset-time.test.ts`).
 
+**Post-merge fixup:** `ResetTimeFormatter.tooltip(for:)` referenced
+`AgentProfile.displayName` (which lives on `BoundProfile`, not
+`AgentProfile`). Mac build failed immediately after the merge.
+Fixed in a follow-up commit by using `profile.name`.
+
 ---
 
 

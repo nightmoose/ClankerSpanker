@@ -2,6 +2,37 @@
 
 ---
 
+## Run: 2026-09-18 — RFC-022 reset-time tooltip on profile usage chip
+
+`ProfileUsage` already carries `fiveHourResetsAt` and `sevenDayResetsAt`
+for every quota backend, but the profile chip in Electron / Mac / iOS
+only displayed used %. So "wk 40%" told you *where* you were, not
+*when* the plan rolls over — no way to gauge how hard to push.
+
+`host/src/reset-time.ts` is the shared pure formatter for the JS
+clients (`formatRelativeReset`, `formatResetLine`) with bucketed
+output: `<1m` / `Nm` / `Nh Nm` / `Nh` / `Nd Nh` / `Nd` / absolute
+short date past 7 d or in the past. Grok collapses both windows to
+one line since its billing period ends are identical; Claude gets
+two windows joined by `·`.
+
+`ResetTimeFormatter` in `ProfileSegmentBar.swift` mirrors that logic
+for Mac + iOS and is wired via `.help(...)` on each pill (macOS shows
+a hover tooltip; iOS silently drops it and keeps the existing
+accessibility label). Electron adds a `title` attribute on the
+`.profile-chip` button through `usageTooltip`.
+
+Client-only change — no host code, no LaunchAgent bounce required.
+
+**Soak:** hover the FullScore chip on the Mac Command Center and see
+`5h resets in Xh Ym · weekly resets in Zd`; hover NightMoose and see
+the single weekly line.
+
+Tests baseline 247 → 262 (15 new cases in `reset-time.test.ts`).
+
+---
+
+
 ## Run: 2026-09-17 — RFC-021 per-session Grok credit meter
 
 Long-lived Grok sessions burn credits quadratically because each turn

@@ -148,6 +148,54 @@ function usageTraffic(u) {
   if (peak >= 75) return "warn";
   return "ok";
 }
+
+// RFC-022: profile-chip hover tooltip with plan reset times.
+// Mirrors host/src/reset-time.ts.
+function usageTooltip(u, profileName) {
+  const line = resetLine(u);
+  const status = u?.label || (u?.status ? `Usage ${u.status}` : "");
+  const parts = [];
+  if (profileName) parts.push(profileName);
+  if (status) parts.push(status);
+  if (line) parts.push(line);
+  return parts.join(" — ");
+}
+function resetLine(u) {
+  if (!u) return "";
+  const nowMs = Date.now();
+  const five = formatRelReset(u.fiveHourResetsAt, nowMs);
+  const seven = formatRelReset(u.sevenDayResetsAt, nowMs);
+  const same =
+    u.fiveHourResetsAt && u.sevenDayResetsAt && u.fiveHourResetsAt === u.sevenDayResetsAt;
+  if (same && seven) return `Weekly plan resets ${seven}`;
+  if (five && seven) return `5h resets ${five} · weekly resets ${seven}`;
+  if (seven) return `Weekly plan resets ${seven}`;
+  if (five) return `5h window resets ${five}`;
+  return "";
+}
+function formatRelReset(iso, nowMs) {
+  if (!iso) return "";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR, WEEK = 7 * DAY;
+  const diff = ts - nowMs;
+  if (diff <= 0 || diff >= WEEK) {
+    const d = new Date(ts);
+    return `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+  }
+  if (diff < MIN) return "in <1m";
+  if (diff < HOUR) return `in ${Math.floor(diff / MIN)}m`;
+  if (diff < 6 * HOUR) {
+    const h = Math.floor(diff / HOUR);
+    const m = Math.floor((diff % HOUR) / MIN);
+    return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
+  }
+  if (diff < DAY) return `in ${Math.floor(diff / HOUR)}h`;
+  const d = Math.floor(diff / DAY);
+  if (d >= 4) return `in ${d}d`;
+  const h = Math.floor((diff % DAY) / HOUR);
+  return h > 0 ? `in ${d}d ${h}h` : `in ${d}d`;
+}
 function resolveFsPath(p, cwd) {
   if (!p) return "";
   if (p.startsWith("/") || p.startsWith("~")) return p;
@@ -408,7 +456,8 @@ function renderProfiles() {
         : allOn || (state.enabledProfileIds || []).includes(p.id);
       const sub = usageSubtitle(p.usage);
       const traffic = usageTraffic(p.usage);
-      return `<button type="button" class="profile-chip ${selected ? "active" : ""}" data-profile="${escapeAttr(p.id)}" style="--chip:${escapeAttr(p.color || "#73b8ff")}">
+      const tooltip = usageTooltip(p.usage, p.name);
+      return `<button type="button" class="profile-chip ${selected ? "active" : ""}" data-profile="${escapeAttr(p.id)}" style="--chip:${escapeAttr(p.color || "#73b8ff")}" title="${escapeAttr(tooltip)}">
         <span class="dot" style="background:${escapeAttr(p.color || "#73b8ff")}"></span>
         <span class="chip-col">
           <span class="chip-name">${escapeHtml(p.name)}</span>

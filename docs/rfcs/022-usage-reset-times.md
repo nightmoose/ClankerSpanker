@@ -84,3 +84,10 @@ out of scope for this RFC.
   not scoped here).
 - Live countdown widget on the Reincarnate suggestion when the plan
   is near reset (encourages "wait for reset" vs "reincarnate now").
+
+## Post-merge fixup
+
+`ResetTimeFormatter.tooltip(for:)` referenced `AgentProfile.displayName`
+which doesn't exist on the Swift model (that field lives on
+`BoundProfile`). Mac build broke immediately after the merge. Fixed
+in a follow-up commit by switching to `profile.name`.

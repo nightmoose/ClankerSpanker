@@ -96,6 +96,7 @@ function mimeFor(ext: string): string {
   if (e === "html" || e === "htm") return "text/html";
   if (e === "css") return "text/css";
   if (e === "js" || e === "mjs" || e === "cjs") return "text/javascript";
+  if (e === "pdf") return "application/pdf";
   if (IMAGE_EXTS.has(e)) return "application/octet-stream";
   if (TEXT_EXTS.has(e)) return "text/plain";
   return "application/octet-stream";
@@ -188,6 +189,50 @@ function listDirFiles(dir: string, kind: SessionFileEntry["kind"], out: SessionF
   }
 }
 
+/**
+ * RFC-023: shallow scan of `cwd` top-level for files written during this
+ * session (mtime ≥ session.createdAt), so agent-authored PDFs/exports show
+ * up in the Files tab without requiring a `toolCall.locations` entry.
+ * Non-recursive; caps at 100 hits before returning; dedupe against `out`
+ * is enforced by the caller via the `push` closure.
+ */
+export function listRecentFilesInCwd(
+  cwd: string | undefined,
+  createdAt: string | undefined,
+  push: (entry: SessionFileEntry) => void,
+): void {
+  if (!cwd || !existsSync(cwd)) return;
+  const sinceMs = createdAt ? Date.parse(createdAt) : Number.NaN;
+  if (!Number.isFinite(sinceMs)) return;
+  let names: string[] = [];
+  try {
+    names = readdirSync(cwd);
+  } catch {
+    return;
+  }
+  const cap = 100;
+  let added = 0;
+  for (const name of names) {
+    if (added >= cap) return;
+    if (name.startsWith(".")) continue;
+    const full = join(cwd, name);
+    try {
+      const st = statSync(full);
+      if (!st.isFile()) continue;
+      if (st.mtimeMs < sinceMs) continue;
+      push({
+        path: full,
+        kind: "file",
+        title: name,
+        updatedAt: st.mtime.toISOString(),
+      });
+      added += 1;
+    } catch {
+      /* skip */
+    }
+  }
+}
+
 /** Prompt prefix so Grok / Antigravity know extra folders exist. */
 export function extraDirsAgentNote(dirs?: string[]): string {
   const clean = [...new Set((dirs ?? []).map((d) => String(d ?? "").trim()).filter(Boolean))];
@@ -219,6 +264,11 @@ export function listSessionFiles(
   for (const dir of session.extraDirs ?? []) {
     push({ path: dir, kind: "folder", title: basename(dir) || dir });
   }
+
+  // RFC-023: surface top-level files written during this session so
+  // agent-authored PDFs/exports appear in the Files tab without a
+  // tool-locations entry.
+  listRecentFilesInCwd(session.cwd, session.createdAt, push);
 
   for (const tool of session.toolCalls ?? []) {
     for (const loc of tool.locations ?? []) {

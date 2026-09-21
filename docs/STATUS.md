@@ -27,4 +27,5 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 019 | [Stuck "Running" + phantom pending questions](rfcs/019-stuck-running.md) | Accepted | `nightly-maintenance-2026-09-11-rfc019-stuck-running` |
 | 020 | [Apply the MCP catalog per profile](rfcs/020-mcp-catalog-apply.md) | Shipped | `nightly-maintenance-2026-09-16-rfc020-mcp-catalog-apply` |
 | 021 | [Per-session Grok credit meter](rfcs/021-session-credit-meter.md) | Shipped | `nightly-maintenance-2026-09-17-rfc021-session-credit-meter` |
-| 022 | [Reset-time tooltip on profile usage chip](rfcs/022-usage-reset-times.md) | Accepted | `nightly-maintenance-2026-09-18-rfc022-usage-reset-times` |
+| 022 | [Reset-time tooltip on profile usage chip](rfcs/022-usage-reset-times.md) | Shipped | `nightly-maintenance-2026-09-18-rfc022-usage-reset-times` |
+| 023 | [In-app PDF preview + share on the session file viewer](rfcs/023-file-viewer-pdf.md) | Accepted | `nightly-maintenance-2026-09-21-rfc023-file-viewer-pdf` |

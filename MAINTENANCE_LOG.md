@@ -2,6 +2,37 @@
 
 ---
 
+## Run: 2026-09-21 — RFC-023 in-app PDF preview + share on session file viewer
+
+Session 22530a89 ("Florida chicken coop design") generated a PDF and
+the assistant fell back to emailing it — the transcript can't hold a
+binary, and `SessionFileViewer.swift` collapsed anything non-image,
+non-text to "Binary file · N KB" with no preview or export. Files
+written to `cwd` also didn't show up in the Files tab unless a
+`toolCall.locations` entry named them.
+
+Host side: `mimeFor` now maps `.pdf → application/pdf` and
+`listSessionFiles` runs a shallow scan of `cwd` top-level via new
+`listRecentFilesInCwd`, surfacing files with `mtime >= session.createdAt`
+so agent-authored PDFs / exports appear without a locations payload.
+Dotfiles skipped; caps at 100 hits under the existing `MAX_LIST`.
+
+iOS side: `SessionFileViewer` adds a `PDFPreview` PDFKit view
+(iOS + macOS reps) that renders `application/pdf` inline with pinch-
+zoom and scroll. The share button now writes any binary payload to a
+temp file under `NSTemporaryDirectory/clanker-share/` and hands the
+URL to `ShareLink`, so PDFs / zips / docx export to Files / Mail /
+AirDrop. Text sessions keep the old `ShareLink(item: text)` path.
+
+**Soak:** open the reincarnated chicken-coop session on Deez Nutz;
+`chicken-coop-sketch.pdf` should now appear in the Files tab, tap
+opens the PDFKit preview, share-sheet exports the PDF.
+
+Tests baseline 262 → 266 (4 new cases in `files.test.ts`).
+
+---
+
+
 ## Run: 2026-09-18 — RFC-022 reset-time tooltip on profile usage chip
 
 `ProfileUsage` already carries `fiveHourResetsAt` and `sevenDayResetsAt`

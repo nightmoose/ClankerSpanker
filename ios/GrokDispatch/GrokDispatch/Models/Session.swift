@@ -468,6 +468,8 @@ struct SessionFileContent: Codable, Identifiable, Sendable {
     var binary: Bool?
 
     var isImage: Bool { mimeType.hasPrefix("image/") }
+    /// RFC-023: PDF gets its own PDFKit render path.
+    var isPDF: Bool { mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf") }
 
     var id: String { path }
 }

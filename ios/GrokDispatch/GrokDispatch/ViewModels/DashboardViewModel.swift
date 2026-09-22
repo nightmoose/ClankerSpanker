@@ -12,9 +12,11 @@ final class DashboardViewModel: ObservableObject {
         errorMessage = appState.lastRefreshError
     }
 
+    /// RFC-024: archive on the session's own host so an archive tap from a
+    /// non-selected host row doesn't 404 against `selectedHost`.
     @discardableResult
     func archive(sessionId: String, appState: AppState) async -> Bool {
-        guard let host = appState.selectedHost else { return false }
+        guard let host = appState.endpoint(forSessionId: sessionId) else { return false }
         do {
             _ = try await appState.api.archiveSession(sessionId: sessionId, host: host)
             errorMessage = nil
@@ -28,7 +30,7 @@ final class DashboardViewModel: ObservableObject {
 
     @discardableResult
     func unarchive(sessionId: String, appState: AppState) async -> Bool {
-        guard let host = appState.selectedHost else { return false }
+        guard let host = appState.endpoint(forSessionId: sessionId) else { return false }
         do {
             _ = try await appState.api.unarchiveSession(sessionId: sessionId, host: host)
             errorMessage = nil
@@ -45,6 +47,9 @@ final class DashboardViewModel: ObservableObject {
             errorMessage = "That Grok session has no cwd on disk — open it from the Mac TUI once, or dispatch fresh."
             return nil
         }
+        // Attach against `selectedHost` — disk hints are host-scoped (each
+        // host reads its own ~/.grok/sessions), so `selectedHost` here is
+        // the host that surfaced this hint.
         guard let host = appState.selectedHost else {
             errorMessage = "No host selected"
             return nil

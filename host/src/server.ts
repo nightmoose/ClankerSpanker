@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
+import { hostname as osHostname } from "node:os";
 import { WebSocketServer, type WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync as fsReadFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -57,6 +58,9 @@ import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
 import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Host version. Bumped alongside host/package.json. Surfaced via /health and /host/self. */
+const HOST_VERSION = "0.3.2";
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
 const WEB_ROOT = (() => {
   const candidates = [
@@ -246,7 +250,7 @@ async function handleHttp(
     json(res, 200, {
       ok: true,
       service: "clankerspanker-host",
-      version: "0.3.2",
+      version: HOST_VERSION,
       name: "ClankerSpanker",
       time: new Date().toISOString(),
     });
@@ -312,6 +316,19 @@ async function handleHttp(
   if (!isAuthorized(req, config)) {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(unauthorizedBody());
+    return;
+  }
+
+  // GET /host/self — stable identity + basics so clients key per-host state
+  // to hostId (not URL/name). Requires the same token; keeps host identity
+  // out of pre-onboarding probes.
+  if (method === "GET" && path === "/host/self") {
+    json(res, 200, {
+      hostId: config.hostId,
+      name: osHostname(),
+      version: HOST_VERSION,
+      bindPort: config.bindPort,
+    });
     return;
   }
 

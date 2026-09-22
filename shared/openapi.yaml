@@ -8,6 +8,13 @@ paths:
   /health:
     get:
       summary: Liveness (no auth)
+  /host/self:
+    get:
+      summary: |
+        Stable host identity + basics for multi-host clients (RFC-024).
+        Returns { hostId, name, version, bindPort }. hostId is minted on
+        first boot and persisted in config.json.
+      security: [{ bearerAuth: [] }]
   /auth/validate:
     post:
       summary: Validate host token

@@ -283,42 +283,69 @@ struct TasksView: View {
     }
 
     private func openSource(_ task: SessionTask) {
-        guard let hostId = appState.selectedHost?.id else { return }
+        // Route to the session's own host (RFC-024) so opening a task from
+        // host B doesn't land on host A's session list.
+        let host = appState.endpoint(forSessionId: task.sourceSessionId) ?? appState.selectedHost
+        guard let host else { return }
         pendingRoute = SessionRoute(
-            hostId: hostId,
+            hostId: host.id,
             sessionId: task.sourceSessionId,
             messageId: task.sourceMessageId
         )
     }
 
+    /// RFC-024: fan out /tasks across every host so tasks from all hosts
+    /// appear in the aggregate list. Route mutations back to the host that
+    /// owns each task's source session via `appState.endpoint(forSessionId:)`.
     private func load() async {
-        guard let host = appState.selectedHost else {
+        let hosts = appState.hosts.filter { !$0.loadToken().isEmpty }
+        guard !hosts.isEmpty else {
             tasks = []
-            errorMessage = nil
+            errorMessage = "Add a host in Settings"
             return
         }
         isLoading = true
         defer { isLoading = false }
-        do {
-            tasks = try await appState.api.listTasks(host: host)
-            errorMessage = nil
-        } catch {
-            // Surface host-version gaps clearly (older gateways 404 /tasks).
-            if let api = error as? APIError, case .http(let code, let body) = api {
-                if code == 404 {
-                    errorMessage =
-                        "This host build doesn’t expose /tasks yet. Update/restart the ClankerSpanker host on the Mac, then pull to refresh."
-                    return
+
+        let api = appState.api
+        struct Bundle: Sendable { let host: HostEndpoint; let tasks: [SessionTask]; let error: String? }
+        let bundles: [Bundle] = await withTaskGroup(of: Bundle.self) { group in
+            for host in hosts {
+                group.addTask {
+                    do {
+                        let list = try await api.listTasks(host: host)
+                        return Bundle(host: host, tasks: list, error: nil)
+                    } catch let e as APIError {
+                        if case .http(let code, let body) = e, code == 404 {
+                            return Bundle(
+                                host: host, tasks: [],
+                                error: "\(host.name): needs a newer host build for /tasks"
+                            )
+                        }
+                        return Bundle(host: host, tasks: [], error: "\(host.name): \(e.localizedDescription)")
+                    } catch {
+                        return Bundle(host: host, tasks: [], error: "\(host.name): \(error.localizedDescription)")
+                    }
                 }
-                errorMessage = body.map { "HTTP \(code): \($0)" } ?? "HTTP \(code)"
-                return
             }
-            errorMessage = error.localizedDescription
+            var out: [Bundle] = []
+            for await b in group { out.append(b) }
+            return out
+        }
+
+        tasks = bundles.flatMap(\.tasks)
+        let failures = bundles.compactMap(\.error)
+        if failures.isEmpty {
+            errorMessage = nil
+        } else if failures.count == bundles.count {
+            errorMessage = failures.first
+        } else {
+            errorMessage = failures.joined(separator: " · ")
         }
     }
 
     private func toggle(_ task: SessionTask) async {
-        guard let host = appState.selectedHost else { return }
+        guard let host = appState.endpoint(forSessionId: task.sourceSessionId) else { return }
         do {
             let updated = try await appState.api.updateTask(
                 sessionId: task.sourceSessionId,
@@ -331,7 +358,7 @@ struct TasksView: View {
     }
 
     private func delete(_ task: SessionTask) async {
-        guard let host = appState.selectedHost else { return }
+        guard let host = appState.endpoint(forSessionId: task.sourceSessionId) else { return }
         do {
             try await appState.api.deleteTask(
                 sessionId: task.sourceSessionId,

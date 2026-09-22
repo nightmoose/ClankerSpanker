@@ -224,7 +224,9 @@ struct BotsView: View {
     }
 
     private func openSession(_ sessionId: String) {
-        guard let host = appState.selectedHost else { return }
+        // RFC-024: prefer the session's owning host so a bot run from host B
+        // opens its transcript on host B, not on the current chip host.
+        guard let host = appState.endpoint(forSessionId: sessionId) else { return }
         pendingRoute = SessionRoute(hostId: host.id, sessionId: sessionId)
     }
 }

@@ -12,6 +12,14 @@ struct Bot: Codable, Identifiable, Hashable, Sendable {
     var maxTurnsPerRun: Int
     var lastRunAt: String?
     var lastSessionId: String?
+    /// RFC-024: client-side stamp of the host that returned this bot.
+    /// Not on the wire; used to route mutations back to the right host
+    /// when the list is merged across multiple hosts.
+    var hostId: String?
+
+    /// Composite id for cross-host uniqueness. Two hosts can name-collide on
+    /// bot ids (slug from bot name); the route key keeps them distinct.
+    var routeKey: String { "\(hostId ?? "").\(id)" }
 
     var lastRunDate: Date? {
         guard let lastRunAt else { return nil }

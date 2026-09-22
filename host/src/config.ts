@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -174,6 +174,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
 
   if (!existsSync(configPath)) {
     const created: HostConfigFile = {
+      hostId: randomUUID(),
       hostToken: randomBytes(24).toString("hex"),
       bindHost: process.env.GROK_DISPATCH_HOST ?? "0.0.0.0",
       bindPort: Number(process.env.GROK_DISPATCH_PORT ?? 8787),
@@ -245,6 +246,19 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     }
   }
 
+  // Mint hostId once and persist so clients can key state to a stable identity.
+  const rawHostIdString = typeof raw.hostId === "string" ? raw.hostId.trim() : "";
+  if (!rawHostIdString) {
+    const mintedHostId = randomUUID();
+    (raw as Partial<HostConfigFile>).hostId = mintedHostId;
+    try {
+      writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n", "utf8");
+      console.log(`[config] Minted hostId ${mintedHostId}`);
+    } catch {
+      /* non-fatal — an in-memory hostId still works for this boot */
+    }
+  }
+
   const apns =
     raw.apns && typeof raw.apns === "object"
       ? {
@@ -263,6 +277,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
       : undefined;
 
   const merged: HostConfigFile = {
+    hostId: typeof raw.hostId === "string" && raw.hostId.trim() ? raw.hostId : randomUUID(),
     hostToken: raw.hostToken ?? randomBytes(24).toString("hex"),
     bindHost: raw.bindHost ?? "0.0.0.0",
     bindPort: raw.bindPort ?? 8787,

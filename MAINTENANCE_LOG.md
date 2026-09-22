@@ -2,6 +2,78 @@
 
 ---
 
+## Run: 2026-09-21 — RFC-024 iOS multi-host: WS pool, per-host fan-out, hostId end-to-end
+
+First real two-host test broke visibly. The iOS/Mac client was built
+for one host and treated `AppState.selectedHost` as an implicit global
+everywhere: a single `WebSocketClient` bound to the selected host, a
+`GET /sessions` call to just that host, single-host APNs registration,
+single-host bots/tasks lists, and a Mac bootstrap that clobbered a
+remote host selection back to loopback on every startup. Symptom the
+user reported ("only the primary host's profiles are listed" in
+Settings) was one of ~15 concrete regressions.
+
+Host side is small: `HostConfigFile` gains a `hostId` UUID minted on
+first boot and persisted, so clients can key per-host state (WS
+sockets, push registrations, session ownership) to a stable identity
+instead of a name/URL that can change. `GET /host/self` returns
+`{ hostId, name, version, bindPort }`; auth required. `HOST_VERSION`
+hoisted to a constant so `/health` and `/host/self` don't drift.
+
+Client side is the bulk of the diff:
+
+- `Services/HostSocketPool.swift` (new): one `WebSocketClient` per
+  registered host. Tags every event with the source host's UUID so
+  downstream code (`handleSocketData(_:hostId:)`, `notifyApproval`)
+  routes actions back to the correct host — never `selectedHost`.
+- `AppState.refreshSessions` fans `GET /sessions` out to every
+  configured host in parallel via `TaskGroup`, stamps `hostId` on
+  every returned `SessionSummary`, and dedupes on the composite
+  `(hostId, id)` key so two hosts holding the same imported id
+  coexist. Per-host errors surface as "N hosts unreachable (…)"
+  rather than `errors.first` hiding a dead secondary.
+- `refreshProfileUsage` parallelizes across hosts with a per-host
+  4s timeout so one wedged secondary can't stall the 60s poll.
+- `applyDeviceToken` fans APNs registration out to every host so
+  kill-state pushes fire from whichever host owns the session.
+  `lastPushRegistrations` is now a Set keyed by `hostId|token`.
+- `handleNotificationAction` is strict on the notification's
+  `userInfo.hostId` — Approve/Reject taps route to the encoded host
+  or fail with a toast, never fall through to `selectedHost`.
+- `ensureLocalHostOnMac` no longer forces the socket onto loopback
+  on every Mac startup; it only seeds a "This Mac" endpoint when
+  the host list is empty, so a remote-host selection survives
+  relaunch.
+- `endpoint(for session:)` / `endpoint(forSessionId:)` helpers on
+  `AppState`. `MacCommandCenter` session detail, `DashboardVM`
+  archive/unarchive, `TasksView` open/toggle/delete, `BotsView`
+  open-session, and `NotificationAction` all route through this
+  helper.
+- `BotsViewModel` and `TasksView` fan out reads across every host
+  and route mutations back to the owning host (`Bot.hostId`,
+  `endpoint(forSessionId:)`).
+- `SessionSummary.hostId` optional, client-stamped; `Bot.hostId`
+  same shape. Wire schemas unchanged.
+- UX: `SettingsView` renders one `Section` per host under Profile
+  usage (fixes the reported "only primary host's profiles are
+  listed"); `SessionRowView` shows a small host chip when >1 host
+  is configured; `ProfileSegmentBar` caption reads "All profiles ·
+  N hosts" when the chip mode spans multiple hosts.
+
+**Soak (deferred to Alex on device):** add a second host on Deez
+Nutz. Both hosts' profiles appear under distinct Sections. Trigger
+an approval on the *non-selected* host → phone gets APNs push, tap
+routes to the correct host. Kill the secondary host mid-refresh →
+the "N hosts unreachable" banner appears without wiping the primary
+host's sessions.
+
+Tests baseline 266 → 271 (5 new cases in `config.test.ts` covering
+hostId mint / persist / preserve). Openapi has `/host/self`.
+
+Follow-ups: RFC-025 mirrors this in Electron `desktop/`.
+
+---
+
 ## Run: 2026-09-21 — RFC-023 in-app PDF preview + share on session file viewer
 
 Session 22530a89 ("Florida chicken coop design") generated a PDF and

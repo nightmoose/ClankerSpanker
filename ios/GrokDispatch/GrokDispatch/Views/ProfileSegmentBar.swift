@@ -206,17 +206,31 @@ struct ProfileSegmentBar: View {
                 }
             }
             .padding(.horizontal, 2)
-        } else if showsContext, !isSingleSelect, appState.showsAllProfiles, let host = appState.selectedHost {
+        } else if showsContext, !isSingleSelect, appState.showsAllProfiles {
+            // RFC-024: "All profiles · N hosts" when the chip mode actually
+            // spans multiple hosts (was: only showed selectedHost.name,
+            // which lied about scope in multi-host installs).
+            let hostCount = appState.hosts.count
             HStack(spacing: 6) {
                 Circle().fill(DispatchColors.accent).frame(width: 6, height: 6)
-                Text("All profiles · \(host.name)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if showHostURL {
-                    Text("· \(shortHostURL(host.baseURL))")
-                        .font(.caption2)
+                if hostCount > 1 {
+                    Text("All profiles · \(hostCount) hosts")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                } else if let host = appState.selectedHost {
+                    Text("All profiles · \(host.name)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if showHostURL {
+                        Text("· \(shortHostURL(host.baseURL))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                } else {
+                    Text("All profiles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 2)

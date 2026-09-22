@@ -275,11 +275,21 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     // RFC-021 per-session Grok credit meter (weekly-% this chat has burned).
     var creditsUsedDeltaPct: Double?
     var creditsUsedAt: String?
+    /// RFC-024: `HostEndpoint.id.uuidString` this session came from. Stamped
+    /// by the client on receive (host doesn't emit it). Nil for legacy
+    /// records; APIs that need the owning host must fall back to the fetch
+    /// context in that case.
+    var hostId: String?
 
     var isArchived: Bool { archived == true }
 
     var createdDate: Date? { ISO8601DateFormatter.flexible.date(from: createdAt) }
     var updatedDate: Date? { ISO8601DateFormatter.flexible.date(from: updatedAt) }
+
+    /// New id for cross-host dedupe. Sessions from different hosts may share
+    /// `id` (attach flow re-imports the same underlying Grok/Claude id on two
+    /// machines) — the key is composite.
+    var routeKey: String { "\(hostId ?? "").\(id)" }
 }
 
 struct TranscriptEntry: Codable, Identifiable, Hashable, Sendable {

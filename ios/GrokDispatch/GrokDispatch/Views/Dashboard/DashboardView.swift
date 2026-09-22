@@ -445,7 +445,7 @@ struct DashboardView: View {
     }
 
     private var connectionChip: some View {
-        let live = appState.socket.isConnected
+        let live = appState.isSocketLive
         let api = appState.hostAPIReachable
         return Text(appState.connectionLabel)
             .font(.caption.weight(.semibold))

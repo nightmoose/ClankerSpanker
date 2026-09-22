@@ -2,6 +2,92 @@
 
 ---
 
+## Run: 2026-09-22 — RFC-025 Electron desktop multi-host
+
+Mirror of RFC-024 for the Linux Electron client at `desktop/`. Before
+this: schema is plural (`hosts[]` + `activeHostId`) but every downstream
+code path — one `HostWsMonitor` bound to `effectiveConnection()`, one
+`Api.sessions()` call to the active host, notification actions with no
+`hostId` — treated the active host as *the* host. Adding a second host
+either hid its sessions or (worse) mis-routed Approve/Reject clicks.
+
+Main process:
+
+- New `desktop/src/host-ws-pool.js`: `HostWsPool` owns one
+  `HostWsMonitor` per registered host with a token, tags every
+  `onStatus` / `onEvent` / `onNotify` callback with the source host's
+  id. Legacy `HostWsMonitor` API unchanged — the pool wraps it.
+- `desktop/src/main.js`: `wsPool` replaces the single `monitor`
+  global. `connStatusByHost` tracks per-host status; aggregate
+  status is "live" if any host is live, else "connecting" if any is
+  connecting, else "offline". `notify()` includes `hostId` in every
+  `session:approval-action` and `session:focus` IPC payload, and
+  prefixes the notification title with the host name when >1 host is
+  configured. Every `startMonitor()` call becomes `syncPool()`.
+- New `desktop:connections` IPC returns
+  `{[hostId]: {hostURL, token, mode}}` covering every registered host
+  so the renderer can build per-host `Api` facades without repeatedly
+  re-reading the desktop config.
+
+Renderer:
+
+- `desktop/renderer/api.js`: every method now accepts an optional
+  trailing `hostConn = {hostURL, token}` that overrides the module
+  singleton for that call. New `Api.forHost(hostConn)` factory
+  returns a facade whose methods auto-pass the connection — used by
+  callers that know the owning host of a session/bot.
+- `desktop/renderer/app.js`: `state.connByHost` populated from the
+  new IPC. New `hostConnFor(hostId)` / `apiFor(hostId)` /
+  `apiForSession(session)` / `apiForBot(bot)` helpers. `seqKey()`
+  produces `${hostId}|${sessionId}` so `lastSeqBySession` no longer
+  aliases across hosts on replay.
+- `refreshSessions()` fans `/sessions` + `/projects` + `/profiles`
+  out across every host via `Promise.allSettled`, stamps `hostId` on
+  every returned session/disk-hint/project/profile before merging.
+  Per-host failures surface as a banner without wiping the healthy
+  host's list. `refreshSessionsSingle` retained as a fallback for
+  the boot moment before `connByHost` populates.
+- Session-detail actions (`prompt`, `diff`, `addExtraDirs`, `approve`,
+  `reject`, `answer`, `renameSession`, `close`, `cancel`,
+  `transferSession`, `reincarnate`, `review`, `setSessionProject`,
+  `archive`, `unarchive`, `deleteSession`, `sessionFile`,
+  `sessionFiles`, `createNote`, `deleteNote`, `createTask`,
+  `updateTask`, `deleteTask`) all route through
+  `apiForSession(d)` — never the singleton.
+- `catchUpEvents()` + `applyEvent()` accept a `hostId` context and
+  key `lastSeqBySession` on the composite so replay for the same
+  session id on different hosts stays independent.
+- `openSession(id, msg, hostIdHint)` prefers a caller-supplied host
+  hint (notification), then the session's stamped `hostId`, then
+  falls back to the active host — session that lives on host B no
+  longer 404s against host A on click.
+- `renderBots()` fans `/bots` out across every host, tags each with
+  `hostId`. Mutations (`updateBot`, `runBot`, `getBotOutbox`) route
+  through `apiForBot(bot)`.
+- `renderTasks()` fans `/tasks` out across every host. Toggle/delete
+  route through the source session's host via `apiForSession`.
+- Approval-action IPC handler routes by `hostId` in the payload; no
+  more implicit fall-through to the active host.
+- `onHostEvent` IPC receives `{event, hostId}` — `applyEvent` gets
+  the hostId as context so the seq key is correct.
+
+Non-goals held: `HostProcessManager` still manages one local host
+(port 8787 is unique); compose/dispatch/attach/terminal continue to
+use the active host (they're focus-scoped by design); profile chip
+grouping and per-host row badges are follow-ups.
+
+**Soak (deferred to Alex on Nomad):** launch Electron with two hosts,
+verify both hosts' sessions merge with per-host badges (once follow-up
+lands), trigger an approval on the non-active host — notification body
+names that host, click routes correctly.
+
+`make check` green. No test-count change (`desktop/` has no vitest).
+
+Follow-ups: profile chip host labels; session row host chips;
+Bonjour discovery.
+
+---
+
 ## Run: 2026-09-21 — RFC-024 iOS multi-host: WS pool, per-host fan-out, hostId end-to-end
 
 First real two-host test broke visibly. The iOS/Mac client was built

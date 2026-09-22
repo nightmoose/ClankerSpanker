@@ -57,7 +57,14 @@ const state = {
   hostConfigPath: "",
   refreshTimer: null,
   usageTimer: null,
+  /** RFC-025: keyed on `${hostId}|${sessionId}` so seq numbers from
+   *  different hosts don't alias each other on replay. Legacy `id`-only
+   *  keys are kept as a soft fallback for session detail views opened
+   *  before we knew the owning host. */
   lastSeqBySession: {},
+  /** RFC-025: `{[hostId]: {hostURL, token, mode}}`. Refreshed after every
+   *  host list mutation via `syncConnection`. */
+  connByHost: {},
   streamingText: "",
   streamingTimer: null,
   showViewer: false,
@@ -254,7 +261,52 @@ async function syncConnection() {
   const conn = await window.clanker.getConnection();
   Api.setConnection(conn);
   state.desktopConfig = await window.clanker.getDesktopConfig();
+  // RFC-025: pull the per-host connection map so fan-out reads and
+  // per-session-owning-host mutations don't collapse to `active`.
+  try {
+    state.connByHost = (await window.clanker.getConnections?.()) || {};
+  } catch {
+    state.connByHost = {};
+  }
   return conn;
+}
+
+/** RFC-025: `{hostURL, token}` for any registered host, or null if
+ *  unknown / unauthenticated. */
+function hostConnFor(hostId) {
+  if (!hostId) return null;
+  const c = state.connByHost?.[hostId];
+  if (!c || !c.hostURL || !c.token) return null;
+  return { hostURL: c.hostURL, token: c.token };
+}
+
+/** Facade bound to the session-owning host so callers can write
+ *  `apiFor(hostId).approve(...)` instead of threading `hostConn` through
+ *  each arg list. Falls back to the singleton (active host) when the
+ *  host id is unknown — preserves legacy behavior for actions taken
+ *  before the session's hostId is stamped. */
+function apiFor(hostId) {
+  const conn = hostConnFor(hostId);
+  return conn ? Api.forHost(conn) : Api;
+}
+
+/** Return the api facade bound to a session's owning host. Sessions get
+ *  `hostId` stamped at fan-out time (`refreshSessions`), so this is the
+ *  canonical way for detail views to route mutations. */
+function apiForSession(sessionOrId) {
+  if (!sessionOrId) return Api;
+  const s = typeof sessionOrId === "string"
+    ? (state.sessions.find((x) => x.id === sessionOrId) ||
+       state.archived.find((x) => x.id === sessionOrId) ||
+       (state.detail?.id === sessionOrId ? state.detail : null))
+    : sessionOrId;
+  return apiFor(s?.hostId);
+}
+
+/** RFC-025: seq keys are `${hostId}|${sessionId}` so replay for the same
+ *  id on different hosts doesn't collide. */
+function seqKey(hostId, sessionId) {
+  return `${hostId || ""}|${sessionId}`;
 }
 
 async function refreshHostStatus() {
@@ -668,7 +720,7 @@ function scheduleHostSearch(query) {
     });
 }
 
-async function openSession(id, messageId) {
+async function openSession(id, messageId, hostIdHint) {
   const isNew = state.selectedId !== id;
   state.selectedId = id;
   if (isNew) {
@@ -686,8 +738,16 @@ async function openSession(id, messageId) {
     state.tab = "transcript";
     state.pendingJumpMessageId = messageId;
   }
+  // RFC-025: prefer the notification's hostId hint, then the session's
+  // stamped hostId, then fall back to the active host — so selecting a
+  // session that lives on host B while chips are on host A doesn't 404.
   try {
-    state.detail = await Api.session(id);
+    const existing =
+      state.sessions.find((s) => s.id === id) ||
+      state.archived.find((s) => s.id === id);
+    const hostId = hostIdHint || existing?.hostId;
+    state.detail = await apiFor(hostId).session(id);
+    if (hostId && state.detail && !state.detail.hostId) state.detail.hostId = hostId;
     trackHighestSeq(state.detail);
     renderSessionList();
     renderDetail();
@@ -847,7 +907,7 @@ function renderDetail() {
           name: im.name,
         }));
       }
-      state.detail = await Api.prompt(d.id, body);
+      state.detail = await apiForSession(d).prompt(d.id, body);
       trackHighestSeq(state.detail);
       state.followupDraft = "";
       state.pendingImages = [];
@@ -924,7 +984,7 @@ function renderTabBody(d, running) {
     el.innerHTML = renderNotesTab(d);
     wireNotesTab(d);
     if (state.sessionFilesFor !== d.id) {
-      Api.sessionFiles(d.id)
+      apiForSession(d).sessionFiles(d.id)
         .then((res) => {
           state.sessionFiles = res.files || [];
           state.sessionFilesFor = d.id;
@@ -1104,7 +1164,7 @@ async function loadDiff() {
   state.diffLoading = true;
   renderDetail();
   try {
-    state.diff = await Api.diff(state.detail.id);
+    state.diff = await apiForSession(state.detail).diff(state.detail.id);
   } catch (e) {
     state.diff = { raw: `Diff unavailable: ${e.message}` };
   } finally {
@@ -1174,7 +1234,7 @@ function wireNotesTab(d) {
       const task = (d.tasks || []).find((x) => x.id === id);
       if (!task) return;
       try {
-        const next = await Api.updateTask(d.id, id, { status: task.status === "done" ? "open" : "done" });
+        const next = await apiForSession(d).updateTask(d.id, id, { status: task.status === "done" ? "open" : "done" });
         const i = d.tasks.findIndex((x) => x.id === id);
         if (i >= 0) d.tasks[i] = next.task || next;
         renderDetail();
@@ -1186,7 +1246,7 @@ function wireNotesTab(d) {
   body.querySelectorAll("[data-del-task]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
-        await Api.deleteTask(d.id, btn.getAttribute("data-del-task"));
+        await apiForSession(d).deleteTask(d.id, btn.getAttribute("data-del-task"));
         d.tasks = (d.tasks || []).filter((x) => x.id !== btn.getAttribute("data-del-task"));
         renderDetail();
       } catch (e) {
@@ -1197,7 +1257,7 @@ function wireNotesTab(d) {
   body.querySelectorAll("[data-del-note]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
-        await Api.deleteNote(d.id, btn.getAttribute("data-del-note"));
+        await apiForSession(d).deleteNote(d.id, btn.getAttribute("data-del-note"));
         d.notes = (d.notes || []).filter((x) => x.id !== btn.getAttribute("data-del-note"));
         renderDetail();
       } catch (e) {
@@ -1217,7 +1277,7 @@ function wireNotesTab(d) {
     const text = ($("#task-draft")?.value || "").trim();
     if (!text) return;
     try {
-      const res = await Api.createTask(d.id, { text });
+      const res = await apiForSession(d).createTask(d.id, { text });
       d.tasks = [...(d.tasks || []), res.task || res];
       state.taskDraft = "";
       renderDetail();
@@ -1229,7 +1289,7 @@ function wireNotesTab(d) {
     const text = ($("#note-draft")?.value || "").trim();
     if (!text) return;
     try {
-      const res = await Api.createNote(d.id, { text });
+      const res = await apiForSession(d).createNote(d.id, { text });
       d.notes = [...(d.notes || []), res.note || res];
       state.noteDraft = "";
       renderDetail();
@@ -1253,7 +1313,7 @@ function wireNotesTab(d) {
     const extra = dirs.filter((p) => p && p !== d.cwd);
     if (!extra.length) return;
     try {
-      const detail = await Api.addExtraDirs(d.id, extra);
+      const detail = await apiForSession(d).addExtraDirs(d.id, extra);
       state.detail = { ...d, ...detail };
       state.sessionFilesFor = null;
       banner(`Added ${extra.length} folder(s)`);
@@ -1308,7 +1368,7 @@ function wireApprovalControls(d, pendingA) {
 
   const approve = async (scope) => {
     try {
-      state.detail = await Api.approve(d.id, {
+      state.detail = await apiForSession(d).approve(d.id, {
         approvalId: pendingA.id,
         comment: state.approvalDraftComment || undefined,
         scope,
@@ -1322,7 +1382,7 @@ function wireApprovalControls(d, pendingA) {
   };
   const reject = async () => {
     try {
-      state.detail = await Api.reject(d.id, {
+      state.detail = await apiForSession(d).reject(d.id, {
         approvalId: pendingA.id,
         comment: state.approvalDraftComment || undefined,
       });
@@ -1363,7 +1423,7 @@ function wireQuestionControls(d, pendingQ) {
   $("#btn-answer")?.addEventListener("click", async () => {
     const answers = [...document.querySelectorAll("select[data-q]")].map((s) => s.value);
     try {
-      state.detail = await Api.answer(d.id, { questionId: pendingQ.id, answers });
+      state.detail = await apiForSession(d).answer(d.id, { questionId: pendingQ.id, answers });
       trackHighestSeq(state.detail);
       renderDetail();
     } catch (e) {
@@ -1374,14 +1434,131 @@ function wireQuestionControls(d, pendingQ) {
 
 // ——— Refresh / WS ———
 
+/** RFC-025: fan out /sessions + /projects + /profiles across every host
+ *  in parallel. Sessions get `hostId` stamped on receive so downstream
+ *  routing (open detail, approve, archive, …) can send actions to the
+ *  owning host. Per-host failures are collected; a single dead host
+ *  doesn't blank the healthy ones. */
 async function refreshSessions() {
-  if (!Api.getConnection().token) return;
+  const conns = state.connByHost || {};
+  const hostIds = Object.keys(conns).filter((id) => conns[id]?.hostURL && conns[id]?.token);
+  if (!hostIds.length) {
+    if (!Api.getConnection().token) return;
+    // Fall back to the singleton for pre-multi-host installs.
+    return refreshSessionsSingle();
+  }
+  try {
+    const results = await Promise.allSettled(
+      hostIds.map(async (hostId) => {
+        const api = Api.forHost({ hostURL: conns[hostId].hostURL, token: conns[hostId].token });
+        const [sessions, projects, profiles] = await Promise.all([
+          api.sessions(),
+          api.projects().catch(() => ({ projects: [] })),
+          api.profiles({ usage: true, admin: true }).catch(() => ({ profiles: [] })),
+        ]);
+        const stamp = (arr) => (arr || []).map((s) => ({ ...s, hostId }));
+        return {
+          hostId,
+          sessions: stamp(sessions.sessions),
+          archived: stamp(sessions.archivedSessions),
+          disk: (sessions.diskSessions || []).map((h) => ({ ...h, hostId })),
+          claude: (sessions.claudeSessions || []).map((h) => ({ ...h, hostId })),
+          agy: (sessions.agySessions || []).map((h) => ({ ...h, hostId })),
+          projects: (projects.projects || []).map((p) => ({ ...p, hostId })),
+          profiles: (profiles.profiles || []).map((p) => ({ ...p, hostId })),
+          admin: profiles.admin === true,
+          adminProfiles: (profiles.adminProfiles || []).map((p) => ({ ...p, hostId })),
+        };
+      }),
+    );
+
+    const merged = {
+      sessions: [], archived: [], disk: [], claude: [], agy: [],
+      projects: [], profiles: [], adminProfiles: [],
+    };
+    const failures = [];
+    let admin = false;
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const hostId = hostIds[i];
+      if (r.status === "fulfilled") {
+        merged.sessions.push(...r.value.sessions);
+        merged.archived.push(...r.value.archived);
+        merged.disk.push(...r.value.disk);
+        merged.claude.push(...r.value.claude);
+        merged.agy.push(...r.value.agy);
+        merged.projects.push(...r.value.projects);
+        merged.profiles.push(...r.value.profiles);
+        merged.adminProfiles.push(...r.value.adminProfiles);
+        admin = admin || r.value.admin;
+      } else {
+        failures.push(hostId);
+      }
+    }
+    state.sessions = merged.sessions;
+    state.archived = merged.archived;
+    state.disk = merged.disk;
+    state.claude = merged.claude;
+    state.agy = merged.agy;
+    state.projects = merged.projects;
+    state.profiles = merged.profiles;
+    state.admin = admin;
+    state.adminProfiles = merged.adminProfiles;
+    if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
+    if (!state.enabledProfileIds.length) {
+      state.enabledProfileIds = state.profiles.map((p) => p.id);
+    } else {
+      const known = new Set(state.profiles.map((p) => p.id));
+      const kept = state.enabledProfileIds.filter((id) => known.has(id));
+      if (showsAllProfiles()) state.enabledProfileIds = state.profiles.map((p) => p.id);
+      else state.enabledProfileIds = kept;
+    }
+    renderProfiles();
+    renderActiveHostChip();
+    if (state.nav === "sessions") {
+      renderSessionList();
+      if (state.selectedId) {
+        try {
+          state.detail = await apiForSession(state.selectedId).session(state.selectedId);
+          if (state.detail && !state.detail.hostId) {
+            // Preserve the hostId stamp we set at fan-out time.
+            const existing = state.sessions.find((s) => s.id === state.detail.id) ||
+                             state.archived.find((s) => s.id === state.detail.id);
+            if (existing?.hostId) state.detail.hostId = existing.hostId;
+          }
+          trackHighestSeq(state.detail);
+          renderDetail();
+        } catch {
+          /* session gone */
+        }
+      }
+    } else if (state.nav === "grok" || state.nav === "claude") {
+      renderDisk(state.nav);
+    } else if (state.nav === "projects") {
+      renderProjects();
+    } else if (state.nav === "tasks") {
+      renderTasks();
+    }
+    if (failures.length && state.nav === "sessions") {
+      banner(`${failures.length} host(s) unreachable`, true);
+    }
+    // Compose intentionally NOT re-rendered here — the poll would clobber
+    // focus/selection while the user is mid-type. Compose only needs a
+    // fresh render on nav enter, on profile change, or after add-folder.
+  } catch (e) {
+    if (state.nav === "sessions") {
+      $("#session-list").innerHTML = `<div class="list-empty">${escapeHtml(e.message)}</div>`;
+    }
+  }
+}
+
+/** Legacy single-host refresh, used for the initial boot moment before
+ *  `state.connByHost` populates. Same shape as the pre-RFC-025 code. */
+async function refreshSessionsSingle() {
   try {
     const [sessions, projects, profiles] = await Promise.all([
       Api.sessions(),
       Api.projects().catch(() => ({ projects: [] })),
-      // Server ignores admin=1 for non-loopback callers; admin fields simply
-      // don't come back over LAN/Tailscale.
       Api.profiles({ usage: true, admin: true }).catch(() => ({ profiles: [] })),
     ]);
     state.sessions = sessions.sessions || [];
@@ -1396,38 +1573,10 @@ async function refreshSessions() {
     if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
     if (!state.enabledProfileIds.length) {
       state.enabledProfileIds = state.profiles.map((p) => p.id);
-    } else {
-      const known = new Set(state.profiles.map((p) => p.id));
-      const kept = state.enabledProfileIds.filter((id) => known.has(id));
-      const added = state.profiles.map((p) => p.id).filter((id) => !state.enabledProfileIds.includes(id) && !known.has(id));
-      // Newly appeared profiles join the all-on set only when we were already showing all.
-      if (showsAllProfiles()) state.enabledProfileIds = state.profiles.map((p) => p.id);
-      else state.enabledProfileIds = kept;
     }
     renderProfiles();
     renderActiveHostChip();
-    if (state.nav === "sessions") {
-      renderSessionList();
-      if (state.selectedId) {
-        try {
-          state.detail = await Api.session(state.selectedId);
-          trackHighestSeq(state.detail);
-          renderDetail();
-        } catch {
-          /* session gone */
-        }
-      }
-    } else if (state.nav === "grok" || state.nav === "claude") {
-      renderDisk(state.nav);
-    } else if (state.nav === "projects") {
-      renderProjects();
-    } else if (state.nav === "tasks") {
-      renderTasks();
-    }
-    // Compose intentionally NOT re-rendered here — the poll would clobber
-    // focus/selection while the user is mid-type. Compose only needs a
-    // fresh render on nav enter, on profile change, or after add-folder,
-    // all of which already call renderCompose() explicitly.
+    if (state.nav === "sessions") renderSessionList();
   } catch (e) {
     if (state.nav === "sessions") {
       $("#session-list").innerHTML = `<div class="list-empty">${escapeHtml(e.message)}</div>`;
@@ -1439,20 +1588,33 @@ function trackHighestSeq(detail) {
   if (!detail?.id) return;
   const events = detail.events || [];
   const highest = events.reduce((m, e) => (typeof e.seq === "number" && e.seq > m ? e.seq : m), 0);
-  const stored = state.lastSeqBySession[detail.id] || 0;
-  state.lastSeqBySession[detail.id] = Math.max(stored, highest);
+  // RFC-025: key on `${hostId}|${id}` so cross-host id collisions don't
+  // alias each other's seq counters on replay.
+  const key = seqKey(detail.hostId, detail.id);
+  const stored = state.lastSeqBySession[key] || state.lastSeqBySession[detail.id] || 0;
+  state.lastSeqBySession[key] = Math.max(stored, highest);
 }
 
-async function catchUpEvents(sessionId) {
-  if (!sessionId || !Api.getConnection().token) return;
-  const since = state.lastSeqBySession[sessionId] || 0;
+async function catchUpEvents(sessionId, hostIdHint) {
+  if (!sessionId) return;
+  const existing =
+    state.sessions.find((s) => s.id === sessionId) ||
+    state.archived.find((s) => s.id === sessionId) ||
+    (state.detail?.id === sessionId ? state.detail : null);
+  const hostId = hostIdHint || existing?.hostId;
+  const api = apiFor(hostId);
+  const since =
+    state.lastSeqBySession[seqKey(hostId, sessionId)] ||
+    state.lastSeqBySession[sessionId] ||
+    0;
   try {
-    const r = await Api.events(sessionId, since);
+    const r = await api.events(sessionId, since);
     const events = r?.events || [];
-    for (const ev of events) applyEvent(ev, { fromReplay: true });
+    for (const ev of events) applyEvent(ev, { fromReplay: true, hostId });
     if (state.selectedId === sessionId) {
       try {
-        state.detail = await Api.session(sessionId);
+        state.detail = await api.session(sessionId);
+        if (hostId && state.detail && !state.detail.hostId) state.detail.hostId = hostId;
         trackHighestSeq(state.detail);
         renderDetail();
       } catch {
@@ -1464,13 +1626,14 @@ async function catchUpEvents(sessionId) {
   }
 }
 
-function applyEvent(ev, { fromReplay = false } = {}) {
+function applyEvent(ev, { fromReplay = false, hostId = null } = {}) {
   if (!ev || !ev.type) return;
   const sid = ev.sessionId;
   if (sid && typeof ev.seq === "number") {
-    const prev = state.lastSeqBySession[sid] || 0;
+    const key = seqKey(hostId, sid);
+    const prev = state.lastSeqBySession[key] || state.lastSeqBySession[sid] || 0;
     if (ev.seq <= prev) return;
-    state.lastSeqBySession[sid] = ev.seq;
+    state.lastSeqBySession[key] = ev.seq;
   }
 
   patchSessionListMeta(sid, ev);
@@ -1491,11 +1654,13 @@ function applyEvent(ev, { fromReplay = false } = {}) {
         ["idle", "completed"].includes(ev.payload?.status));
     if (wentIdle && !fromReplay) {
       const targetId = sid;
+      const targetHost = hostId || state.detail?.hostId;
       setTimeout(async () => {
         if (state.selectedId !== targetId) return;
         try {
-          const fresh = await Api.session(targetId);
+          const fresh = await apiFor(targetHost).session(targetId);
           if (state.selectedId !== targetId) return;
+          if (targetHost && !fresh.hostId) fresh.hostId = targetHost;
           state.detail = fresh;
           trackHighestSeq(fresh);
           renderDetail();
@@ -1768,12 +1933,16 @@ function wireSessionMenu(d) {
         const pid = el.getAttribute("data-pid");
         close();
         try {
+          // RFC-025: every session action routes to the session's owning
+          // host (not `Api` — the singleton points at the active host,
+          // which might not be this session's host).
+          const api = apiForSession(d);
           if (act === "rename") {
             const title = prompt("Session title", d.title || "");
             if (!title) return;
-            state.detail = await Api.renameSession(d.id, title);
+            state.detail = await api.renameSession(d.id, title);
           } else if (act === "close") {
-            await Api.close(d.id);
+            await api.close(d.id);
             banner("Closed as done");
             state.detail = null;
             state.selectedId = null;
@@ -1781,28 +1950,28 @@ function wireSessionMenu(d) {
             renderDetail();
             return;
           } else if (act === "cancel") {
-            state.detail = await Api.cancel(d.id);
+            state.detail = await api.cancel(d.id);
           } else if (act === "transfer") {
             if (!confirm(`Transfer this session to another profile?`)) return;
-            state.detail = await Api.transferSession(d.id, pid);
+            state.detail = await api.transferSession(d.id, pid);
             banner("Transferred");
           } else if (act === "reincarnate") {
             if (!confirm("Archive this chat and start a fresh session with a transcript summary?")) return;
-            const next = await Api.reincarnateSession(d.id, { profileId: state.profileId || undefined });
+            const next = await api.reincarnateSession(d.id, { profileId: state.profileId || undefined });
             banner("Reincarnated");
             await refreshSessions();
-            openSession(next.id);
+            openSession(next.id, undefined, d.hostId);
             return;
           } else if (act === "review") {
-            const next = await Api.reviewSession(d.id, { profileId: pid, includeDiff: true });
+            const next = await api.reviewSession(d.id, { profileId: pid, includeDiff: true });
             banner("Review session started");
             await refreshSessions();
-            openSession(next.id);
+            openSession(next.id, undefined, d.hostId);
             return;
           } else if (act === "project") {
-            state.detail = await Api.setSessionProject(d.id, pid || null);
+            state.detail = await api.setSessionProject(d.id, pid || null);
           } else if (act === "archive") {
-            await Api.archive(d.id);
+            await api.archive(d.id);
             banner("Archived");
             state.detail = null;
             state.selectedId = null;
@@ -1810,11 +1979,11 @@ function wireSessionMenu(d) {
             renderDetail();
             return;
           } else if (act === "unarchive") {
-            state.detail = await Api.unarchive(d.id);
+            state.detail = await api.unarchive(d.id);
             banner("Restored");
           } else if (act === "delete") {
             if (!confirm("Permanently delete this session and its attachments?")) return;
-            await Api.deleteSession(d.id);
+            await api.deleteSession(d.id);
             banner("Deleted");
             state.detail = null;
             state.selectedId = null;
@@ -1876,11 +2045,11 @@ function wireTranscriptCapture(d) {
           if (!edited) return;
           try {
             if (kind === "todo") {
-              const res = await Api.createTask(d.id, { text: edited, sourceMessageId: mid });
+              const res = await apiForSession(d).createTask(d.id, { text: edited, sourceMessageId: mid });
               d.tasks = [...(d.tasks || []), res.task || res];
               banner("Saved todo");
             } else {
-              const res = await Api.createNote(d.id, { text: edited, sourceMessageId: mid });
+              const res = await apiForSession(d).createNote(d.id, { text: edited, sourceMessageId: mid });
               d.notes = [...(d.notes || []), res.note || res];
               banner("Saved note");
             }
@@ -2296,7 +2465,7 @@ async function loadViewer(path) {
     }
     if (state.detail?.id) {
       try {
-        const remote = await Api.sessionFile(state.detail.id, p);
+        const remote = await apiForSession(state.detail).sessionFile(state.detail.id, p);
         const ext = String(remote.name || p)
           .split(".")
           .pop();
@@ -2505,9 +2674,27 @@ async function editProject(existing) {
 async function renderTasks() {
   const root = $("#view-tasks");
   if (!root) return;
+  // RFC-025: fan out /tasks across every configured host so tasks from
+  // all hosts appear in the aggregate list. Each task keeps a `hostId`
+  // stamp for mutation routing.
   try {
-    const res = await Api.listTasks();
-    state.tasks = res.tasks || [];
+    const conns = state.connByHost || {};
+    const hostIds = Object.keys(conns).filter((id) => conns[id]?.hostURL && conns[id]?.token);
+    if (!hostIds.length) {
+      const res = await Api.listTasks();
+      state.tasks = res.tasks || [];
+    } else {
+      const results = await Promise.allSettled(
+        hostIds.map(async (hostId) => {
+          const api = Api.forHost({ hostURL: conns[hostId].hostURL, token: conns[hostId].token });
+          const res = await api.listTasks();
+          return (res.tasks || []).map((t) => ({ ...t, hostId }));
+        }),
+      );
+      state.tasks = results
+        .filter((r) => r.status === "fulfilled")
+        .flatMap((r) => r.value);
+    }
   } catch (e) {
     root.innerHTML = `<div class="list-empty">${escapeHtml(e.message)}</div>`;
     return;
@@ -2595,13 +2782,31 @@ function projectOptions() {
 async function loadBots({ preserveSelection = true } = {}) {
   state.botsLoading = true;
   try {
-    const res = await Api.listBots();
-    state.bots = res.bots || [];
+    // RFC-025: fan out /bots across every host, tag each bot with its
+    // owning host so mutations (patch/run/outbox) route back correctly.
+    const conns = state.connByHost || {};
+    const hostIds = Object.keys(conns).filter((id) => conns[id]?.hostURL && conns[id]?.token);
+    if (!hostIds.length) {
+      const res = await Api.listBots();
+      state.bots = (res.bots || []).map((b) => ({ ...b, hostId: null }));
+    } else {
+      const results = await Promise.allSettled(
+        hostIds.map(async (hostId) => {
+          const api = Api.forHost({ hostURL: conns[hostId].hostURL, token: conns[hostId].token });
+          const res = await api.listBots();
+          return (res.bots || []).map((b) => ({ ...b, hostId }));
+        }),
+      );
+      state.bots = results
+        .filter((r) => r.status === "fulfilled")
+        .flatMap((r) => r.value);
+    }
     if (!preserveSelection || !state.bots.some((b) => b.id === state.selectedBotId)) {
       state.selectedBotId = state.bots[0]?.id || null;
     }
     if (state.selectedBotId) {
-      await loadBotOutbox(state.selectedBotId);
+      const bot = state.bots.find((b) => b.id === state.selectedBotId);
+      await loadBotOutbox(state.selectedBotId, bot?.hostId);
     }
   } catch (e) {
     banner(e.message, true);
@@ -2611,13 +2816,20 @@ async function loadBots({ preserveSelection = true } = {}) {
   }
 }
 
-async function loadBotOutbox(botId) {
+async function loadBotOutbox(botId, hostIdHint) {
   try {
-    const res = await Api.getBotOutbox(botId);
+    const bot = state.bots.find((b) => b.id === botId);
+    const hostId = hostIdHint || bot?.hostId;
+    const res = await apiFor(hostId).getBotOutbox(botId);
     state.botOutbox[botId] = res.items || [];
   } catch (e) {
     state.botOutbox[botId] = [];
   }
+}
+
+/** Api facade bound to the bot's owning host — mirror of `apiForSession`. */
+function apiForBot(bot) {
+  return apiFor(bot?.hostId);
 }
 
 function renderTerminal() {
@@ -2773,9 +2985,11 @@ function renderBotDetail(bot, outbox) {
 }
 
 function wireBotDetail(bot) {
+  // RFC-025: every bot mutation routes to the bot's owning host.
+  const botApi = apiForBot(bot);
   $("#bot-enabled")?.addEventListener("change", async (e) => {
     try {
-      await Api.updateBot(bot.id, { enabled: e.target.checked });
+      await botApi.updateBot(bot.id, { enabled: e.target.checked });
       await loadBots();
       renderBots();
     } catch (err) {
@@ -2784,7 +2998,7 @@ function wireBotDetail(bot) {
   });
   $("#bot-interval")?.addEventListener("change", async (e) => {
     try {
-      await Api.updateBot(bot.id, { interval: e.target.value });
+      await botApi.updateBot(bot.id, { interval: e.target.value });
       await loadBots();
       renderBots();
     } catch (err) {
@@ -2799,7 +3013,7 @@ function wireBotDetail(bot) {
   $("#bot-save-job")?.addEventListener("click", async () => {
     const nextJob = state.botDraftJob[bot.id] ?? bot.job;
     try {
-      await Api.updateBot(bot.id, { job: nextJob });
+      await botApi.updateBot(bot.id, { job: nextJob });
       delete state.botDraftJob[bot.id];
       await loadBots();
       banner("Job saved");
@@ -2818,14 +3032,14 @@ function wireBotDetail(bot) {
   $("#bot-run-now")?.addEventListener("click", async () => {
     const note = state.botRunNote[bot.id] || "";
     try {
-      const res = await Api.runBot(bot.id, note ? { note } : {});
+      const res = await botApi.runBot(bot.id, note ? { note } : {});
       delete state.botRunNote[bot.id];
       banner("Bot fired");
       await loadBots();
       renderBots();
       if (res?.session?.id) {
         setNav("sessions");
-        openSession(res.session.id);
+        openSession(res.session.id, undefined, bot.hostId);
       }
     } catch (err) {
       banner(err.message, true);
@@ -2834,11 +3048,11 @@ function wireBotDetail(bot) {
   $("#bot-open-last")?.addEventListener("click", () => {
     if (bot.lastSessionId) {
       setNav("sessions");
-      openSession(bot.lastSessionId);
+      openSession(bot.lastSessionId, undefined, bot.hostId);
     }
   });
   $("#bot-outbox-refresh")?.addEventListener("click", async () => {
-    await loadBotOutbox(bot.id);
+    await loadBotOutbox(bot.id, bot.hostId);
     renderBots();
   });
 }
@@ -3798,7 +4012,7 @@ function wireChrome() {
   });
 
   window.clanker.onWsStatus(({ status }) => setWsPill(status));
-  window.clanker.onHostEvent(({ event }) => applyEvent(event));
+  window.clanker.onHostEvent(({ event, hostId }) => applyEvent(event, { hostId }));
   window.clanker.onHostLog(({ line }) => {
     if (state.nav === "host") {
       const box = $("#h-logs");
@@ -3813,22 +4027,33 @@ function wireChrome() {
     else state.hostStatus = snap;
     renderHostMini();
   });
-  window.clanker.onSessionFocus(({ sessionId }) => {
+  window.clanker.onSessionFocus(({ sessionId, hostId }) => {
     setNav("sessions");
-    if (sessionId) openSession(sessionId);
+    if (sessionId) openSession(sessionId, undefined, hostId);
   });
   window.clanker.onDesktopConfig?.(async (cfg) => {
     state.desktopConfig = cfg;
+    // Host list mutated in main — refresh per-host connection map too.
+    try {
+      state.connByHost = (await window.clanker.getConnections?.()) || {};
+    } catch {
+      /* keep last */
+    }
     renderActiveHostChip();
   });
-  window.clanker.onApprovalAction?.(async ({ sessionId, approvalId, action }) => {
+  window.clanker.onApprovalAction?.(async ({ hostId, sessionId, approvalId, action }) => {
     if (!sessionId || !approvalId) return;
-    if (state.selectedId !== sessionId) await openSession(sessionId);
+    // RFC-025: route the REST call to the host the notification came from,
+    // never to the currently active host (that was the pre-025 bug where
+    // clicking Approve on a host-B notification hit host A).
+    if (state.selectedId !== sessionId) await openSession(sessionId, undefined, hostId);
     try {
+      const api = apiFor(hostId || state.detail?.hostId);
       state.detail =
         action === "approve"
-          ? await Api.approve(sessionId, { approvalId, scope: "once" })
-          : await Api.reject(sessionId, { approvalId });
+          ? await api.approve(sessionId, { approvalId, scope: "once" })
+          : await api.reject(sessionId, { approvalId });
+      if (hostId && state.detail && !state.detail.hostId) state.detail.hostId = hostId;
       trackHighestSeq(state.detail);
       renderDetail();
     } catch (e) {

@@ -2,6 +2,13 @@
 
 /**
  * Host REST client. Connection (URL + token) comes from the desktop shell.
+ *
+ * RFC-025: every method accepts an optional trailing `hostConn` of
+ * `{ hostURL, token }` to route the call to a specific host. When absent,
+ * the module-level singleton (the currently active host) is used. Use
+ * `Api.forHost(hostConn)` to get a facade that auto-passes `hostConn` for
+ * every call — needed anywhere the caller knows *which* host owns the
+ * session/bot/task being touched.
  */
 const Api = (() => {
   let hostURL = "http://127.0.0.1:8787";
@@ -20,11 +27,24 @@ const Api = (() => {
     return encodeURIComponent(id);
   }
 
-  async function request(path, opts = {}) {
-    if (!token) throw new Error("No host token — start the host or set a token in Desktop settings");
-    const url = new URL(path, hostURL + "/");
+  /** Pick the connection to use for a request: caller-supplied override
+   *  falls back to the module singleton. */
+  function resolveConn(hostConn) {
+    if (hostConn && hostConn.hostURL) {
+      return {
+        hostURL: String(hostConn.hostURL).replace(/\/$/, ""),
+        token: String(hostConn.token || ""),
+      };
+    }
+    return { hostURL, token };
+  }
+
+  async function request(path, opts = {}, hostConn) {
+    const conn = resolveConn(hostConn);
+    if (!conn.token) throw new Error("No host token — start the host or set a token in Desktop settings");
+    const url = new URL(path, conn.hostURL + "/");
     const headers = {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${conn.token}`,
       ...(opts.headers || {}),
     };
     if (opts.body !== undefined && !headers["Content-Type"]) {
@@ -44,11 +64,12 @@ const Api = (() => {
     return body;
   }
 
-  async function requestRaw(path) {
-    if (!token) throw new Error("No host token — start the host or set a token in Desktop settings");
-    const url = new URL(path, hostURL + "/");
+  async function requestRaw(path, hostConn) {
+    const conn = resolveConn(hostConn);
+    if (!conn.token) throw new Error("No host token — start the host or set a token in Desktop settings");
+    const url = new URL(path, conn.hostURL + "/");
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${conn.token}` },
     });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
@@ -72,144 +93,167 @@ const Api = (() => {
     return JSON.stringify(obj ?? {});
   }
 
-  return {
+  const methods = {
     setConnection,
     getConnection,
     request,
     requestRaw,
-    validate: () => request("/auth/validate", { method: "POST", body: "{}" }),
-    health: async () => {
-      const res = await fetch(`${hostURL}/health`);
+    validate: (hostConn) => request("/auth/validate", { method: "POST", body: "{}" }, hostConn),
+    health: async (hostConn) => {
+      const conn = resolveConn(hostConn);
+      const res = await fetch(`${conn.hostURL}/health`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
+    /** RFC-024: stable host identity + basics. Auth required. */
+    hostSelf: (hostConn) => request("/host/self", {}, hostConn),
 
-    sessions: (query) => {
+    sessions: (query, hostConn) => {
       const q = String(query || "").trim();
-      return request(q ? `/sessions?q=${encodeURIComponent(q)}` : "/sessions");
+      return request(q ? `/sessions?q=${encodeURIComponent(q)}` : "/sessions", {}, hostConn);
     },
-    session: (id) => request(`/sessions/${enc(id)}`),
-    events: (id, since = 0) =>
-      request(`/sessions/${enc(id)}/events?since=${encodeURIComponent(since)}`),
-    diff: (id) => request(`/sessions/${enc(id)}/diff`),
-    sessionFiles: (id) => request(`/sessions/${enc(id)}/files`),
-    sessionFile: (id, filePath) =>
-      request(`/sessions/${enc(id)}/file?path=${encodeURIComponent(filePath)}`),
-    addExtraDirs: (id, extraDirs) =>
+    session: (id, hostConn) => request(`/sessions/${enc(id)}`, {}, hostConn),
+    events: (id, since = 0, hostConn) =>
+      request(`/sessions/${enc(id)}/events?since=${encodeURIComponent(since)}`, {}, hostConn),
+    diff: (id, hostConn) => request(`/sessions/${enc(id)}/diff`, {}, hostConn),
+    sessionFiles: (id, hostConn) => request(`/sessions/${enc(id)}/files`, {}, hostConn),
+    sessionFile: (id, filePath, hostConn) =>
+      request(`/sessions/${enc(id)}/file?path=${encodeURIComponent(filePath)}`, {}, hostConn),
+    addExtraDirs: (id, extraDirs, hostConn) =>
       request(`/sessions/${enc(id)}/extra-dirs`, {
         method: "PATCH",
         body: jsonBody({ extraDirs }),
-      }),
+      }, hostConn),
 
-    projects: () => request("/projects"),
-    project: (id) => request(`/projects/${enc(id)}`),
-    createProject: (body) => request("/projects", { method: "POST", body: jsonBody(body) }),
-    updateProject: (id, body) =>
-      request(`/projects/${enc(id)}`, { method: "PATCH", body: jsonBody(body) }),
-    deleteProject: (id, hard = false) =>
-      request(`/projects/${enc(id)}${hard ? "?hard=1" : ""}`, { method: "DELETE" }),
-    discoverProjects: () => request("/projects/discover", { method: "POST", body: "{}" }),
-    uploadProjectAttachment: (projectId, body) =>
+    projects: (hostConn) => request("/projects", {}, hostConn),
+    project: (id, hostConn) => request(`/projects/${enc(id)}`, {}, hostConn),
+    createProject: (body, hostConn) => request("/projects", { method: "POST", body: jsonBody(body) }, hostConn),
+    updateProject: (id, body, hostConn) =>
+      request(`/projects/${enc(id)}`, { method: "PATCH", body: jsonBody(body) }, hostConn),
+    deleteProject: (id, hard = false, hostConn) =>
+      request(`/projects/${enc(id)}${hard ? "?hard=1" : ""}`, { method: "DELETE" }, hostConn),
+    discoverProjects: (hostConn) => request("/projects/discover", { method: "POST", body: "{}" }, hostConn),
+    uploadProjectAttachment: (projectId, body, hostConn) =>
       request(`/projects/${enc(projectId)}/attachments`, {
         method: "POST",
         body: jsonBody(body),
-      }),
-    fetchProjectAttachment: (projectId, attachmentId) =>
-      requestRaw(`/projects/${enc(projectId)}/attachments/${enc(attachmentId)}`),
-    deleteProjectAttachment: (projectId, attachmentId) =>
+      }, hostConn),
+    fetchProjectAttachment: (projectId, attachmentId, hostConn) =>
+      requestRaw(`/projects/${enc(projectId)}/attachments/${enc(attachmentId)}`, hostConn),
+    deleteProjectAttachment: (projectId, attachmentId, hostConn) =>
       request(`/projects/${enc(projectId)}/attachments/${enc(attachmentId)}`, {
         method: "DELETE",
-      }),
+      }, hostConn),
 
-    profiles: (opts = {}) => {
+    profiles: (opts = {}, hostConn) => {
       const params = new URLSearchParams();
       if (opts.usage) params.set("usage", "1");
       if (opts.admin) params.set("admin", "1");
       const qs = params.toString();
-      return request(qs ? `/profiles?${qs}` : "/profiles");
+      return request(qs ? `/profiles?${qs}` : "/profiles", {}, hostConn);
     },
-    loginProfile: (id, body = {}) =>
-      request(`/profiles/${enc(id)}/login`, { method: "POST", body: jsonBody(body) }),
-    createProfile: (body) =>
-      request("/profiles", { method: "POST", body: jsonBody(body) }),
-    updateProfile: (id, body) =>
-      request(`/profiles/${enc(id)}`, { method: "PATCH", body: jsonBody(body) }),
-    deleteProfile: (id) =>
-      request(`/profiles/${enc(id)}`, { method: "DELETE" }),
+    loginProfile: (id, body = {}, hostConn) =>
+      request(`/profiles/${enc(id)}/login`, { method: "POST", body: jsonBody(body) }, hostConn),
+    createProfile: (body, hostConn) =>
+      request("/profiles", { method: "POST", body: jsonBody(body) }, hostConn),
+    updateProfile: (id, body, hostConn) =>
+      request(`/profiles/${enc(id)}`, { method: "PATCH", body: jsonBody(body) }, hostConn),
+    deleteProfile: (id, hostConn) =>
+      request(`/profiles/${enc(id)}`, { method: "DELETE" }, hostConn),
 
-    dispatch: (body) => request("/dispatch", { method: "POST", body: jsonBody(body) }),
-    toolCall: (sessionId, toolCallId) =>
-      request(`/sessions/${enc(sessionId)}/tool-calls/${enc(toolCallId)}`),
-    prompt: (id, body) =>
-      request(`/sessions/${enc(id)}/prompt`, { method: "POST", body: jsonBody(body) }),
-    approve: (id, body) =>
-      request(`/sessions/${enc(id)}/approve`, { method: "POST", body: jsonBody(body) }),
-    reject: (id, body) =>
-      request(`/sessions/${enc(id)}/reject`, { method: "POST", body: jsonBody(body) }),
-    answer: (id, body) =>
+    dispatch: (body, hostConn) => request("/dispatch", { method: "POST", body: jsonBody(body) }, hostConn),
+    toolCall: (sessionId, toolCallId, hostConn) =>
+      request(`/sessions/${enc(sessionId)}/tool-calls/${enc(toolCallId)}`, {}, hostConn),
+    prompt: (id, body, hostConn) =>
+      request(`/sessions/${enc(id)}/prompt`, { method: "POST", body: jsonBody(body) }, hostConn),
+    approve: (id, body, hostConn) =>
+      request(`/sessions/${enc(id)}/approve`, { method: "POST", body: jsonBody(body) }, hostConn),
+    reject: (id, body, hostConn) =>
+      request(`/sessions/${enc(id)}/reject`, { method: "POST", body: jsonBody(body) }, hostConn),
+    answer: (id, body, hostConn) =>
       request(`/sessions/${enc(id)}/answer-questions`, {
         method: "POST",
         body: jsonBody(body),
-      }),
-    archive: (id) => request(`/sessions/${enc(id)}/archive`, { method: "POST", body: "{}" }),
-    unarchive: (id) =>
-      request(`/sessions/${enc(id)}/unarchive`, { method: "POST", body: "{}" }),
-    cancel: (id) => request(`/sessions/${enc(id)}/cancel`, { method: "POST", body: "{}" }),
-    close: (id) => request(`/sessions/${enc(id)}/close`, { method: "POST", body: "{}" }),
-    deleteSession: (id) => request(`/sessions/${enc(id)}`, { method: "DELETE" }),
-    renameSession: (id, title) =>
-      request(`/sessions/${enc(id)}/title`, { method: "POST", body: jsonBody({ title }) }),
-    transferSession: (id, profileId) =>
+      }, hostConn),
+    archive: (id, hostConn) => request(`/sessions/${enc(id)}/archive`, { method: "POST", body: "{}" }, hostConn),
+    unarchive: (id, hostConn) =>
+      request(`/sessions/${enc(id)}/unarchive`, { method: "POST", body: "{}" }, hostConn),
+    cancel: (id, hostConn) => request(`/sessions/${enc(id)}/cancel`, { method: "POST", body: "{}" }, hostConn),
+    close: (id, hostConn) => request(`/sessions/${enc(id)}/close`, { method: "POST", body: "{}" }, hostConn),
+    deleteSession: (id, hostConn) => request(`/sessions/${enc(id)}`, { method: "DELETE" }, hostConn),
+    renameSession: (id, title, hostConn) =>
+      request(`/sessions/${enc(id)}/title`, { method: "POST", body: jsonBody({ title }) }, hostConn),
+    transferSession: (id, profileId, hostConn) =>
       request(`/sessions/${enc(id)}/transfer`, {
         method: "POST",
         body: jsonBody({ profileId }),
-      }),
-    reincarnateSession: (id, body = {}) =>
-      request(`/sessions/${enc(id)}/reincarnate`, { method: "POST", body: jsonBody(body) }),
-    reviewSession: (id, body = {}) =>
-      request(`/sessions/${enc(id)}/review`, { method: "POST", body: jsonBody(body) }),
-    setSessionProject: (id, projectId) =>
+      }, hostConn),
+    reincarnateSession: (id, body = {}, hostConn) =>
+      request(`/sessions/${enc(id)}/reincarnate`, { method: "POST", body: jsonBody(body) }, hostConn),
+    reviewSession: (id, body = {}, hostConn) =>
+      request(`/sessions/${enc(id)}/review`, { method: "POST", body: jsonBody(body) }, hostConn),
+    setSessionProject: (id, projectId, hostConn) =>
       request(`/sessions/${enc(id)}/project`, {
         method: "POST",
         body: jsonBody({ projectId: projectId || null }),
-      }),
+      }, hostConn),
 
-    listTasks: (status) => {
+    listTasks: (status, hostConn) => {
       const q = status ? `?status=${encodeURIComponent(status)}` : "";
-      return request(`/tasks${q}`);
+      return request(`/tasks${q}`, {}, hostConn);
     },
-    createTask: (sessionId, body) =>
-      request(`/sessions/${enc(sessionId)}/tasks`, { method: "POST", body: jsonBody(body) }),
-    updateTask: (sessionId, taskId, body) =>
+    createTask: (sessionId, body, hostConn) =>
+      request(`/sessions/${enc(sessionId)}/tasks`, { method: "POST", body: jsonBody(body) }, hostConn),
+    updateTask: (sessionId, taskId, body, hostConn) =>
       request(`/sessions/${enc(sessionId)}/tasks/${enc(taskId)}`, {
         method: "PATCH",
         body: jsonBody(body),
-      }),
-    deleteTask: (sessionId, taskId) =>
-      request(`/sessions/${enc(sessionId)}/tasks/${enc(taskId)}`, { method: "DELETE" }),
-    createNote: (sessionId, body) =>
-      request(`/sessions/${enc(sessionId)}/notes`, { method: "POST", body: jsonBody(body) }),
-    updateNote: (sessionId, noteId, body) =>
+      }, hostConn),
+    deleteTask: (sessionId, taskId, hostConn) =>
+      request(`/sessions/${enc(sessionId)}/tasks/${enc(taskId)}`, { method: "DELETE" }, hostConn),
+    createNote: (sessionId, body, hostConn) =>
+      request(`/sessions/${enc(sessionId)}/notes`, { method: "POST", body: jsonBody(body) }, hostConn),
+    updateNote: (sessionId, noteId, body, hostConn) =>
       request(`/sessions/${enc(sessionId)}/notes/${enc(noteId)}`, {
         method: "PATCH",
         body: jsonBody(body),
-      }),
-    deleteNote: (sessionId, noteId) =>
-      request(`/sessions/${enc(sessionId)}/notes/${enc(noteId)}`, { method: "DELETE" }),
+      }, hostConn),
+    deleteNote: (sessionId, noteId, hostConn) =>
+      request(`/sessions/${enc(sessionId)}/notes/${enc(noteId)}`, { method: "DELETE" }, hostConn),
 
-    attachGrok: (body) => request("/sessions/attach", { method: "POST", body: jsonBody(body) }),
-    attachClaude: (body) =>
-      request("/sessions/attach-claude", { method: "POST", body: jsonBody(body) }),
-    attachAgy: (body) =>
-      request("/sessions/attach-agy", { method: "POST", body: jsonBody(body) }),
+    attachGrok: (body, hostConn) => request("/sessions/attach", { method: "POST", body: jsonBody(body) }, hostConn),
+    attachClaude: (body, hostConn) =>
+      request("/sessions/attach-claude", { method: "POST", body: jsonBody(body) }, hostConn),
+    attachAgy: (body, hostConn) =>
+      request("/sessions/attach-agy", { method: "POST", body: jsonBody(body) }, hostConn),
 
-    listBots: () => request("/bots"),
-    getBot: (id) => request(`/bots/${enc(id)}`),
-    createBot: (body) => request("/bots", { method: "POST", body: jsonBody(body) }),
-    updateBot: (id, patch) =>
-      request(`/bots/${enc(id)}`, { method: "PATCH", body: jsonBody(patch) }),
-    runBot: (id, body = {}) =>
-      request(`/bots/${enc(id)}/run`, { method: "POST", body: jsonBody(body) }),
-    getBotOutbox: (id) => request(`/bots/${enc(id)}/outbox`),
+    listBots: (hostConn) => request("/bots", {}, hostConn),
+    getBot: (id, hostConn) => request(`/bots/${enc(id)}`, {}, hostConn),
+    createBot: (body, hostConn) => request("/bots", { method: "POST", body: jsonBody(body) }, hostConn),
+    updateBot: (id, patch, hostConn) =>
+      request(`/bots/${enc(id)}`, { method: "PATCH", body: jsonBody(patch) }, hostConn),
+    runBot: (id, body = {}, hostConn) =>
+      request(`/bots/${enc(id)}/run`, { method: "POST", body: jsonBody(body) }, hostConn),
+    getBotOutbox: (id, hostConn) => request(`/bots/${enc(id)}/outbox`, {}, hostConn),
   };
+
+  /**
+   * Return a facade that binds every call to `hostConn`. Callers that know
+   * which host owns the entity (via `session.hostId`, `bot.hostId`, etc.)
+   * use `Api.forHost(hostConnFor(hostId))` and then call methods without
+   * threading `hostConn` through every arg list.
+   */
+  function forHost(hostConn) {
+    const bound = { setConnection, getConnection, forHost };
+    for (const name of Object.keys(methods)) {
+      const fn = methods[name];
+      if (typeof fn !== "function") continue;
+      if (name === "setConnection" || name === "getConnection") continue;
+      // Each method's last param is always `hostConn`; splice it in.
+      bound[name] = (...args) => fn(...args, hostConn);
+    }
+    return bound;
+  }
+
+  return { ...methods, forHost };
 })();

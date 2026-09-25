@@ -1,6 +1,6 @@
 # RFC-030 — Say plainly that Gemini sessions auto-approve
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-25
 **Branch:** nightly-maintenance-2026-09-25-rfc030-gemini-auto-approve-honesty
 **Severity:** P1

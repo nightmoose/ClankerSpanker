@@ -34,6 +34,6 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 026 | [Stop handing out the host token: local-only setup, QR pairing, private config](rfcs/026-host-token-exposure.md) | Shipped | `nightly-maintenance-2026-09-25-rfc026-host-token-exposure` |
 | 027 | [Mac host installer: never install from itself, always rebuild](rfcs/027-installer-self-source.md) | Shipped | `nightly-maintenance-2026-09-25-rfc027-installer-self-source` |
 | 028 | [Listen on loopback + Tailscale, not every network](rfcs/028-bind-loopback-tailscale.md) | Shipped | `nightly-maintenance-2026-09-25-rfc028-bind-loopback-tailscale` |
-| 029 | [WebSocket tickets: the host token leaves the URL](rfcs/029-ws-tickets.md) | Accepted | `nightly-maintenance-2026-09-25-rfc029-ws-tickets` |
-| 030 | [Say plainly that Gemini sessions auto-approve](rfcs/030-gemini-auto-approve-honesty.md) | Accepted | `nightly-maintenance-2026-09-25-rfc030-gemini-auto-approve-honesty` |
-| 031 | [Keep push notifications under the APNs size limit](rfcs/031-apns-payload-size.md) | Accepted | `nightly-maintenance-2026-09-25-rfc031-apns-payload-size` |
+| 029 | [WebSocket tickets: the host token leaves the URL](rfcs/029-ws-tickets.md) | Shipped | `nightly-maintenance-2026-09-25-rfc029-ws-tickets` |
+| 030 | [Say plainly that Gemini sessions auto-approve](rfcs/030-gemini-auto-approve-honesty.md) | Shipped | `nightly-maintenance-2026-09-25-rfc030-gemini-auto-approve-honesty` |
+| 031 | [Keep push notifications under the APNs size limit](rfcs/031-apns-payload-size.md) | Shipped | `nightly-maintenance-2026-09-25-rfc031-apns-payload-size` |

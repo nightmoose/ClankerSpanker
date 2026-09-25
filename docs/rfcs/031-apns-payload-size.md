@@ -1,6 +1,6 @@
 # RFC-031 — Keep push notifications under the APNs size limit
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-25
 **Branch:** nightly-maintenance-2026-09-25-rfc031-apns-payload-size
 **Severity:** P1

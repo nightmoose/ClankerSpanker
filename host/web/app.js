@@ -187,6 +187,7 @@ function sessionCard(s) {
             <span class="${statusClass(s.status)}">${escapeHtml(s.status)}</span>
             <span>${escapeHtml(s.model || "")}</span>
             <span title="${escapeHtml(s.cwd || "")}">${escapeHtml(projectLabel(s))}</span>
+            ${s.grokHomeLabel ? `<span class="badge" title="Grok session stored in ${escapeHtml(s.grokHomeLabel)}; it resumes there.">${escapeHtml(s.grokHomeLabel)}</span>` : ""}
             ${creditBadge(s)}
           </div>
           <div class="preview">${escapeHtml(s.transcriptPreview || s.prompt || "")}</div>

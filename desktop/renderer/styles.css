@@ -1083,3 +1083,6 @@ button.tool-path {
   background: rgba(255,255,255,0.05); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
 .approval-preview .del { color: #ff6b7a; background: rgba(255,107,122,0.08); }
 .approval-preview .add { color: #5bd98c; background: rgba(91,217,140,0.08); }
+
+/* RFC-048: Grok home label on session cards */
+.badge { display:inline-block; font-size:11px; font-weight:600; padding:1px 6px; border-radius:999px; color:#a1a1aa; background:rgba(161,161,170,0.15); }

@@ -316,6 +316,10 @@ export interface DispatchSession {
   /** Denormalized color for list UI. */
   profileColor?: string;
   grokSessionId?: string;
+  /** GROK_HOME this Grok session lives in, when it isn't the profile's own (RFC-048). */
+  grokHome?: string;
+  /** Short label for where it came from, e.g. "~/.grok" (RFC-048). */
+  grokHomeLabel?: string;
   /** Claude Code session UUID when backend=claude or attached from Claude history. */
   claudeSessionId?: string;
   /** Antigravity CLI conversation_id when backend=antigravity (for --conversation resume). */
@@ -710,6 +714,10 @@ export interface SessionMeterConfig {
 export interface PublicSessionSummary {
   id: string;
   grokSessionId?: string;
+  /** GROK_HOME this Grok session lives in, when it isn't the profile's own (RFC-048). */
+  grokHome?: string;
+  /** Short label for where it came from, e.g. "~/.grok" (RFC-048). */
+  grokHomeLabel?: string;
   title: string;
   prompt: string;
   cwd: string;

@@ -55,6 +55,7 @@ import {
 import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
 import { approvalPreview } from "../approval-preview.js";
 import { toolOutputSummary } from "../tool-output.js";
+import { knownGrokHomes, listGrokHomeSessions } from "../grok-home.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
@@ -1072,7 +1073,12 @@ export class SessionManager extends EventEmitter {
    * That way the phone/Mac list matches the Grok TUI without paying spawn cost up front.
    */
   /** Tests replace this to avoid reading ~/.grok/sessions. */
-  listGrokDiskSessions = (limit = 200): DiskSessionHint[] => listDiskSessions(limit);
+  /**
+   * Grok sessions on disk across every known Grok home (RFC-048): the TUI's
+   * `~/.grok` and each profile's isolated home. Newest wins on id collisions.
+   */
+  listGrokDiskSessions = (limit = 200): DiskSessionHint[] =>
+    listGrokHomeSessions(knownGrokHomes(this.config.profiles ?? [], this.config.dataDir), limit);
 
   syncGrokDiskSessions(limit = 200): { imported: number; totalDisk: number } {
     const hints = this.listGrokDiskSessions(limit);
@@ -1082,6 +1088,18 @@ export class SessionManager extends EventEmitter {
         .filter((id): id is string => Boolean(id)),
     );
     const forgotten = this.loadForgottenGrok();
+    // RFC-048: backfill where already-imported sessions live, so resume uses
+    // the right GROK_HOME (they were all attached to the default profile).
+    const byGrokId = new Map(hints.map((h) => [h.id, h]));
+    for (const s of this.list()) {
+      const h = s.grokSessionId ? byGrokId.get(s.grokSessionId) : undefined;
+      if (h?.grokHome && s.grokHome !== h.grokHome) {
+        s.grokHome = h.grokHome;
+        // Label only homes that aren't a profile's own (the profile chip says that).
+        s.grokHomeLabel = h.profileId ? undefined : h.grokHomeLabel;
+        this.persist(s);
+      }
+    }
     let imported = 0;
     for (const hint of hints) {
       if (!hint.id || linked.has(hint.id)) continue;
@@ -1098,7 +1116,8 @@ export class SessionManager extends EventEmitter {
 
   /** Create a store row for a Grok TUI session without spawning the agent yet. */
   private importGrokDiskHint(hint: DiskSessionHint): DispatchSession {
-    const profile = resolveProfile(this.config, undefined, "grok");
+    // RFC-048: a session from a profile's own home belongs to that profile.
+    const profile = resolveProfile(this.config, hint.profileId, "grok");
     const createdAt = hint.updatedAt ?? now();
     const title = shortTitle(hint.title ?? "Grok Build session", hint.title);
     const session: DispatchSession = {
@@ -1108,6 +1127,8 @@ export class SessionManager extends EventEmitter {
       profileName: profile.name,
       profileColor: profile.color,
       grokSessionId: hint.id,
+      grokHome: hint.grokHome,
+      grokHomeLabel: hint.profileId ? undefined : hint.grokHomeLabel,
       title,
       prompt: hint.title?.trim() || `Grok Build session ${hint.id.slice(0, 8)}`,
       cwd: hint.cwd!.trim(),
@@ -3396,7 +3417,10 @@ export class SessionManager extends EventEmitter {
           ? session.backend
           : "grok";
       const profile = resolveProfile(this.config, session.profileId, preferred);
-      return profileProcessEnv(profile, { dataDir: this.config.dataDir });
+      const env = profileProcessEnv(profile, { dataDir: this.config.dataDir });
+      // RFC-048: resume a Grok session in the home it was created in.
+      if (preferred === "grok" && session.grokHome) env.GROK_HOME = session.grokHome;
+      return env;
     } catch {
       return { ...process.env };
     }

@@ -13,13 +13,26 @@ import type { ProjectInfo } from "./types.js";
 const SKIP = new Set(["node_modules", "Library", "Applications", "Pictures", "Movies", "Music", "Public"]);
 export const DISCOVER_LIMIT = 100;
 
-export function codeRoots(home = homedir()): Array<{ dir: string; depth: number }> {
+export function codeRoots(home = homedir(), extra: string[] = []): Array<{ dir: string; depth: number }> {
   return [
     { dir: home, depth: 1 },
-    ...["Projects", "projects", "Developer", "dev", "code", "src", "Documents", "GitHub", "repos"].map((d) => ({
-      dir: join(home, d),
-      depth: 2,
-    })),
+    ...[
+      "Projects",
+      "projects",
+      "Developer",
+      "dev",
+      "code",
+      "src",
+      "Documents",
+      "GitHub",
+      "repos",
+      // RFC-037: GitHub Desktop clones to ~/Documents/GitHub/<org>/<repo>.
+      "Documents/GitHub",
+      "Documents/Projects",
+      "Documents/Code",
+    ].map((d) => ({ dir: join(home, d), depth: 2 })),
+    // RFC-037: config.json "discoverRoots" — machine-specific folders.
+    ...extra.map((d) => ({ dir: d.startsWith("~/") ? join(home, d.slice(2)) : d, depth: 2 })),
   ];
 }
 
@@ -57,22 +70,34 @@ function inode(dir: string): string | undefined {
   }
 }
 
-export function discoverGitRepos(home = homedir(), limit = DISCOVER_LIMIT): string[] {
+export function discoverGitRepos(home = homedir(), limit = DISCOVER_LIMIT, extraRoots: string[] = []): string[] {
   const found: string[] = [];
-  const seen = new Set<string>();
+  const repos = new Set<string>();
+  // inode → deepest remaining depth it was walked with. A shallow pass over
+  // ~/Documents must not stop the deeper ~/Documents/GitHub pass (RFC-037).
+  const walked = new Map<string, number>();
   const walk = (dir: string, depth: number) => {
     if (found.length >= limit || depth === 0) return;
     for (const d of subdirs(dir)) {
       if (found.length >= limit) return;
       const id = inode(d);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      if (isRepo(d)) found.push(d); // don't descend into a repo
-      else walk(d, depth - 1);
+      if (!id) continue;
+      if (isRepo(d)) {
+        // don't descend into a repo
+        if (!repos.has(id)) {
+          repos.add(id);
+          found.push(d);
+        }
+        continue;
+      }
+      const remaining = depth - 1;
+      if ((walked.get(id) ?? -1) >= remaining) continue;
+      walked.set(id, remaining);
+      walk(d, remaining);
     }
   };
   const visitedRoots = new Set<string>();
-  for (const { dir, depth } of codeRoots(home)) {
+  for (const { dir, depth } of codeRoots(home, extraRoots)) {
     const id = existsSync(dir) ? inode(dir) : undefined;
     if (!id || visitedRoots.has(id)) continue;
     visitedRoots.add(id);
@@ -88,6 +113,6 @@ export function projectIdForPath(path: string): string {
   return `${slug}-${h}`;
 }
 
-export function discoverRepoProjects(home = homedir()): ProjectInfo[] {
-  return discoverGitRepos(home).map((p) => ({ id: projectIdForPath(p), name: basename(p), path: p, paths: [p] }));
+export function discoverRepoProjects(home = homedir(), extraRoots: string[] = []): ProjectInfo[] {
+  return discoverGitRepos(home, DISCOVER_LIMIT, extraRoots).map((p) => ({ id: projectIdForPath(p), name: basename(p), path: p, paths: [p] }));
 }

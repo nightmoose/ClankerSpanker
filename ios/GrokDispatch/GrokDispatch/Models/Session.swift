@@ -339,6 +339,9 @@ struct ToolCallRecord: Codable, Identifiable, Hashable, Sendable {
     var status: String
     var updatedAt: String
     var locations: [ToolLocation]?
+    /// Tail of command output + exit code (RFC-040). Absent on older hosts.
+    var outputPreview: String?
+    var exitCode: Int?
 }
 
 /// GET /sessions/:id/tool-calls/:toolCallId — pretty-printed payloads for the ellipsis sheet.

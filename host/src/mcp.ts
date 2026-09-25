@@ -125,7 +125,7 @@ export function publicMcpServers(
   }));
 }
 
-/** Claude / Grok compat `.mcp.json` body. */
+/** Claude `.mcp.json` body (`--mcp-config`). */
 export function toMcpJson(
   servers: ProfileMcpServer[] | undefined,
   env: Record<string, string | undefined>,
@@ -140,8 +140,8 @@ export function toMcpJson(
       if (!hasAuthorizationHeader(merged)) continue;
       entry.url = expandVars(s.url, env);
       if (Object.keys(merged).length) entry.headers = merged;
-      if (s.transport === "sse") entry.transport = "sse";
-      else if (s.transport === "http") entry.transport = "http";
+      // Claude's schema requires `type` on URL servers; `transport` is rejected (RFC-054).
+      entry.type = s.transport === "sse" ? "sse" : "http";
     } else if (s.command) {
       const e = recordToPairs(s.env, env);
       // Empty ${DATABRICKS_TOKEN} (etc.) made Claude exit 1.

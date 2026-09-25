@@ -48,3 +48,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 040 | [Tool rows show command output and exit code](rfcs/040-tool-output.md) | Shipped | `nightly-maintenance-2026-09-25-rfc040-tool-output` |
 | 041 | [Mac toolbar buttons have names](rfcs/041-toolbar-labels.md) | Shipped | `nightly-maintenance-2026-09-25-rfc041-toolbar-labels` |
 | 042 | [File viewer reads only what it shows](rfcs/042-file-viewer-bounded-read.md) | Shipped | `nightly-maintenance-2026-09-25-rfc042-file-viewer-realpath` |
+| 043 | [Remove the hardcoded LAN IP; onboarding pairs by QR](rfcs/043-remove-lan-ip.md) | Shipped | `nightly-maintenance-2026-09-25-rfc043-remove-lan-ip` |

@@ -48,7 +48,7 @@ Host tests were **103 passing** as of 2026-08-21; re-run after this commit
 2. Browser `/app/` still has no first-turn screenshot picker, chat-only, or Files.
 3. Linux AppImage/deb must be built **on Linux**.
 4. Phone Run scheme is not the daily driver.
-5. `ConnectionDefaults` may still hardcode `http://192.168.50.9:8787`.
+5. ~~`ConnectionDefaults` hardcoded `http://192.168.50.9:8787`~~ — removed (RFC-043).
 6. Swift clients have **no automated tests**.
 7. `event-horizon/` is gitignored on purpose (separate mini-game).
 

@@ -182,7 +182,7 @@ The Mac **Host** toolbar panel had install/projects/logs and **no profiles UI**.
 | **Phone Run scheme** | Deferred | iOS target exists; New Session screenshots are in `TaskComposerView` but the phone scheme is not the daily driver. |
 | **Host install from Mac** | Needs soak | “Install / update host” + LaunchAgent not fully field-tested after Application Support copy. Running agent today is `com.nightmoose.grok-dispatch-host` → repo `host/dist`. |
 | **Electron host install** | Soak | Linux install to `~/.local/share/clankerspanker/host` + systemd exists in product code; soak-test on a real box still open. |
-| **ConnectionDefaults hardcode** | Known defect | Still may ship `http://192.168.50.9:8787` — AGENTS.md; fix when touching iOS networking. |
+| **ConnectionDefaults hardcode** | Fixed (RFC-043) | Removed; phones pair by QR from `/setup` over Tailscale. |
 | **Rename leftovers** | Hygiene | `GrokDispatch` directory names, `x-grok-dispatch-token` on the wire (do not rename casually). |
 | **event-horizon/** | Untracked on purpose | Separate mini-game; `.gitignore`d. |
 | **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. Own RFC — do not silently add untested Swift surface. |

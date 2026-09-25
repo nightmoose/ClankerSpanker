@@ -44,10 +44,9 @@ HEAVY_PREFIXES = (
 DOC_ONLY_SUFFIXES = (".md",)
 DOC_ONLY_PREFIXES = ("docs/",)
 
+# RFC-043 removed the client LAN IP; only platform.ts (private-range
+# detection) may mention 192.168.
 IP_ALLOWLIST = {
-    "ios/GrokDispatch/GrokDispatch/Models/ConnectionDefaults.swift",
-    "ios/GrokDispatch/GrokDispatch/Models/HostEndpoint.swift",
-    "ios/GrokDispatch/GrokDispatch/Views/Auth/OnboardingView.swift",
     "host/src/platform.ts",
 }
 
@@ -302,7 +301,7 @@ def check_new_lan_ips(files: list[str], base: str | None) -> list[str]:
                 continue
         errors.append(
             f"new hardcoded LAN IP in {path} — "
-            "ConnectionDefaults.lanHostURL is the known defect; do not copy it"
+            "clients pair by QR over Tailscale (RFC-043); do not hardcode LAN addresses"
         )
     return errors
 

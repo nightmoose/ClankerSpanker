@@ -57,8 +57,10 @@ Phone badges when the app is killed need APNs on the host
   Covered by `host/src/auth.test.ts`.
 - **Don't rename `x-grok-dispatch-token` casually.** It breaks every client
   already holding a token. That needs a deliberate migration, not a tidy-up.
-- **Don't hardcode network addresses.** `ConnectionDefaults` still ships
-  `http://192.168.50.9:8787`; that is a known defect, not a pattern to follow.
+- **Don't hardcode network addresses.** Clients pair by QR from the host's
+  `/setup` (RFC-026) and connect over Tailscale; the old `192.168.50.9`
+  default was removed in RFC-043. The house-style check rejects new
+  `192.168.*` literals.
 - Tests are excluded from the build (`tsconfig` `exclude`) so `dist/` stays
   clean — keep it that way.
 

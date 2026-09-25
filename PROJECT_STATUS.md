@@ -49,7 +49,7 @@ Host tests were **103 passing** as of 2026-08-21; re-run after this commit
 3. Linux AppImage/deb must be built **on Linux**.
 4. Phone Run scheme is not the daily driver.
 5. ~~`ConnectionDefaults` hardcoded `http://192.168.50.9:8787`~~ — removed (RFC-043).
-6. Swift clients have **no automated tests**.
+6. Swift unit tests exist (RFC-046, `make test-swift`, macOS-hosted); coverage is still thin and CI (Linux) does not run them.
 7. `event-horizon/` is gitignored on purpose (separate mini-game).
 
 ## Notes for humans and AIs

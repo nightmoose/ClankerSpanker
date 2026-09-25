@@ -514,7 +514,7 @@ final class AppState: ObservableObject {
         let rawName = items.first(where: { $0.name == "name" })?.value ?? ""
         guard let hostURL, let token, !hostURL.isEmpty, !token.isEmpty else { return }
         let candidate = HostEndpoint(name: rawName, baseURL: hostURL)
-        let existing = hosts.first(where: { $0.endpointKey == candidate.endpointKey })
+        let existing = Self.existingHost(matching: candidate, in: hosts)
         pendingHostLink = PendingHostLink(
             baseURL: candidate.baseURL,
             token: token,
@@ -522,6 +522,12 @@ final class AppState: ObservableObject {
             existingHostId: existing?.id,
             existingName: existing?.name
         )
+    }
+
+    /// A configure link updates the host saved at the same address instead of
+    /// adding a duplicate (RFC-026). Pure, tested.
+    nonisolated static func existingHost(matching candidate: HostEndpoint, in hosts: [HostEndpoint]) -> HostEndpoint? {
+        hosts.first(where: { $0.endpointKey == candidate.endpointKey })
     }
 
     func confirmPendingHostLink() {
@@ -760,18 +766,20 @@ final class AppState: ObservableObject {
     /// RFC-038: apply the status an event implies to the list row right away,
     /// so the sidebar agrees with the session header without waiting for a
     /// refetch. The debounced refresh still reconciles everything else.
+    /// Status a socket event implies for its session row (RFC-038). Pure, tested.
+    nonisolated static func liveStatus(forEvent type: String, payload: [String: Any]?) -> SessionStatus? {
+        switch type {
+        case "approval.needed": return .awaitingApproval
+        case "question.needed": return .awaitingQuestion
+        case "approval.resolved", "question.answered": return .running
+        default:
+            guard let raw = payload?["status"] as? String else { return nil }
+            return SessionStatus(rawValue: raw)
+        }
+    }
+
     private func applyLiveStatus(type: String, payload: [String: Any]?, sessionId: String, hostId: String) {
-        let status: SessionStatus? = {
-            switch type {
-            case "approval.needed": return .awaitingApproval
-            case "question.needed": return .awaitingQuestion
-            case "approval.resolved", "question.answered": return .running
-            default:
-                guard let raw = payload?["status"] as? String else { return nil }
-                return SessionStatus(rawValue: raw)
-            }
-        }()
-        guard let status else { return }
+        guard let status = Self.liveStatus(forEvent: type, payload: payload) else { return }
         func patch(_ list: inout [SessionSummary]) {
             for i in list.indices where list[i].id == sessionId && (list[i].hostId == hostId || list[i].hostId == nil) {
                 if list[i].status != status { list[i].status = status }

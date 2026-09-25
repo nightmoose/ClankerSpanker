@@ -112,6 +112,23 @@ targets:
               - grokdispatch
         NSPrincipalClass: NSApplication
 
+  # ── Unit tests (RFC-046), hosted by the Mac app so @testable import works ──
+  ClankerSpankerMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: ClankerSpankerMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightmoose.clankerspanker.mac.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "XHS7K665C9"
+
   # ── Menu-bar-only host configurator (no session UI) ──
   # Ships as its own .app so laptops without ClankerSpankerMac still
   # get an icon that surfaces host status / kickstart / /setup.
@@ -157,6 +174,10 @@ schemes:
         ClankerSpankerMac: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - ClankerSpankerMacTests
   # Physical iPhone / Simulator only
   ClankerSpankerPhone:
     build:

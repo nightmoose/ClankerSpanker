@@ -30,6 +30,9 @@ paths:
     get:
       summary: Allowlisted projects
       security: [{ bearerAuth: [] }]
+    post:
+      summary: Create a project { name, paths[], color?, defaultProfileId? }. Paths must be absolute or ~/ (RFC-032); response carries overlap warnings.
+      security: [{ bearerAuth: [] }]
   /sessions:
     get:
       summary: List dispatched sessions (omits Grok subagent/helper chats). Grok rows carry creditsUsedDeltaPct (RFC-021 weekly-% burned this session).
@@ -37,6 +40,9 @@ paths:
   /sessions/{id}:
     get:
       summary: Session detail
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Permanently delete: cancels if running, removes JSON and attachments.
       security: [{ bearerAuth: [] }]
   /sessions/{id}/diff:
     get:
@@ -64,6 +70,9 @@ paths:
   /bots/{id}:
     patch:
       summary: Update a bot
+      security: [{ bearerAuth: [] }]
+    get:
+      summary: One bot.
       security: [{ bearerAuth: [] }]
   /bots/{id}/run:
     post:
@@ -143,6 +152,123 @@ paths:
   /profiles/{id}/mcp/{name}/oauth/logout:
     post:
       summary: Delete stored MCP OAuth tokens for this profile server. This machine only.
+      security: [{ bearerAuth: [] }]
+  /setup:
+    get:
+      summary: Pairing page: QR code + token. Host machine only (RFC-026); no CORS.
+  /connect.json:
+    get:
+      summary: { hostURL, hostToken, deepLink, webApp } for local clients. Host machine only (RFC-026); no CORS.
+  /profiles:
+    get:
+      summary: Agent profiles (no secrets). ?usage=1 adds Claude 5h/weekly usage; ?admin=1 (this machine only) adds full records.
+      security: [{ bearerAuth: [] }]
+    post:
+      summary: Create a profile. This machine only.
+      security: [{ bearerAuth: [] }]
+  /profiles/{id}:
+    patch:
+      summary: Update a profile (color, model, …); secrets only from this machine.
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Delete a profile. This machine only; refused while a live session uses it.
+      security: [{ bearerAuth: [] }]
+  /profiles/{id}/login:
+    post:
+      summary: Open the host-side browser login for this agent account.
+      security: [{ bearerAuth: [] }]
+  /projects/discover:
+    post:
+      summary: Git repos on this host not yet registered (RFC-036/037; config "discoverRoots").
+      security: [{ bearerAuth: [] }]
+  /projects/{id}:
+    get:
+      summary: One project.
+      security: [{ bearerAuth: [] }]
+    patch:
+      summary: Partial update; returns { project, warnings } (RFC-032).
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Soft-archive; ?hard=1 removes it and its attachments.
+      security: [{ bearerAuth: [] }]
+  /projects/{id}/attachments:
+    post:
+      summary: Upload a project attachment (base64 JSON body).
+      security: [{ bearerAuth: [] }]
+  /projects/{id}/attachments/{aid}:
+    get:
+      summary: Raw bytes of a project attachment.
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Delete a project attachment.
+      security: [{ bearerAuth: [] }]
+  /tasks:
+    get:
+      summary: Tasks across every session on this host; ?status=open.
+      security: [{ bearerAuth: [] }]
+  /internal/claude-approval:
+    post:
+      summary: Claude PreToolUse hook parks a phone approval (host-internal).
+      security: [{ bearerAuth: [] }]
+  /internal/claude-approval/{id}:
+    get:
+      summary: Claude hook polls an approval until approved/rejected (host-internal).
+      security: [{ bearerAuth: [] }]
+  /sessions/attach:
+    post:
+      summary: Resume a Grok Build session from disk / TUI.
+      security: [{ bearerAuth: [] }]
+  /sessions/attach-claude:
+    post:
+      summary: Open a Claude Code conversation from history.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/events:
+    get:
+      summary: Replay events after ?since=N (reconnect catch-up).
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/answer-questions:
+    post:
+      summary: Answer a pending agent questionnaire.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/archive:
+    post:
+      summary: Hide from the Active list.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/unarchive:
+    post:
+      summary: Restore to the Active list.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/close:
+    post:
+      summary: Stop the agent and mark the session completed + archived.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/notes:
+    post:
+      summary: Create a note on this session.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/tasks:
+    post:
+      summary: Create a task on this session.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/project:
+    post:
+      summary: Assign or detach a project { projectId | null }.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/title:
+    post:
+      summary: Rename the session.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/transfer:
+    post:
+      summary: Move the chat to another profile.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/reincarnate:
+    post:
+      summary: Archive this chat and start a fresh one seeded with a summary.
+      security: [{ bearerAuth: [] }]
+  /sessions/{id}/review:
+    post:
+      summary: Non-destructive critique of recent work in a sibling session.
       security: [{ bearerAuth: [] }]
 components:
   securitySchemes:

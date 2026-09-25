@@ -2,6 +2,20 @@
 
 ---
 
+## Run: 2026-09-25 — Soak: RFC-026…031 on Deez Nutz, token rotated
+
+Host deployed with RFC-026…031; phone build installed on Deez Nutz.
+Phone Safari `GET http://100.66.33.89:8787/connect.json` → Forbidden.
+Rotated the host token (deleted `hostToken`, kicked the LaunchAgent; the
+new token was minted and persisted 0600). Mac app: Host panel → Connect
+app to this host → Live (header-auth WebSocket). Phone: scanned the
+`/setup` QR → "Update host token?" matched the existing Primary host by
+address (no duplicate) → Live over Tailscale. Second host "Astrodata"
+is configured on the phone but unreachable (old host build / address) —
+handled in the multi-host pass.
+
+---
+
 ## Run: 2026-09-25 — RFC-031 APNs payload size
 
 Host log showed `PayloadTooLarge`: approval titles carrying whole commands

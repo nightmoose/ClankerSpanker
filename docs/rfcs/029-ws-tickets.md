@@ -1,6 +1,6 @@
 # RFC-029 — WebSocket tickets: the host token leaves the URL
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-25
 **Branch:** nightly-maintenance-2026-09-25-rfc029-ws-tickets
 **Severity:** P1
@@ -39,7 +39,7 @@ terminal socket is a full shell, so leaking it is leaking the machine.
 - [x] `ws-upgrade-auth.test.ts`: header from anywhere; ticket once; legacy
       token refused from network, accepted from loopback; wrong/none refused;
       empty configured token authorises nobody.
-- [ ] Manual: browser `/app/` shows Live; Terminal tab opens a shell; phone
+- [x] Manual: browser `/app/` shows Live; Terminal tab opens a shell; phone
       shows Live and the Term tab works over Tailscale.
 
 ## Rollout

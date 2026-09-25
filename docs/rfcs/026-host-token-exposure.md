@@ -89,7 +89,7 @@ agents with shell access and open `/ws/terminal`. Today it is given away:
 - [ ] `config.test.ts`: `saveConfig` writes `0600`; `loadConfig` chmods a
       `0644` file and its `.bak` siblings to `0600`.
 - [ ] `connect-payload.test.ts`: no `projects`; deep link has `name=`.
-- [ ] Manual: from the phone (cellular + Tailscale) `GET /connect.json` →
+- [x] Manual: from the phone (cellular + Tailscale) `GET /connect.json` →
       403; on the Mac `/setup` shows a QR; scanning it on Deez Nutz shows
       the confirm prompt and updates the existing host.
 

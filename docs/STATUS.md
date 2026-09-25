@@ -33,3 +33,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 025 | [Electron desktop multi-host: WS pool, per-host fan-out, hostId end-to-end](rfcs/025-desktop-multi-host.md) | Shipped | `nightly-maintenance-2026-09-22-rfc025-desktop-multi-host` |
 | 026 | [Stop handing out the host token: local-only setup, QR pairing, private config](rfcs/026-host-token-exposure.md) | Shipped | `nightly-maintenance-2026-09-25-rfc026-host-token-exposure` |
 | 027 | [Mac host installer: never install from itself, always rebuild](rfcs/027-installer-self-source.md) | Shipped | `nightly-maintenance-2026-09-25-rfc027-installer-self-source` |
+| 028 | [Listen on loopback + Tailscale, not every network](rfcs/028-bind-loopback-tailscale.md) | Shipped | `nightly-maintenance-2026-09-25-rfc028-bind-loopback-tailscale` |

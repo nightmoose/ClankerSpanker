@@ -1,4 +1,5 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +56,7 @@ import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
 import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
+import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import QRCode from "qrcode";
 import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
 import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
@@ -88,7 +90,7 @@ function isLocalMachineReq(req: IncomingMessage): boolean {
 }
 
 export function startServer(config: HostConfigFile, manager: SessionManager, bots?: BotRuntime) {
-  const server = createServer(async (req, res) => {
+  const onRequest = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       await handleHttp(req, res, config, manager, bots);
     } catch (err) {
@@ -97,7 +99,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
         json(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }
     }
-  });
+  };
 
   // Two paths on one HTTP server. `ws` abortHandshake()s path mismatches, so a
   // second WebSocketServer({ server, path }) would kill /ws clients (status pill
@@ -108,7 +110,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
   const clients = new Set<WsClient>();
   const localClients = new Set<WsClient>();
 
-  server.on("upgrade", (req, socket, head) => {
+  const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname;
     if (pathname === "/ws/terminal") {
       termWss.handleUpgrade(req, socket, head, (ws) => {
@@ -123,7 +125,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
       return;
     }
     socket.destroy();
-  });
+  };
 
   function terminalAuthorized(req: IncomingMessage): boolean {
     if (isAuthorized(req, config)) return true;
@@ -207,24 +209,58 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     });
   });
 
-  server.listen(config.bindPort, config.bindHost, () => {
-    const lan = preferredClientHost(config.bindPort);
-    console.log(`[server] ClankerSpanker host listening on http://${config.bindHost}:${config.bindPort}`);
-    console.log(`[server] Browser UI:  http://${lan}/app/`);
-    console.log(`[server] Setup page:  http://${lan}/setup`);
-    console.log(`[server] WebSocket:   ws://${config.bindHost}:${config.bindPort}/ws?token=<hostToken>`);
-  });
+  // RFC-028: one listener per bind address. `auto` = loopback + Tailscale,
+  // re-scanned every 30s because Tailscale often comes up after launchd
+  // starts the host (and addresses change when it reconnects).
+  const listeners = new Map<string, Server>();
+  const listenOn = (addr: string) => {
+    const srv = createServer(onRequest);
+    srv.on("upgrade", onUpgrade);
+    srv.on("error", (err: NodeJS.ErrnoException) => {
+      console.warn(`[server] could not listen on ${formatAddr(addr)}:${config.bindPort} — ${err.code ?? err.message}`);
+      listeners.delete(addr);
+    });
+    listeners.set(addr, srv);
+    srv.listen(config.bindPort, addr, () => {
+      console.log(`[server] listening on http://${formatAddr(addr)}:${config.bindPort}`);
+    });
+  };
+  const syncListeners = () => {
+    const wanted = new Set(resolveBindAddresses(config.bindHost));
+    for (const addr of wanted) if (!listeners.has(addr)) listenOn(addr);
+    for (const [addr, srv] of listeners) {
+      if (!wanted.has(addr)) {
+        srv.close();
+        listeners.delete(addr);
+        console.log(`[server] stopped listening on ${formatAddr(addr)} (address went away)`);
+      }
+    }
+  };
+  syncListeners();
+  const rebind = isAutoBind(config.bindHost) ? setInterval(syncListeners, 30_000) : undefined;
+  rebind?.unref();
+
+  const lan = preferredClientHost(config.bindPort);
+  if (isWildcardBind(config.bindHost)) {
+    console.warn(
+      `[server] bindHost is "${config.bindHost || "0.0.0.0"}": listening on EVERY network, including public Wi-Fi. ` +
+        `Set "bindHost": "auto" in config.json to listen on loopback + Tailscale only (RFC-028).`,
+    );
+  }
+  console.log(`[server] Pair a phone:  http://localhost:${config.bindPort}/setup (this machine only)`);
+  console.log(`[server] Clients connect to http://${lan}`);
 
   const shutdown = async () => {
     clearInterval(heartbeat);
+    if (rebind) clearInterval(rebind);
     terminals.shutdown();
     termWss.close();
     wss.close();
-    server.close();
+    for (const srv of listeners.values()) srv.close();
     await manager.shutdown();
   };
 
-  return { server, wss, shutdown };
+  return { listeners, wss, shutdown };
 }
 
 async function handleHttp(

@@ -63,7 +63,7 @@ enum LocalHostConfigFile {
         } else {
             root = [
                 "hostToken": randomToken(),
-                "bindHost": "0.0.0.0",
+                "bindHost": "auto", // RFC-028: loopback + Tailscale
                 "bindPort": 8787,
                 "projects": [] as [[String: String]],
                 "allowCustomPaths": true,

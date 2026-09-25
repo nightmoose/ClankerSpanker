@@ -2,6 +2,19 @@
 
 ---
 
+## Run: 2026-09-25 — Two-host soak passed (RFC-024 on the phone)
+
+Primary (Mac mini, 100.66.33.89) + Astrodata (MacBook Pro, 100.66.166.28),
+phone Deez Nutz. Passed: per-host profile sections; mixed session list with
+host chips and "All profiles · 2 hosts"; cross-host approval push →
+banner opens the owning host (RFC-035) → approve from phone; killed app
+received approvals from both hosts, badge 2, taps routed correctly; with
+Primary's host stopped the phone named the dead host and Astrodata kept
+working. Still open: Mac-as-client-of-a-remote-host soak; Astrodata needs
+a project list (fresh hosts have none — composer should offer Import).
+
+---
+
 ## Run: 2026-09-25 — RFC-035 two-host soak: phone opened the wrong host
 
 With the phone focused on Astrodata, a Primary approval pushed fine but

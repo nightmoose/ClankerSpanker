@@ -189,7 +189,7 @@ Everything else is client-side.
 - [x] Host: `config.test.ts` addition — `loadConfig` mints `hostId` when
       missing and rewrites the file; existing `hostId` preserved.
 - [x] Test-count ratchet raised for host-side additions.
-- [ ] Manual soak on iPhone (Deez Nutz):
+- [x] Manual soak on iPhone (Deez Nutz), 2026-09-25, Primary (Mac mini) + Astrodata (MacBook Pro), both on RFC-026…035:
       1. Add second host in Settings → Hosts.
       2. Both hosts appear in the host picker.
       3. Settings → Profiles: both hosts' profiles listed under distinct
@@ -201,6 +201,12 @@ Everything else is client-side.
       7. Kill app, trigger approvals on both hosts → both push badge.
       8. Force-quit host B → phone shows "1 host unreachable" banner but
          host A's sessions still refresh.
+  Results: profiles grouped per host, sessions from both with host chips,
+  "All profiles · 2 hosts" caption; approval on the non-focused host pushed
+  and (after RFC-035) the banner opened the right host and approved from the
+  phone; killed app got banners from both hosts, badge 2, each tap routed
+  correctly; with Primary's host stopped the phone showed "Primary: Could
+  not connect to the server" while Astrodata kept working.
 - [ ] Manual soak on Mac: launch with a remote host already selected in
       keychain; verify `ensureLocalHostOnMac` doesn't clobber it. Verify
       selecting a session belonging to the remote host opens correctly.

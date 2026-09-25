@@ -37,3 +37,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 029 | [WebSocket tickets: the host token leaves the URL](rfcs/029-ws-tickets.md) | Shipped | `nightly-maintenance-2026-09-25-rfc029-ws-tickets` |
 | 030 | [Say plainly that Gemini sessions auto-approve](rfcs/030-gemini-auto-approve-honesty.md) | Shipped | `nightly-maintenance-2026-09-25-rfc030-gemini-auto-approve-honesty` |
 | 031 | [Keep push notifications under the APNs size limit](rfcs/031-apns-payload-size.md) | Shipped | `nightly-maintenance-2026-09-25-rfc031-apns-payload-size` |
+| 032 | [Projects follow the folder: ~ expansion, inference, overlap warnings](rfcs/032-project-resolution.md) | Shipped | `nightly-maintenance-2026-09-25-rfc032-project-resolution` |

@@ -41,7 +41,10 @@ struct ProjectEditorView: View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField("e.g. Bricklayer", text: $name)
+                    // RFC-039: explicit label + prompt; the default macOS form
+                    // used the placeholder as a left-hand label.
+                    TextField("Name", text: $name, prompt: Text("e.g. Bricklayer"))
+                        .labelsHidden()
                         #if os(iOS)
                         .textInputAutocapitalization(.words)
                         #endif
@@ -51,7 +54,8 @@ struct ProjectEditorView: View {
                 Section {
                     ForEach(paths.indices, id: \.self) { idx in
                         HStack {
-                            TextField("~/Projects/Foo", text: bindingForPath(idx))
+                            TextField("Path", text: bindingForPath(idx), prompt: Text("~/Projects/Foo"))
+                                .labelsHidden()
                                 .font(.system(.body, design: .monospaced))
                                 .autocorrectionDisabled(true)
                                 #if os(iOS)
@@ -97,7 +101,7 @@ struct ProjectEditorView: View {
                             Text(bound.displayName).tag(bound.profile.id)
                         }
                     }
-                    TextField("Accent color (hex, e.g. #73B8FF)", text: $color)
+                    TextField("Accent color", text: $color, prompt: Text("#73B8FF"))
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled(true)
                         #if os(iOS)
@@ -124,6 +128,10 @@ struct ProjectEditorView: View {
                     }
                 }
             }
+            #if os(macOS)
+            .formStyle(.grouped)
+            .frame(minWidth: 520, minHeight: 440)
+            #endif
             .navigationTitle(isEditing ? "Edit project" : "New project")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

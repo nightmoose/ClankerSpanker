@@ -203,3 +203,25 @@ describe("RFC-023: PDF mime + new-in-cwd surfacing", () => {
     expect(files.some((f) => f.path.endsWith("recent.txt"))).toBe(false);
   });
 });
+
+import { symlinkSync, truncateSync } from "node:fs";
+
+describe("RFC-042: file viewer bounds", () => {
+  it("refuses a symlink inside the workspace that points outside it", () => {
+    const cwd = tmp();
+    const outside = tmp();
+    writeFileSync(join(outside, "secret.txt"), "nope");
+    symlinkSync(join(outside, "secret.txt"), join(cwd, "link.txt"));
+    const dataDir = tmp();
+    expect(() => readSessionFile(session(cwd), config(dataDir), "link.txt")).toThrow(/outside/);
+  });
+
+  it("reads only the capped prefix of a huge file", () => {
+    const cwd = tmp();
+    const big = join(cwd, "huge.log");
+    writeFileSync(big, "start\n");
+    truncateSync(big, 64 * 1024 * 1024); // sparse 64 MB
+    const out = readSessionFile(session(cwd), config(tmp()), "huge.log");
+    expect(out.truncated).toBe(true);
+  });
+});

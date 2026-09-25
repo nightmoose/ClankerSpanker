@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import type {
   DispatchSession,
@@ -140,6 +140,17 @@ function realOrResolve(p: string): string {
     }
   }
   return abs;
+}
+
+function readPrefix(path: string, bytes: number): Buffer {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(bytes);
+    const n = readSync(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, n);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function isPathAllowed(absPath: string, roots: string[]): boolean {
@@ -323,7 +334,9 @@ export function readSessionFile(
   const ext = extname(abs).replace(/^\./, "");
   const mimeType = mimeFor(ext);
   const cap = Math.min(size, MAX_FILE_BYTES);
-  const buf = readFileSync(abs).subarray(0, cap);
+  // RFC-042: read only the capped prefix — readFileSync(abs) loaded the whole
+  // file (a multi-GB log) into memory before slicing.
+  const buf = readPrefix(abs, cap);
   const truncated = size > MAX_FILE_BYTES;
   if (looksText(buf, ext)) {
     return {

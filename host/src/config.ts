@@ -210,7 +210,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     const created: HostConfigFile = {
       hostId: randomUUID(),
       hostToken: randomBytes(24).toString("hex"),
-      bindHost: process.env.GROK_DISPATCH_HOST ?? "0.0.0.0",
+      bindHost: process.env.GROK_DISPATCH_HOST ?? "auto", // RFC-028: loopback + Tailscale
       bindPort: Number(process.env.GROK_DISPATCH_PORT ?? 8787),
       grokBinary: findGrokBinary(),
       // Projects start empty on a fresh install; the UI's Import action can

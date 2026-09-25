@@ -645,6 +645,13 @@ export interface ApnsConfig {
 }
 
 export interface HostConfigFile {
+  /**
+   * Stable identity for this host machine, minted on first `loadConfig` and
+   * persisted to config.json. Clients key per-host state (WS connections,
+   * push registrations, session ownership) off this id so a URL/name change
+   * doesn't invalidate their local records.
+   */
+  hostId: string;
   hostToken: string;
   bindHost: string;
   bindPort: number;

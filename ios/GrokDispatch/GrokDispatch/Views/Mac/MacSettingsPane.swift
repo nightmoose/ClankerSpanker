@@ -27,7 +27,7 @@ struct MacSettingsPane: View {
                             Text("WebSocket")
                             Spacer()
                             Text(appState.connectionLabel)
-                                .foregroundStyle(appState.socket.isConnected ? DispatchColors.success : .secondary)
+                                .foregroundStyle(appState.isSocketLive ? DispatchColors.success : .secondary)
                         }
                         Text(appState.selectedHost.map { "Active host: \($0.name) · \($0.baseURL)" } ?? "No active host")
                             .font(.caption)

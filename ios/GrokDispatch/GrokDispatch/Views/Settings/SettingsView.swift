@@ -164,7 +164,7 @@ struct SettingsView: View {
                             Text("WebSocket")
                             Spacer()
                             Text(appState.connectionLabel)
-                                .foregroundStyle(appState.socket.isConnected ? DispatchColors.success : .secondary)
+                                .foregroundStyle(appState.isSocketLive ? DispatchColors.success : .secondary)
                         }
                         Text(appState.selectedHost.map { "Active: \($0.name)" } ?? "No active host")
                             .font(.caption)
@@ -172,78 +172,27 @@ struct SettingsView: View {
                     }
                     .listRowBackground(DispatchColors.card)
 
-                    Section {
-                        if appState.boundProfiles.isEmpty {
+                    // RFC-024: group profiles under their host so a user with
+                    // two hosts can see which profiles belong to which
+                    // machine (was: one flat list, "only primary host's
+                    // profiles are listed" complaint).
+                    if appState.boundProfiles.isEmpty {
+                        Section("Profile usage") {
                             Text("Add a host and refresh to load profiles.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(appState.boundProfiles) { bound in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Circle().fill(bound.uiColor).frame(width: 8, height: 8)
-                                        Text(bound.displayName)
-                                            .font(.subheadline.weight(.semibold))
-                                        Text(bound.backendLabel)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        if let can = bound.profile.usage?.canWork {
-                                            Text(can ? "Ready" : "Exhausted")
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(can ? DispatchColors.success : DispatchColors.danger)
-                                        }
-                                    }
-                                    if let usage = bound.profile.usage {
-                                        Text(usage.shortLabel)
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(usage.trafficColor)
-                                        if let email = usage.accountEmail {
-                                            Text(email)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        if let err = usage.error, !err.isEmpty {
-                                            Text(err)
-                                                .font(.caption2)
-                                                .foregroundStyle(DispatchColors.danger)
-                                                .lineLimit(2)
-                                        }
-                                        if usage.canWork == false || usage.status == "error" || usage.status == "unknown" {
-                                            if bound.profile.isClaude {
-                                                Button {
-                                                    Task {
-                                                        isWorking = true
-                                                        defer { isWorking = false }
-                                                        do {
-                                                            let res = try await appState.api.loginProfile(
-                                                                id: bound.profile.id,
-                                                                host: bound.host,
-                                                                email: usage.accountEmail
-                                                            )
-                                                            statusMessage = res.message ?? res.error ?? "Login started"
-                                                        } catch {
-                                                            statusMessage = error.localizedDescription
-                                                        }
-                                                    }
-                                                } label: {
-                                                    Label("Sign in on this Mac…", systemImage: "arrow.up.forward.app")
-                                                        .font(.caption.weight(.semibold))
-                                                }
-                                                .buttonStyle(.bordered)
-                                            }
-                                        }
-                                    } else {
-                                        Text(bound.profile.hasCredentials == true ? "Usage not loaded yet" : "No credentials")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Text(bound.hostLabel)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
+                        }
+                        .listRowBackground(DispatchColors.card)
+                    } else {
+                        ForEach(profileSections(), id: \.hostId) { section in
+                            Section(section.hostName) {
+                                ForEach(section.profiles) { bound in
+                                    profileRow(bound)
                                 }
-                                .listRowBackground(DispatchColors.card)
                             }
+                            .listRowBackground(DispatchColors.card)
+                        }
+                        Section {
                             Button {
                                 Task {
                                     isWorking = true
@@ -252,16 +201,17 @@ struct SettingsView: View {
                                     statusMessage = "Usage refreshed"
                                 }
                             } label: {
-                                Label(isWorking ? "Refreshing…" : "Refresh usage", systemImage: "gauge.with.dots.needle.67percent")
+                                Label(
+                                    isWorking ? "Refreshing…" : "Refresh usage",
+                                    systemImage: "gauge.with.dots.needle.67percent"
+                                )
                             }
                             .disabled(isWorking)
-                            .listRowBackground(DispatchColors.card)
+                        } footer: {
+                            Text("Profile chips show plan usage used this period (Claude 5h/wk, Grok weekly credits, Gemini remaining Cloud Code quota).")
+                                .font(.caption2)
                         }
-                    } header: {
-                        Text("Profile usage")
-                    } footer: {
-                        Text("Profile chips show plan usage used this period (Claude 5h/wk, Grok weekly credits, Gemini remaining Cloud Code quota).")
-                            .font(.caption2)
+                        .listRowBackground(DispatchColors.card)
                     }
 
                     Section("Reminders") {
@@ -353,9 +303,98 @@ struct SettingsView: View {
             try await appState.api.validate(host: host)
             _ = try await appState.api.health(host: host)
             statusMessage = "\(host.name.isEmpty ? "Host" : host.name) reachable ✓"
-            appState.socket.connect(host: host)
+            // Multi-host: let the pool pick up the new/edited host on the
+            // next refresh; no direct socket wiring needed here.
+            await appState.refreshSessions()
         } catch {
             statusMessage = error.localizedDescription
+        }
+    }
+
+    /// Group `appState.boundProfiles` under their owning host so the
+    /// Settings profile list uses one `Section` per host (RFC-024). Order
+    /// matches the host list; hosts with no profiles collapse (no empty
+    /// Section rendered).
+    private struct ProfileSection: Identifiable {
+        let hostId: UUID
+        let hostName: String
+        let profiles: [BoundProfile]
+        var id: UUID { hostId }
+    }
+
+    private func profileSections() -> [ProfileSection] {
+        var byHost: [UUID: [BoundProfile]] = [:]
+        for b in appState.boundProfiles {
+            byHost[b.host.id, default: []].append(b)
+        }
+        return appState.hosts.compactMap { host in
+            let list = byHost[host.id] ?? []
+            guard !list.isEmpty else { return nil }
+            return ProfileSection(hostId: host.id, hostName: host.name, profiles: list)
+        }
+    }
+
+    @ViewBuilder
+    private func profileRow(_ bound: BoundProfile) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Circle().fill(bound.uiColor).frame(width: 8, height: 8)
+                Text(bound.displayName)
+                    .font(.subheadline.weight(.semibold))
+                Text(bound.backendLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let can = bound.profile.usage?.canWork {
+                    Text(can ? "Ready" : "Exhausted")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(can ? DispatchColors.success : DispatchColors.danger)
+                }
+            }
+            if let usage = bound.profile.usage {
+                Text(usage.shortLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(usage.trafficColor)
+                if let email = usage.accountEmail {
+                    Text(email)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let err = usage.error, !err.isEmpty {
+                    Text(err)
+                        .font(.caption2)
+                        .foregroundStyle(DispatchColors.danger)
+                        .lineLimit(2)
+                }
+                if usage.canWork == false || usage.status == "error" || usage.status == "unknown" {
+                    if bound.profile.isClaude {
+                        Button {
+                            Task {
+                                isWorking = true
+                                defer { isWorking = false }
+                                do {
+                                    let res = try await appState.api.loginProfile(
+                                        id: bound.profile.id,
+                                        host: bound.host,
+                                        email: usage.accountEmail
+                                    )
+                                    statusMessage = res.message ?? res.error ?? "Login started"
+                                } catch {
+                                    statusMessage = error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            Label("Sign in on this Mac…", systemImage: "arrow.up.forward.app")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            } else {
+                Text(bound.profile.hasCredentials == true ? "Usage not loaded yet" : "No credentials")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

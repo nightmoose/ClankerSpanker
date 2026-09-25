@@ -25,7 +25,7 @@ Not a session client. See [`docs/CLIENTS.md`](../../../docs/CLIENTS.md).
 ## Build
 
 ```bash
-cd ios/GrokDispatch
+cd ios/ClankerSpanker
 xcodegen               # regenerate ClankerSpanker.xcodeproj
 xcodebuild -project ClankerSpanker.xcodeproj \
   -scheme ClankerSpankerHostTray \

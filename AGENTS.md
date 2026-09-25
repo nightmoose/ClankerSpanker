@@ -8,20 +8,21 @@
 
 ## Orientation — the naming is a mess, and that is the first trap
 
-This project was renamed **GrokDispatch → ClankerSpanker** and the rename is
-**incomplete**. Every one of these is currently true:
+This project was renamed **GrokDispatch → ClankerSpanker**. RFC-047 finished
+the in-repo part; a few old names stay on purpose (moving them breaks installs):
 
 | Thing | Name |
 |---|---|
 | Repo / remote | `ClankerSpanker` |
-| Enclosing directory | `~/Projects/GrokDispatch` |
-| iOS app directory | `ios/GrokDispatch/GrokDispatch/` (old name, twice) |
-| Xcode project | `ClankerSpanker.xcodeproj` (current) |
-| Stale leftovers | `GrokDispatch.xcodeproj`, `GrokDispatch.xcodeproj.bak` |
+| Enclosing directory on disk | `~/Projects/GrokDispatch` (kept) |
+| Host data / config | `~/.grok-dispatch/` (kept) |
+| iOS/Mac sources | `ios/ClankerSpanker/ClankerSpanker/` |
+| Xcode project | `ios/ClankerSpanker/ClankerSpanker.xcodeproj` (xcodegen) |
 | Bundle id | `com.nightmoose.clankerspanker` |
-| Wire header | `x-grok-dispatch-token` |
+| Wire header | `x-clankerspanker-token`, legacy `x-grok-dispatch-token` still accepted |
+| URL schemes | `clankerspanker://`, legacy `grokdispatch://` still registered |
 
-**The repo root is here, not `ios/`.** Opening only `ios/GrokDispatch` hides both
+**The repo root is here, not `ios/`.** Opening only `ios/ClankerSpanker` hides both
 the `host/` component and `.git` — that mistake was made once already and led to
 "this project has no repo".
 
@@ -86,5 +87,5 @@ cd host && npm run typecheck
 cd host && npm run build
 ```
 
-Swift unit tests live in `ios/GrokDispatch/Tests` (`make test-swift`, RFC-046). Xcode projects come from **xcodegen** via
-`ios/GrokDispatch/project.yml`; the `.xcodeproj` is a build artifact.
+Swift unit tests live in `ios/ClankerSpanker/Tests` (`make test-swift`, RFC-046). Xcode projects come from **xcodegen** via
+`ios/ClankerSpanker/project.yml`; the `.xcodeproj` is a build artifact.

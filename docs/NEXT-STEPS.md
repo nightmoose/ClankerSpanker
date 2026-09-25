@@ -185,7 +185,7 @@ The Mac **Host** toolbar panel had install/projects/logs and **no profiles UI**.
 | **ConnectionDefaults hardcode** | Fixed (RFC-043) | Removed; phones pair by QR from `/setup` over Tailscale. |
 | **Rename leftovers** | Hygiene | `GrokDispatch` directory names, `x-grok-dispatch-token` on the wire (do not rename casually). |
 | **event-horizon/** | Untracked on purpose | Separate mini-game; `.gitignore`d. |
-| **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/GrokDispatch/project.yml`. Own RFC — do not silently add untested Swift surface. |
+| **iOS tests** | None | Swift clients have no automated tests. `xcodegen` via `ios/ClankerSpanker/project.yml`. Own RFC — do not silently add untested Swift surface. |
 | **House style** | **Shipped RFC-000** | RFC + `make check` + CI. Next feature starts with `make rfc SLUG=…`. |
 | **Markdown tables + todo jump** | **RFC-001** | Expanded-message GFM tables; Tasks open the source message (not just the session). |
 

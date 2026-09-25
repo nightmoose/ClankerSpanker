@@ -1,8 +1,8 @@
 # ClankerSpanker — Linux desktop (Electron)
 
-**Linux laptop command center.** Sessions UI + optional managed host process. Feature parity with the macOS SwiftUI app in `ios/GrokDispatch/`.
+**Linux laptop command center.** Sessions UI + optional managed host process. Feature parity with the macOS SwiftUI app in `ios/ClankerSpanker/`.
 
-> **macOS users:** use the **native Mac app** (`ios/GrokDispatch`, scheme `ClankerSpanker`).
+> **macOS users:** use the **native Mac app** (`ios/ClankerSpanker`, scheme `ClankerSpanker`).
 > Do not ship dual session UIs on Mac. See [docs/CLIENTS.md](../docs/CLIENTS.md).
 
 ```

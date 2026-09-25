@@ -6,13 +6,13 @@ There is **one host gateway** (`host/`). Everything else is a **client** (and op
 
 | Platform | Client | Location | Manages local host? |
 |----------|--------|----------|---------------------|
-| **macOS laptop** | **Native Swift** | `ios/GrokDispatch` → scheme `ClankerSpanker` → `ClankerSpankerMac.app` | Yes (`LocalHostController`, optional Application Support install + LaunchAgent) |
+| **macOS laptop** | **Native Swift** | `ios/ClankerSpanker` → scheme `ClankerSpanker` → `ClankerSpankerMac.app` | Yes (`LocalHostController`, optional Application Support install + LaunchAgent) |
 | **Linux laptop** | **Electron** | `desktop/` | Yes (`host-process.js`, reads/writes `~/.grok-dispatch`) |
 | **Any OS browser** | Static UI | `host/web` served at `/app/` | No — host must already be running |
 | **iPhone** | SwiftUI | same `ios/` sources, scheme **ClankerSpankerPhone** → **Deez Nutz** | No — remote host only |
 
 **Configurator** (not a client, no session UI): **ClankerSpankerHostTray** —
-menu-bar-only Swift app in `ios/GrokDispatch/HostTray`, scheme
+menu-bar-only Swift app in `ios/ClankerSpanker/HostTray`, scheme
 `ClankerSpankerHostTray`. Shows host status, kickstarts the LaunchAgent,
 opens `/app/` and `/setup` in the browser. Ship on Mac laptops that host
 a gateway but do not run `ClankerSpanker.app`. RFC-016.
@@ -81,7 +81,7 @@ Gaps are product work on the **owning** client for that platform, not a reason t
 | Host | `cd host && npm i && npm run build && npm start` |
 | Electron (dev) | `cd desktop && npm i && npm start` (host must be built) |
 | Electron Linux packages | **`npm run dist:linux` on a Linux machine** (or Linux CI). Cross-build from macOS is unreliable. |
-| Mac app | `cd ios/GrokDispatch && ./run-mac.sh` or Xcode scheme **ClankerSpanker** → **My Mac** |
+| Mac app | `cd ios/ClankerSpanker && ./run-mac.sh` or Xcode scheme **ClankerSpanker** → **My Mac** |
 | iPhone | Scheme **ClankerSpankerPhone** → **Deez Nutz** (see § Phone deploy) |
 
 Standalone host + agent CLI installs (all OSes): **[STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md)**.
@@ -94,7 +94,7 @@ check; it is not a ship. Do not install on **DaT OnE KiTtY** by accident
 (same model, different phone).
 
 ```bash
-cd ios/GrokDispatch
+cd ios/ClankerSpanker
 # Confirm the phone is paired:
 xcrun devicectl list devices
 # UDID (xcodebuild -destination id=) and CoreDevice identifier

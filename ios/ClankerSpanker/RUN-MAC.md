@@ -10,7 +10,7 @@
 Or from terminal:
 
 ```bash
-cd ~/Projects/GrokDispatch/ios/GrokDispatch
+cd ~/Projects/GrokDispatch/ios/ClankerSpanker
 ./run-mac.sh
 ```
 

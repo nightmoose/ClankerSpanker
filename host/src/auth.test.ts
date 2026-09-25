@@ -119,3 +119,24 @@ describe("unauthorizedBody", () => {
     expect(body).not.toContain(TOKEN);
   });
 });
+
+describe("isAuthorized token headers (RFC-047)", () => {
+  it("accepts the current x-clankerspanker-token header", () => {
+    expect(isAuthorized(req({ "x-clankerspanker-token": TOKEN }), config)).toBe(true);
+  });
+
+  it("still accepts the legacy x-grok-dispatch-token header", () => {
+    expect(isAuthorized(req({ "x-grok-dispatch-token": TOKEN }), config)).toBe(true);
+  });
+
+  it("rejects a wrong value in either header", () => {
+    expect(isAuthorized(req({ "x-clankerspanker-token": "nope" }), config)).toBe(false);
+    expect(isAuthorized(req({ "x-grok-dispatch-token": "nope" }), config)).toBe(false);
+  });
+
+  it("never authorises an empty configured token through either header", () => {
+    const empty = { hostToken: "" } as HostConfigFile;
+    expect(isAuthorized(req({ "x-clankerspanker-token": "" }), empty)).toBe(false);
+    expect(isAuthorized(req({ "x-grok-dispatch-token": "" }), empty)).toBe(false);
+  });
+});

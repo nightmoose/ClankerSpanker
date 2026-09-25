@@ -21,10 +21,10 @@ browser `/app/`, and iOS/iPad clients drive it over LAN or Tailscale.
 |---|---|
 | GitHub repo | `ClankerSpanker` |
 | Folder on disk | `GrokDispatch` |
-| Swift sources | `ios/GrokDispatch/GrokDispatch/` |
+| Swift sources | `ios/ClankerSpanker/ClankerSpanker/` (renamed, RFC-047) |
 | Xcode project | `ClankerSpanker.xcodeproj` |
 | Bundle id | `com.nightmoose.clankerspanker` |
-| Auth header | `x-grok-dispatch-token` — **do not rename casually** |
+| Auth header | `x-clankerspanker-token`; legacy `x-grok-dispatch-token` still accepted (RFC-047) |
 
 ## Current state (this commit)
 

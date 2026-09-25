@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-047 rename, in-repo parts
+
+`ios/GrokDispatch/GrokDispatch` → `ios/ClankerSpanker/ClankerSpanker`,
+stale GrokDispatch Xcode projects removed, `x-clankerspanker-token`
+accepted alongside the legacy header, docs updated. Disk folder,
+`~/.grok-dispatch`, bundle ids and URL schemes unchanged (owner call).
+
+---
+
 ## Run: 2026-09-25 — RFC-046 Swift unit tests
 
 Added `ClankerSpankerMacTests` (hosted by the Mac app) and `make

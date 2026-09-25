@@ -11,7 +11,7 @@ ClankerSpanker — connect a client
 3) Clients:
    - Browser UI:  http://<host-ip>:8787/app/
    - iOS app: paste Host URL + token from /setup
-     Project: ios/GrokDispatch/ClankerSpanker.xcodeproj
+     Project: ios/ClankerSpanker/ClankerSpanker.xcodeproj
      Bundle:  com.nightmoose.clankerspanker
 
 Do not expose port 8787 on the public internet.

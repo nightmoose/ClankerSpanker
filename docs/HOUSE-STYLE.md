@@ -91,7 +91,7 @@ A shipped RFC that is missing from `docs/STATUS.md` is unfinished.
 Do not “clean up” these without an RFC and a regression test:
 
 - Host token auth (`host/src/auth.ts`) — empty token authorises nobody; comparison stays constant-time.
-- Wire header `x-grok-dispatch-token` (legacy) and `Authorization: Bearer`.
+- `Authorization: Bearer`, `x-clankerspanker-token`, and the legacy `x-grok-dispatch-token` — all three stay accepted.
 - One host gateway. Do not add a second. Client ownership: `docs/CLIENTS.md`.
 - No secrets in git. No hardcoded LAN IPs in clients — pair by QR, connect
   over Tailscale (RFC-026/028/043).

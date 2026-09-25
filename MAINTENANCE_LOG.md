@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-053 Claude failures say why
+
+"Claude exited with code 1" now carries Claude's error result or the stderr
+tail. It immediately named the real problem behind the RFC-052 smoke
+failure: an invalid `github` MCP entry for the Personal profile.
+
+---
+
 ## Run: 2026-09-25 — RFC-052 session-manager split, phase B
 
 Claude / Antigravity / bot turns moved to `acp/runners/*` behind a narrow

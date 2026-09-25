@@ -58,3 +58,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 050 | [Browser + Electron parity with today's Swift features](rfcs/050-web-electron-parity.md) | Shipped | `nightly-maintenance-2026-09-25-rfc050-web-electron-parity` |
 | 051 | [Split session-manager.ts, phase A](rfcs/051-split-session-manager-a.md) | Shipped | `nightly-maintenance-2026-09-25-rfc051-split-session-manager-a` |
 | 052 | [Split session-manager.ts, phase B: CLI backends become runners](rfcs/052-split-session-manager-b.md) | Shipped | `nightly-maintenance-2026-09-25-rfc052-split-session-manager-b` |
+| 053 | [Claude failures say why](rfcs/053-claude-error-detail.md) | Shipped | `nightly-maintenance-2026-09-25-rfc053-claude-error-detail` |

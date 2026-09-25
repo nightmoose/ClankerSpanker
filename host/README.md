@@ -57,6 +57,18 @@ Phones and other laptops should connect over Tailscale.
 3. The app asks **Add host?** (or **Update host token?** when that address is
    already saved). Tap it.
 
+### Updating a Mac host
+
+From the checkout on that Mac:
+
+```bash
+./scripts/update-mac-host.sh --bind-auto --rotate-token
+```
+
+Pulls, builds, deploys to the LaunchAgent install, switches to
+loopback + Tailscale, mints a new token and restarts. Re-pair clients
+from `/setup` afterwards. Drop the flags for a plain code update.
+
 ### Rotating the token
 
 Stop the host, delete `"hostToken"` from `~/.grok-dispatch/config.json`, start

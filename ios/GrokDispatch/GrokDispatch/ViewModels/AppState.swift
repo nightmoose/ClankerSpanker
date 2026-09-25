@@ -735,13 +735,50 @@ final class AppState: ObservableObject {
         return count
     }
 
+    /// When the currently debounced refresh was first requested (RFC-038).
+    private var sessionRefreshPendingSince: Date?
+
+    /// Debounced full refresh. RFC-038: a busy session emits events faster
+    /// than 800 ms, which kept restarting the debounce so the list never
+    /// refreshed until things went quiet. Cap the wait at 3 s.
     private func scheduleSessionRefresh() {
+        let now = Date()
+        if let since = sessionRefreshPendingSince, now.timeIntervalSince(since) >= 3, sessionRefreshTask != nil {
+            return // a refresh is already due; let it fire
+        }
+        if sessionRefreshPendingSince == nil { sessionRefreshPendingSince = now }
         sessionRefreshTask?.cancel()
         sessionRefreshTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
+            self?.sessionRefreshPendingSince = nil
+            self?.sessionRefreshTask = nil
             await self?.refreshSessions()
         }
+    }
+
+    /// RFC-038: apply the status an event implies to the list row right away,
+    /// so the sidebar agrees with the session header without waiting for a
+    /// refetch. The debounced refresh still reconciles everything else.
+    private func applyLiveStatus(type: String, payload: [String: Any]?, sessionId: String, hostId: String) {
+        let status: SessionStatus? = {
+            switch type {
+            case "approval.needed": return .awaitingApproval
+            case "question.needed": return .awaitingQuestion
+            case "approval.resolved", "question.answered": return .running
+            default:
+                guard let raw = payload?["status"] as? String else { return nil }
+                return SessionStatus(rawValue: raw)
+            }
+        }()
+        guard let status else { return }
+        func patch(_ list: inout [SessionSummary]) {
+            for i in list.indices where list[i].id == sessionId && (list[i].hostId == hostId || list[i].hostId == nil) {
+                if list[i].status != status { list[i].status = status }
+            }
+        }
+        patch(&sessions)
+        patch(&archivedSessions)
     }
 
     /// Refresh profiles + sessions from **every** configured host (RFC-024).
@@ -999,10 +1036,13 @@ final class AppState: ObservableObject {
         switch type {
         case "session.created", "session.updated", "session.completed", "session.failed",
              "approval.needed", "approval.resolved", "question.needed", "question.answered":
-            scheduleSessionRefresh()
             let sessionId = event["sessionId"] as? String
             let payload = event["payload"] as? [String: Any]
             let hostIdString = hostId.uuidString
+            if let sid = sessionId {
+                applyLiveStatus(type: type, payload: payload, sessionId: sid, hostId: hostIdString)
+            }
+            scheduleSessionRefresh()
             let sessionTitle: String = {
                 if let sid = sessionId,
                    let s = (sessions + archivedSessions).first(where: {

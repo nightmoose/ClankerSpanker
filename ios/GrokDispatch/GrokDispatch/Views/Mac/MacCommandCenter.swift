@@ -427,6 +427,7 @@ struct MacCommandCenter: View {
                 Image(systemName: "text.bubble")
                     .font(.system(size: 48, weight: .ultraLight))
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text("Select a session")
                     .font(.title2.weight(.semibold))
                 Text("Or start a new agent task on this machine.")
@@ -454,6 +455,7 @@ struct MacCommandCenter: View {
                 Image(systemName: "bolt.circle.fill")
                     .font(.title2)
                     .foregroundStyle(DispatchColors.accent)
+                    .accessibilityHidden(true)
                 Text("ClankerSpanker")
                     .font(.headline.weight(.bold))
             }
@@ -498,7 +500,7 @@ struct MacCommandCenter: View {
                     }
                 }
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Label(rootTab == .bots ? "Refresh bots" : "Refresh sessions", systemImage: "arrow.clockwise")
             }
             .help(rootTab == .bots ? "Refresh bots" : "Refresh sessions")
 
@@ -506,9 +508,8 @@ struct MacCommandCenter: View {
                 Button {
                     appState.showMacViewer.toggle()
                 } label: {
-                    Image(systemName: appState.showMacViewer
-                          ? "sidebar.trailing"
-                          : "doc.text.magnifyingglass")
+                    Label(appState.showMacViewer ? "Hide file viewer" : "Show file viewer",
+                          systemImage: appState.showMacViewer ? "sidebar.trailing" : "doc.text.magnifyingglass")
                 }
                 .help(appState.showMacViewer ? "Hide file viewer" : "Show file viewer")
                 .keyboardShortcut("i", modifiers: [.command, .option])
@@ -517,7 +518,7 @@ struct MacCommandCenter: View {
             Button {
                 showProjects = true
             } label: {
-                Image(systemName: "folder")
+                Label("Projects", systemImage: "folder")
             }
             .help("Projects")
             .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -525,7 +526,7 @@ struct MacCommandCenter: View {
             Button {
                 showTasks = true
             } label: {
-                Image(systemName: "checklist")
+                Label("Tasks", systemImage: "checklist")
             }
             .help("Tasks")
             .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -533,7 +534,7 @@ struct MacCommandCenter: View {
             Button {
                 showTerminal = true
             } label: {
-                Image(systemName: "terminal")
+                Label("Terminal", systemImage: "terminal")
             }
             .help("Host terminal (login shell on this machine)")
             .keyboardShortcut("k", modifiers: [.command, .shift])
@@ -541,14 +542,14 @@ struct MacCommandCenter: View {
             Button {
                 showHost = true
             } label: {
-                Image(systemName: "server.rack")
+                Label("Host", systemImage: "server.rack")
             }
             .help("Local host control")
 
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "gearshape")
+                Label("Settings", systemImage: "gearshape")
             }
             .help("Settings")
         }

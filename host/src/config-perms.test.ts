@@ -93,6 +93,6 @@ describe("isTailscaleAddr", () => {
     expect(isTailscaleAddr("100.127.0.1")).toBe(true);
     expect(isTailscaleAddr("100.63.0.1")).toBe(false);
     expect(isTailscaleAddr("100.128.0.1")).toBe(false);
-    expect(isTailscaleAddr("192.168.1.220")).toBe(false);
+    expect(isTailscaleAddr("10.0.0.220")).toBe(false);
   });
 });

@@ -7,10 +7,6 @@ struct TaskComposerView: View {
     @State private var navigateTo: SessionRoute?
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showExtraFolders = false
-    /// RFC-036: create / import a project without leaving the composer.
-    @State private var projectSheet: ComposerProjectSheet?
-    @State private var isDiscovering = false
-    @State private var projectSetupError: String?
 
     private var selectedProject: ProjectInfo? {
         vm.projects.first { $0.id == vm.selectedProjectId }
@@ -147,7 +143,15 @@ struct TaskComposerView: View {
                                     .fixedSize(horizontal: false, vertical: true)
 
                                 if vm.projects.isEmpty {
-                                    emptyProjectsSetup
+                                    if let host = appState.boundProfiles.first(where: { $0.id == vm.selectedBoundProfileId })?.host ?? appState.selectedHost {
+                                        EmptyHostProjectsView(host: host) { saved in
+                                            await vm.load(appState: appState)
+                                            if let saved {
+                                                vm.selectedProjectId = saved.id
+                                                vm.selectedProjectPath = saved.effectivePaths.first
+                                            }
+                                        }
+                                    }
                                 } else {
                                     Picker("Project", selection: $vm.selectedProjectId) {
                                         ForEach(vm.projects) { p in
@@ -342,9 +346,6 @@ struct TaskComposerView: View {
                 )
             }
             .task { await vm.load(appState: appState) }
-            .sheet(item: $projectSheet) { sheet in
-                composerProjectSheet(sheet)
-            }
             .onChange(of: appState.selectedBoundProfileId) { _, _ in
                 Task { await vm.load(appState: appState) }
             }
@@ -394,108 +395,3 @@ struct AutoApproveWarning: View {
 }
 
 
-// MARK: - RFC-036: project setup from the composer
-
-enum ComposerProjectSheet: Identifiable {
-    case new(HostEndpoint)
-    case importCandidates([ProjectInfo], HostEndpoint)
-
-    var id: String {
-        switch self {
-        case .new(let h): return "new-\(h.id)"
-        case .importCandidates(_, let h): return "import-\(h.id)"
-        }
-    }
-}
-
-extension TaskComposerView {
-    /// Host of the profile the task will run on.
-    fileprivate var composerHost: HostEndpoint? {
-        appState.boundProfiles.first { $0.id == vm.selectedBoundProfileId }?.host ?? appState.selectedHost
-    }
-
-    /// A fresh host has no projects. Offer the two ways out right here instead
-    /// of a sentence pointing at another tab (hit on Astrodata, 2026-09-25).
-    @ViewBuilder
-    fileprivate var emptyProjectsSetup: some View {
-        let hostName = composerHost?.name ?? "this host"
-        VStack(alignment: .leading, spacing: 10) {
-            Text("No projects on \(hostName) yet.")
-                .font(.footnote.weight(.semibold))
-            Text("Agents need a real folder to work in (not /). Import the repos \(hostName) already has, or add one by path.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 10) {
-                Button {
-                    Task { await discoverProjects() }
-                } label: {
-                    Label(isDiscovering ? "Scanning…" : "Import from \(hostName)…", systemImage: "sparkle.magnifyingglass")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isDiscovering || composerHost == nil)
-                Button {
-                    if let h = composerHost { projectSheet = .new(h) }
-                } label: {
-                    Label("New project…", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .disabled(composerHost == nil)
-            }
-            if let err = projectSetupError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundStyle(DispatchColors.warning)
-            }
-        }
-    }
-
-    fileprivate func discoverProjects() async {
-        guard let host = composerHost else { return }
-        projectSetupError = nil
-        isDiscovering = true
-        defer { isDiscovering = false }
-        do {
-            let candidates = try await appState.api.discoverProjects(host: host)
-            if candidates.isEmpty {
-                projectSetupError = "\(host.name) didn't suggest any folders. Use New project… and type a path."
-            } else {
-                projectSheet = .importCandidates(candidates, host)
-            }
-        } catch {
-            projectSetupError = error.localizedDescription
-        }
-    }
-
-    @ViewBuilder
-    fileprivate func composerProjectSheet(_ sheet: ComposerProjectSheet) -> some View {
-        switch sheet {
-        case .new(let host):
-            ProjectEditorView(
-                mode: .new,
-                host: host,
-                onSaved: { saved in
-                    projectSheet = nil
-                    Task {
-                        await vm.load(appState: appState)
-                        vm.selectedProjectId = saved.id
-                        vm.selectedProjectPath = saved.effectivePaths.first
-                    }
-                },
-                onCancel: { projectSheet = nil }
-            )
-            .environmentObject(appState)
-        case .importCandidates(let candidates, let host):
-            ProjectImportSheet(
-                candidates: candidates,
-                host: host,
-                onDone: {
-                    projectSheet = nil
-                    Task { await vm.load(appState: appState) }
-                },
-                onCancel: { projectSheet = nil }
-            )
-            .environmentObject(appState)
-        }
-    }
-}

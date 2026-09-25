@@ -73,7 +73,9 @@ final class ComposerViewModel: ObservableObject {
             applyPrefill(from: appState)
             if selectedProjectId == nil || !projects.contains(where: { $0.id == selectedProjectId }) {
                 if customPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    selectedProjectId = projects.first?.id
+                    // RFC-039: last project used on this host, else the first.
+                    let last = UserDefaults.standard.string(forKey: Self.lastProjectKey(bound.host))
+                    selectedProjectId = projects.first(where: { $0.id == last })?.id ?? projects.first?.id
                 }
             }
             applyModelDefaults(for: bound)
@@ -248,6 +250,10 @@ final class ComposerViewModel: ObservableObject {
         extraDirs.removeAll { $0 == path }
     }
 
+    /// RFC-039: per-host "last project used" so the composer stops defaulting
+    /// to whatever project happens to be first.
+    static func lastProjectKey(_ host: HostEndpoint) -> String { "composer.lastProjectId.\(host.id.uuidString)" }
+
     func dispatch(appState: AppState) async -> SessionRoute? {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = pendingImages
@@ -357,6 +363,9 @@ final class ComposerViewModel: ObservableObject {
         do {
             let session = try await appState.api.dispatch(body, host: bound.host)
             lastCreatedSessionId = session.id
+            if let pid = selectedProjectId {
+                UserDefaults.standard.set(pid, forKey: Self.lastProjectKey(bound.host))
+            }
             errorMessage = nil
             prompt = ""
             title = ""

@@ -10,6 +10,13 @@ struct MacComposePane: View {
     @State private var status: String?
     @State private var projectNote: String?
 
+    @FocusState private var promptFocused: Bool
+
+    /// Host the task will run on (RFC-039).
+    private var composeHost: HostEndpoint? {
+        appState.selectedBoundProfile?.host ?? appState.selectedHost
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -39,11 +46,16 @@ struct MacComposePane: View {
                         Text("Prompt")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                        // RFC-039: clicking anywhere in the box focuses the editor
+                        // (clicks on the padding used to go nowhere).
                         TextEditor(text: $vm.prompt)
                             .font(.body)
+                            .focused($promptFocused)
                             .frame(minHeight: 140)
-                            .padding(8)
+                            .padding(2)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
+                            .contentShape(Rectangle())
+                            .onTapGesture { promptFocused = true }
                     }
                     .padding(6)
                 }
@@ -93,8 +105,14 @@ struct MacComposePane: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        if vm.projects.isEmpty {
-                            Text("No projects on host yet — add folders below.")
+                        if vm.projects.isEmpty, let host = composeHost, !host.isLoopback {
+                            // RFC-039: remote host — this Mac's folder picker is the wrong disk.
+                            EmptyHostProjectsView(host: host) { saved in
+                                await vm.load(appState: appState)
+                                if let saved { vm.selectedProjectId = saved.id }
+                            }
+                        } else if vm.projects.isEmpty {
+                            Text("No projects on this Mac yet — add folders below.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -106,21 +124,29 @@ struct MacComposePane: View {
                             }
                         }
 
-                        HStack(spacing: 8) {
-                            Button {
-                                addProjectFolders()
-                            } label: {
-                                Label("Add folders…", systemImage: "folder.badge.plus")
-                            }
-                            Button {
-                                pickCwdOnce()
-                            } label: {
-                                Label("Pick cwd…", systemImage: "folder")
-                            }
-                            Button {
-                                pickExtraFolders()
-                            } label: {
-                                Label("Extra folders…", systemImage: "folder.badge.plus")
+                        // RFC-039: these open THIS Mac's file picker (and "Save as
+                        // project" writes this Mac's config), so only offer them when
+                        // the task runs here. Clearer names, one line of help each.
+                        if composeHost?.isLoopback ?? true {
+                            HStack(spacing: 8) {
+                                Button {
+                                    addProjectFolders()
+                                } label: {
+                                    Label("Save as projects…", systemImage: "folder.badge.plus")
+                                }
+                                .help("Add folders to this Mac's project list so they appear in the picker next time.")
+                                Button {
+                                    pickCwdOnce()
+                                } label: {
+                                    Label("Use once…", systemImage: "folder")
+                                }
+                                .help("Run this task in a folder without saving it as a project.")
+                                Button {
+                                    pickExtraFolders()
+                                } label: {
+                                    Label("Extra access…", systemImage: "folder.badge.plus")
+                                }
+                                .help("Extra folders the agent may read and edit alongside the working directory.")
                             }
                         }
 

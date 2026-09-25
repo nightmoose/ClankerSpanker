@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-039 Mac composer + project form
+
+Prompt focus, per-host last project, local-only folder buttons (remote
+hosts get the shared Import / New project view), renamed folder actions,
+and a grouped New Project form. Verified with real clicks on the Mac app.
+
+---
+
 ## Run: 2026-09-25 — RFC-038 list status follows live events
 
 Sidebar lagged the header because every socket event restarted the

@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-036 fresh host with no projects
+
+Astrodata had no projects; the phone composer dead-ended and Import found
+nothing (discovery was a hardcoded list of the Mac mini's repos). Real
+git-repo scan (3 ms, 31 repos here), `~` expansion for typed folders, a
+generic `/` refusal, and Import / New project buttons in the phone
+composer's empty state. 6 new tests.
+
+---
+
 ## Run: 2026-09-25 — Two-host soak passed (RFC-024 on the phone)
 
 Primary (Mac mini, 100.66.33.89) + Astrodata (MacBook Pro, 100.66.166.28),

@@ -92,3 +92,18 @@ describe("config integration (RFC-032)", () => {
     expect(resolveProjectPath(config, undefined, root).projectId).toBeUndefined();
   });
 });
+
+describe("typed ~ folders (RFC-036)", () => {
+  it("resolveProjectPath expands ~ in a custom cwd", () => {
+    const config = { projects: [], allowCustomPaths: true } as unknown as HostConfigFile;
+    const r = resolveProjectPath(config, undefined, "~");
+    expect(r.path).not.toContain("~");
+    expect(r.path.length).toBeGreaterThan(1);
+  });
+
+  it("refuses / with a message that names no one's projects", () => {
+    const config = { projects: [], allowCustomPaths: true } as unknown as HostConfigFile;
+    expect(() => resolveProjectPath(config, undefined, "/")).toThrow(/real folder/);
+    expect(() => resolveProjectPath(config, undefined, "/")).not.toThrow(/Mercenary/);
+  });
+});

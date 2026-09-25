@@ -286,12 +286,12 @@ describe("refresh + header injection", () => {
     expect(json.mcpServers.gmail).toEqual({
       url: "https://mcp.example.com/mcp",
       headers: { Authorization: "Bearer tok" },
-      transport: "http",
+      type: "http",
     });
     expect(json.mcpServers.linear).toEqual({
       url: "https://mcp.linear.app/mcp",
       headers: { Authorization: "Bearer static" },
-      transport: "http",
+      type: "http",
     });
   });
 

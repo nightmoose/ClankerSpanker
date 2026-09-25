@@ -17,7 +17,16 @@ final class AppState: ObservableObject {
     @Published private(set) var hostAPIReachable: Bool = false
 
     let api = APIClient()
-    let socket = WebSocketClient()
+    /// One WS connection per registered host (RFC-024). Replaces the single
+    /// `WebSocketClient` that was bound to `selectedHost` and hid all events
+    /// from every other host until the user switched.
+    let socketPool = HostSocketPool()
+
+    /// Mirror of `socketPool.anyConnected` so SwiftUI views bound to
+    /// `@EnvironmentObject appState: AppState` re-render when the merged
+    /// connection state flips. (Views can't observe nested ObservableObjects
+    /// through the parent's objectWillChange.)
+    @Published private(set) var isSocketLive: Bool = false
 
     /// Registered host machines.
     @Published var hosts: [HostEndpoint] = []
@@ -79,32 +88,35 @@ final class AppState: ObservableObject {
     private var sessionRefreshTask: Task<Void, Never>?
     #if os(iOS)
     private var pendingDeviceToken: String?
-    private var lastPushRegistration: String?
+    /// Set of `hostId|token` pairs already registered with the host. Set
+    /// (not single string) because RFC-024 fans out APNs registration to
+    /// every host so pushes fire from whichever host owns the session.
+    private var lastPushRegistrations: Set<String> = []
     #endif
 
     init() {
-        reloadHosts()
-        var wasConnected = false
-        socket.$isConnected
+        socketPool.onEvent = { [weak self] hostId, data in
+            self?.handleSocketData(data, hostId: hostId)
+        }
+        socketPool.onReconnect = { hostId in
+            // Include hostId in userInfo so per-host replay logic can filter;
+            // legacy consumers that ignore userInfo still trigger their
+            // existing "reconnect happened" behavior.
+            NotificationCenter.default.post(
+                name: .dispatchSocketReconnected,
+                object: hostId.uuidString
+            )
+        }
+        socketPool.$connected
             .receive(on: RunLoop.main)
-            .sink { [weak self] connected in
-                self?.updateConnectionLabel()
-                // Emit a reconnect notification so open SessionDetailViewModels
-                // can call the event-replay endpoint and catch anything that
-                // fired during the WS gap.
-                if connected && !wasConnected {
-                    NotificationCenter.default.post(
-                        name: .dispatchSocketReconnected,
-                        object: nil
-                    )
-                }
-                wasConnected = connected
+            .sink { [weak self] connectedMap in
+                guard let self else { return }
+                self.isSocketLive = connectedMap.values.contains(where: { $0 })
+                self.updateConnectionLabel()
             }
             .store(in: &cancellables)
 
-        socket.onEvent = { [weak self] data in
-            self?.handleSocketData(data)
-        }
+        reloadHosts()
 
         NotificationCenter.default.publisher(for: .dispatchNotificationAction)
             .compactMap { $0.object as? [String: Any] }
@@ -129,23 +141,33 @@ final class AppState: ObservableObject {
     }
 
     #if os(iOS)
-    /// Upload the APNs device token to the selected host (once per token+host).
+    /// Upload the APNs device token to **every** configured host so kill-state
+    /// pushes can fire from any host that owns a session (RFC-024). Before
+    /// RFC-024 only `selectedHost` was told, so secondary hosts' approvals
+    /// never woke the phone from a killed state.
     private func registerPushIfNeeded() {
-        guard let token = pendingDeviceToken, let host = selectedHost else { return }
-        let key = "\(host.id.uuidString)|\(token)"
-        if lastPushRegistration == key { return }
-        lastPushRegistration = key
+        guard let token = pendingDeviceToken else { return }
         let name = UIDevice.current.name
-        Task {
-            do {
-                try await api.registerPush(
-                    token: token,
-                    clientHostId: host.id.uuidString,
-                    name: name,
-                    host: host
-                )
-            } catch {
-                lastPushRegistration = nil
+        for host in hosts {
+            guard !host.loadToken().isEmpty else { continue }
+            let key = "\(host.id.uuidString)|\(token)"
+            if lastPushRegistrations.contains(key) { continue }
+            lastPushRegistrations.insert(key)
+            Task { [api, weak self] in
+                do {
+                    try await api.registerPush(
+                        token: token,
+                        clientHostId: host.id.uuidString,
+                        name: name,
+                        host: host
+                    )
+                } catch {
+                    // Roll back the "already registered" marker so the next
+                    // refresh retries this host without touching the others.
+                    await MainActor.run {
+                        self?.lastPushRegistrations.remove(key)
+                    }
+                }
             }
         }
     }
@@ -160,10 +182,23 @@ final class AppState: ObservableObject {
               let kind = info["kind"] as? String,
               let sessionId = info["sessionId"] as? String
         else { return }
+        // RFC-024: notification action routes strictly by the embedded hostId.
+        // The old `selectedHost` fallback silently sent Approve to the wrong
+        // host when a user tapped a notification for host B while chips were
+        // on host A. If the notification is legacy (no hostId), we still
+        // best-effort fall back so old queued taps don't dead-end.
         let host: HostEndpoint? = {
-            if let hostIdString = info["hostId"] as? String,
-               let hostId = UUID(uuidString: hostIdString),
-               let match = hosts.first(where: { $0.id == hostId }) {
+            if let hostIdString = info["hostId"] as? String {
+                guard
+                    let hostId = UUID(uuidString: hostIdString),
+                    let match = hosts.first(where: { $0.id == hostId })
+                else {
+                    NotificationService.notify(
+                        title: "Notification stale",
+                        body: "That host is no longer registered."
+                    )
+                    return nil
+                }
                 return match
             }
             return selectedHost ?? hosts.first
@@ -209,7 +244,7 @@ final class AppState: ObservableObject {
     }
 
     private func updateConnectionLabel() {
-        if socket.isConnected {
+        if isSocketLive {
             connectionLabel = "Live"
         } else if hostAPIReachable {
             connectionLabel = "API up"
@@ -254,21 +289,20 @@ final class AppState: ObservableObject {
         }
 
         let url = hostCtrl.localBaseURL
-        // Reuse existing localhost host if present; otherwise create
+        // Reuse existing localhost host if present; otherwise create.
+        // RFC-024: never overwrite a user's remote-host selection on Mac
+        // startup — before, this seeded "This Mac" and forced the socket
+        // onto loopback every launch, wiping any remote selection.
         if let existing = hosts.first(where: { isLoopbackURL($0.baseURL) }) {
             var h = existing
             h.baseURL = url
             if h.name.isEmpty || h.name == "Primary" { h.name = "This Mac" }
             upsertHost(h, token: token)
-        } else {
+        } else if hosts.isEmpty {
             let h = HostEndpoint(name: "This Mac", baseURL: url)
             upsertHost(h, token: token)
         }
-
-        // Prefer local host for session list
-        if let local = hosts.first(where: { isLoopbackURL($0.baseURL) }) {
-            socket.connect(host: local)
-        }
+        // Socket wiring is handled by the pool via `saveHosts` → `syncSocketPool()`.
     }
 
     private func isLoopbackURL(_ raw: String) -> Bool {
@@ -291,15 +325,17 @@ final class AppState: ObservableObject {
 
     /// Sessions currently blocked waiting for the user (approve/answer).
     /// Union of the active list and any archived-but-still-pending items.
-    /// Used to drive the "needs your attention" inbox banner + tab badge.
+    /// RFC-024: dedupe by `(hostId, id)` so two hosts holding the same
+    /// imported session id both surface if they both need attention.
     var attentionSessions: [SessionSummary] {
         let all = sessions + archivedSessions
         var seen = Set<String>()
         var out: [SessionSummary] = []
         for s in all {
-            guard !seen.contains(s.id) else { continue }
+            let key = s.routeKey
+            guard !seen.contains(key) else { continue }
             if s.status == .awaitingApproval || s.status == .awaitingQuestion {
-                seen.insert(s.id)
+                seen.insert(key)
                 out.append(s)
             }
         }
@@ -336,10 +372,16 @@ final class AppState: ObservableObject {
         isConfigured = !hosts.isEmpty && hosts.contains { !$0.loadToken().isEmpty }
         selectedBoundProfileId = HostStore.selectedBoundProfileId
         loadEnabledProfilesFromStore()
-        if isConfigured, let host = selectedHost {
-            socket.connect(host: host)
+        syncSocketPool()
+    }
+
+    /// Reconcile the WS pool with the current host list (RFC-024). Called on
+    /// every mutation of `hosts` (add, remove, token change, clear).
+    private func syncSocketPool() {
+        if isConfigured {
+            socketPool.sync(with: hosts)
         } else {
-            socket.disconnect()
+            socketPool.disconnectAll()
         }
     }
 
@@ -369,9 +411,7 @@ final class AppState: ObservableObject {
         hosts = list
         isConfigured = !list.isEmpty && list.contains { !$0.loadToken().isEmpty }
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-        if let host = selectedHost ?? list.first {
-            socket.connect(host: host)
-        }
+        syncSocketPool()
     }
 
     func upsertHost(_ host: HostEndpoint, token: String) {
@@ -416,7 +456,7 @@ final class AppState: ObservableObject {
         HostStore.enabledBoundProfileIds = []
         HostStore.selectedBoundProfileId = nil
         isConfigured = false
-        socket.disconnect()
+        syncSocketPool()
         NotificationService.setAppIconBadge(0)
     }
 
@@ -470,9 +510,8 @@ final class AppState: ObservableObject {
             HostStore.selectedBoundProfileId = id
         }
         persistEnabledProfiles()
-        if let host = selectedHost {
-            socket.connect(host: host)
-        }
+        // Chip toggles change `selectedHost` but not the host list — the
+        // pool is already connected to every host; refresh session data.
         Task { await refreshSessions() }
     }
 
@@ -485,9 +524,8 @@ final class AppState: ObservableObject {
             HostStore.selectedBoundProfileId = selectedBoundProfileId
         }
         persistEnabledProfiles()
-        if let host = selectedHost {
-            socket.connect(host: host)
-        }
+        // Chip toggles change `selectedHost` but not the host list — the
+        // pool is already connected to every host; refresh session data.
         Task { await refreshSessions() }
     }
 
@@ -502,9 +540,8 @@ final class AppState: ObservableObject {
         selectedBoundProfileId = id
         HostStore.selectedBoundProfileId = id
         persistEnabledProfiles()
-        if let host = selectedHost {
-            socket.connect(host: host)
-        }
+        // Chip toggles change `selectedHost` but not the host list — the
+        // pool is already connected to every host; refresh session data.
         Task { await refreshSessions() }
     }
 
@@ -571,27 +608,59 @@ final class AppState: ObservableObject {
         return "grok"
     }
 
-    /// Re-fetch profile usage only (Claude 5h/weekly). Safe to call on a timer.
+    /// Re-fetch profile usage only (Claude 5h/weekly) from every host in
+    /// parallel with a per-host timeout, so one wedged secondary doesn't
+    /// stall the 60s poll for the healthy hosts (RFC-024).
     func refreshProfileUsage() async {
         guard !hosts.isEmpty else { return }
-        var next = boundProfiles
-        var changed = false
-        for host in hosts {
-            guard !host.loadToken().isEmpty else { continue }
-            do {
-                let p = try await api.profiles(host: host, includeUsage: true)
-                for prof in p.profiles {
-                    if let idx = next.firstIndex(where: {
-                        $0.host.endpointKey == host.endpointKey && $0.profile.id == prof.id
-                    }) {
-                        if next[idx].profile.usage != prof.usage {
-                            next[idx].profile.usage = prof.usage
-                            changed = true
+        let hostList = hosts.filter { !$0.loadToken().isEmpty }
+        guard !hostList.isEmpty else { return }
+
+        struct Bundle: Sendable { let endpointKey: String; let profiles: [AgentProfile] }
+        let api = self.api
+        let bundles: [Bundle] = await withTaskGroup(of: Bundle?.self) { group in
+            for host in hostList {
+                group.addTask {
+                    // Per-host timeout: 4s. Longer than a healthy round-trip,
+                    // short enough that N hosts * 4s stays below the 60s poll.
+                    return await withTaskGroup(of: Bundle?.self) { inner in
+                        inner.addTask {
+                            do {
+                                let p = try await api.profiles(host: host, includeUsage: true)
+                                return Bundle(endpointKey: host.endpointKey, profiles: p.profiles)
+                            } catch {
+                                return nil
+                            }
                         }
+                        inner.addTask {
+                            try? await Task.sleep(nanoseconds: 4_000_000_000)
+                            return nil
+                        }
+                        let first = await inner.next() ?? nil
+                        inner.cancelAll()
+                        return first
                     }
                 }
-            } catch {
-                // Soft-fail — keep last known usage
+            }
+            var out: [Bundle] = []
+            for await b in group {
+                if let b { out.append(b) }
+            }
+            return out
+        }
+
+        var next = boundProfiles
+        var changed = false
+        for b in bundles {
+            for prof in b.profiles {
+                if let idx = next.firstIndex(where: {
+                    $0.host.endpointKey == b.endpointKey && $0.profile.id == prof.id
+                }) {
+                    if next[idx].profile.usage != prof.usage {
+                        next[idx].profile.usage = prof.usage
+                        changed = true
+                    }
+                }
             }
         }
         if changed { boundProfiles = next }
@@ -620,7 +689,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Refresh profiles from all hosts; sessions for the selected host.
+    /// Refresh profiles + sessions from **every** configured host (RFC-024).
+    /// Before RFC-024 sessions came from `selectedHost` only, so a second
+    /// host's chats never appeared on the phone.
     func refreshSessions() async {
         defer {
             syncAppIconBadge()
@@ -636,19 +707,23 @@ final class AppState: ObservableObject {
         if cleaned.map(\.id) != hosts.map(\.id) {
             HostStore.saveHosts(cleaned)
             hosts = cleaned
+            syncSocketPool()
         }
 
         guard !hosts.isEmpty else {
             lastRefreshError = "Add a host in Settings"
             sessions = []
             archivedSessions = []
+            diskSessions = []
+            claudeSessions = []
+            agySessions = []
             boundProfiles = []
             hostAPIReachable = false
             updateConnectionLabel()
             return
         }
 
-        // Prefer loopback host when present (this machine is the gateway)
+        // Prefer loopback host first (this machine is the gateway).
         let orderedHosts: [HostEndpoint] = {
             let local = hosts.filter(\.isLoopback)
             let remote = hosts.filter { !$0.isLoopback }
@@ -657,21 +732,22 @@ final class AppState: ObservableObject {
 
         var merged: [BoundProfile] = []
         var errors: [String] = []
-        var firstWorkingHost: HostEndpoint?
+        var errorsByHost: [String: String] = [:]
         var seenEndpoints = Set<String>()
         var seenProfileKeys = Set<String>() // endpointKey|profileId
         var sawCancel = false
+        // Hosts that answered /profiles successfully — we'll fan out /sessions to these.
+        var workingHosts: [HostEndpoint] = []
 
         for host in orderedHosts {
             let token = host.loadToken()
             if token.isEmpty {
                 errors.append("\(host.name): no token")
+                errorsByHost[host.name] = "no token"
                 continue
             }
-            // Skip second entry for the same machine even if IDs differ.
             if seenEndpoints.contains(host.endpointKey) { continue }
             do {
-                // Fast profile list first (no Anthropic OAuth). Usage attached right after.
                 let p = try await api.profiles(host: host, includeUsage: false)
                 if generation != refreshSessionsGeneration { return }
                 seenEndpoints.insert(host.endpointKey)
@@ -681,22 +757,20 @@ final class AppState: ObservableObject {
                     seenProfileKeys.insert(key)
                     merged.append(BoundProfile(host: host, profile: prof))
                 }
-                if firstWorkingHost == nil { firstWorkingHost = host }
+                workingHosts.append(host)
             } catch {
-                // Ignore cancellation noise from SwiftUI task teardown / overlapping refresh
                 let msg = error.localizedDescription
                 if msg.lowercased().contains("cancel") {
                     sawCancel = true
                     continue
                 }
                 errors.append("\(host.name): \(msg)")
+                errorsByHost[host.name] = msg
             }
         }
 
         if generation != refreshSessionsGeneration { return }
 
-        // Never replace a good chip strip with [] because requests cancelled mid-refresh
-        // (classic bug: pull on chips → refreshable → empty "No hosts / profiles").
         if !merged.isEmpty {
             boundProfiles = merged.sorted { a, b in
                 if a.profile.isGrok != b.profile.isGrok { return a.profile.isGrok && !b.profile.isGrok }
@@ -706,80 +780,161 @@ final class AppState: ObservableObject {
             if generation != refreshSessionsGeneration { return }
             normalizeEnabledProfiles()
         } else if boundProfiles.isEmpty {
-            // Truly nothing — only when we had nothing to keep
             normalizeEnabledProfiles()
             if !sawCancel {
                 lastRefreshError = errors.first ?? "No profiles from host"
             }
         }
-        // else: keep existing boundProfiles
 
-        // Session host: selected profile's host, else first working, else first configured
-        let host = selectedHost ?? firstWorkingHost ?? orderedHosts.first
-        guard let host else {
+        guard !workingHosts.isEmpty else {
             if !sawCancel {
-                lastRefreshError = errors.first ?? "No host"
+                lastRefreshError = errors.first ?? "No reachable host"
                 hostAPIReachable = false
                 updateConnectionLabel()
             }
             return
         }
 
-        do {
-            let response = try await api.sessions(host: host)
-            if generation != refreshSessionsGeneration { return }
-            sessions = Self.dedupeSessions(response.sessions)
-            archivedSessions = Self.dedupeSessions(response.archivedSessions ?? [])
-            diskSessions = response.diskSessions ?? []
-            claudeSessions = response.claudeSessions ?? []
-            agySessions = response.agySessions ?? []
-            hostAPIReachable = true
-            lastRefreshError = errors.isEmpty ? nil : errors.joined(separator: " · ")
-            socket.connect(host: host)
-            updateConnectionLabel()
-        } catch {
-            if generation != refreshSessionsGeneration { return }
-            let msg = error.localizedDescription
-            if !msg.lowercased().contains("cancel") {
-                lastRefreshError = msg
-                hostAPIReachable = false
-                updateConnectionLabel()
-            }
+        // Fan out /sessions to every working host in parallel. Stamp `hostId`
+        // on each returned SessionSummary so downstream code can route
+        // actions to the owning host without falling back to `selectedHost`.
+        let hostList = workingHosts
+        struct Bundle: Sendable {
+            let hostId: String
+            let hostName: String
+            let sessions: [SessionSummary]
+            let archived: [SessionSummary]
+            let disk: [DiskSessionHint]
+            let claude: [DiskSessionHint]
+            let agy: [DiskSessionHint]
+            let error: String?
         }
+        let bundles: [Bundle] = await withTaskGroup(of: Bundle.self) { group in
+            for host in hostList {
+                group.addTask { [api] in
+                    do {
+                        let response = try await api.sessions(host: host)
+                        let hid = host.id.uuidString
+                        func stamp(_ s: SessionSummary) -> SessionSummary {
+                            var next = s
+                            next.hostId = hid
+                            return next
+                        }
+                        return Bundle(
+                            hostId: hid,
+                            hostName: host.name,
+                            sessions: response.sessions.map(stamp),
+                            archived: (response.archivedSessions ?? []).map(stamp),
+                            disk: response.diskSessions ?? [],
+                            claude: response.claudeSessions ?? [],
+                            agy: response.agySessions ?? [],
+                            error: nil
+                        )
+                    } catch {
+                        let msg = error.localizedDescription
+                        return Bundle(
+                            hostId: host.id.uuidString,
+                            hostName: host.name,
+                            sessions: [],
+                            archived: [],
+                            disk: [],
+                            claude: [],
+                            agy: [],
+                            error: msg.lowercased().contains("cancel") ? nil : msg
+                        )
+                    }
+                }
+            }
+            var out: [Bundle] = []
+            for await b in group { out.append(b) }
+            return out
+        }
+
+        if generation != refreshSessionsGeneration { return }
+
+        var allSessions: [SessionSummary] = []
+        var allArchived: [SessionSummary] = []
+        var allDisk: [DiskSessionHint] = []
+        var allClaude: [DiskSessionHint] = []
+        var allAgy: [DiskSessionHint] = []
+        for b in bundles {
+            allSessions.append(contentsOf: b.sessions)
+            allArchived.append(contentsOf: b.archived)
+            allDisk.append(contentsOf: b.disk)
+            allClaude.append(contentsOf: b.claude)
+            allAgy.append(contentsOf: b.agy)
+            if let e = b.error { errorsByHost[b.hostName] = e }
+        }
+
+        sessions = Self.dedupeSessions(allSessions)
+        archivedSessions = Self.dedupeSessions(allArchived)
+        diskSessions = allDisk
+        claudeSessions = allClaude
+        agySessions = allAgy
+        hostAPIReachable = true
+
+        // Surface per-host errors as "N hosts unreachable" (better than
+        // errors.first, which used to hide dead secondaries behind a healthy
+        // primary or vice-versa).
+        if errorsByHost.isEmpty {
+            lastRefreshError = nil
+        } else if errorsByHost.count == 1, let (name, msg) = errorsByHost.first {
+            lastRefreshError = "\(name): \(msg)"
+        } else {
+            let names = errorsByHost.keys.sorted().joined(separator: ", ")
+            lastRefreshError = "\(errorsByHost.count) hosts unreachable (\(names))"
+        }
+        updateConnectionLabel()
     }
 
-    /// Collapse accidental double-imports (same Grok/Claude session under two Dispatch ids).
+    /// Collapse accidental double-imports **within one host** (same Grok /
+    /// Claude session imported twice as different Dispatch ids). Post
+    /// RFC-024, we now merge sessions across hosts, so the dedupe key is
+    /// `(hostId, id)` — two hosts holding the same imported session are
+    /// legitimately two rows.
     private static func dedupeSessions(_ items: [SessionSummary]) -> [SessionSummary] {
-        var seenIds = Set<String>()
-        var seenGrok = Set<String>()
-        var seenClaude = Set<String>()
-        var seenAgy = Set<String>()
+        var seenRoute = Set<String>()
+        // Per-host grok/claude/agy dedupe so accidental same-host re-imports
+        // still collapse; a match across hosts is not a dupe.
+        var seenGrokByHost: [String: Set<String>] = [:]
+        var seenClaudeByHost: [String: Set<String>] = [:]
+        var seenAgyByHost: [String: Set<String>] = [:]
         var out: [SessionSummary] = []
-        // Newest first so we keep the freshest wrapper
-        let sorted = items.sorted {
-            ($0.updatedAt) > ($1.updatedAt)
-        }
+        // Newest first so we keep the freshest wrapper.
+        let sorted = items.sorted { $0.updatedAt > $1.updatedAt }
         for s in sorted {
-            if seenIds.contains(s.id) { continue }
+            let hostKey = s.hostId ?? ""
+            let route = "\(hostKey).\(s.id)"
+            if seenRoute.contains(route) { continue }
             if let g = s.grokSessionId, !g.isEmpty {
-                if seenGrok.contains(g) { continue }
-                seenGrok.insert(g)
+                var seen = seenGrokByHost[hostKey] ?? []
+                if seen.contains(g) { continue }
+                seen.insert(g)
+                seenGrokByHost[hostKey] = seen
             }
             if let c = s.claudeSessionId, !c.isEmpty {
-                if seenClaude.contains(c) { continue }
-                seenClaude.insert(c)
+                var seen = seenClaudeByHost[hostKey] ?? []
+                if seen.contains(c) { continue }
+                seen.insert(c)
+                seenClaudeByHost[hostKey] = seen
             }
             if let a = s.antigravityConversationId, !a.isEmpty {
-                if seenAgy.contains(a) { continue }
-                seenAgy.insert(a)
+                var seen = seenAgyByHost[hostKey] ?? []
+                if seen.contains(a) { continue }
+                seen.insert(a)
+                seenAgyByHost[hostKey] = seen
             }
-            seenIds.insert(s.id)
+            seenRoute.insert(route)
             out.append(s)
         }
         return out
     }
 
-    private func handleSocketData(_ data: Data) {
+    /// Handle a WS event from the pool. `hostId` is the source host's UUID,
+    /// carried into `NotificationService.notifyApproval` so the notification
+    /// action buttons route back to the correct host — never `selectedHost`
+    /// (RFC-024). Same for question banners.
+    private func handleSocketData(_ data: Data, hostId: UUID) {
         guard
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let event = obj["event"] as? [String: Any],
@@ -792,10 +947,12 @@ final class AppState: ObservableObject {
             scheduleSessionRefresh()
             let sessionId = event["sessionId"] as? String
             let payload = event["payload"] as? [String: Any]
-            let hostId = selectedHost?.id.uuidString
+            let hostIdString = hostId.uuidString
             let sessionTitle: String = {
                 if let sid = sessionId,
-                   let s = (sessions + archivedSessions).first(where: { $0.id == sid }) {
+                   let s = (sessions + archivedSessions).first(where: {
+                       $0.id == sid && ($0.hostId == hostIdString || $0.hostId == nil)
+                   }) {
                     return s.title
                 }
                 return "Session"
@@ -803,13 +960,12 @@ final class AppState: ObservableObject {
 
             if type == "approval.needed",
                let sid = sessionId,
-               let hostId,
                let approvalId = payload?["id"] as? String {
                 let approvalTitle = (payload?["title"] as? String) ?? "Approval required"
                 let badge = syncAppIconBadge(including: sid)
                 NotificationService.notifyApproval(
                     sessionId: sid,
-                    hostId: hostId,
+                    hostId: hostIdString,
                     approvalId: approvalId,
                     sessionTitle: sessionTitle,
                     approvalTitle: approvalTitle,
@@ -817,13 +973,12 @@ final class AppState: ObservableObject {
                 )
             }
             if type == "question.needed",
-               let sid = sessionId,
-               let hostId {
+               let sid = sessionId {
                 let qTitle = (payload?["title"] as? String) ?? "Answers needed"
                 let badge = syncAppIconBadge(including: sid)
                 NotificationService.notifyQuestion(
                     sessionId: sid,
-                    hostId: hostId,
+                    hostId: hostIdString,
                     sessionTitle: sessionTitle,
                     questionTitle: qTitle,
                     badge: badge
@@ -842,7 +997,35 @@ final class AppState: ObservableObject {
             break
         }
 
-        NotificationCenter.default.post(name: .dispatchSocketEvent, object: data)
+        // Broadcast to interested views. `object` stays `Data` so pre-RFC-024
+        // consumers keep working; `userInfo` carries the source host id for
+        // consumers that want to filter (SessionDetailViewModel replay).
+        NotificationCenter.default.post(
+            name: .dispatchSocketEvent,
+            object: data,
+            userInfo: ["hostId": hostId.uuidString]
+        )
+    }
+
+    /// Return the `HostEndpoint` that owns this session. Falls back to
+    /// `selectedHost` only when the session has no `hostId` stamp — that
+    /// happens for legacy records or during migration windows.
+    func endpoint(for session: SessionSummary) -> HostEndpoint? {
+        if let raw = session.hostId, let uuid = UUID(uuidString: raw) {
+            if let match = hosts.first(where: { $0.id == uuid }) {
+                return match
+            }
+        }
+        return selectedHost
+    }
+
+    /// Same as `endpoint(for:)` but resolves by session id when the caller
+    /// only has an id in hand (Mac session list selection, deep links).
+    func endpoint(forSessionId id: String) -> HostEndpoint? {
+        if let s = sessions.first(where: { $0.id == id }) ?? archivedSessions.first(where: { $0.id == id }) {
+            return endpoint(for: s)
+        }
+        return selectedHost
     }
 }
 

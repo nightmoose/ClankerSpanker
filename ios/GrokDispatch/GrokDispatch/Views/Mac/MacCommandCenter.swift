@@ -414,7 +414,11 @@ struct MacCommandCenter: View {
 
     @ViewBuilder
     private var sessionDetail: some View {
-        if let id = appState.macSelectedSessionId, let host = appState.selectedHost {
+        // RFC-024: route to the session's owning host, not `selectedHost`.
+        // Selecting a session belonging to host B while chips were on host
+        // A used to hit host A for that id → 404.
+        if let id = appState.macSelectedSessionId,
+           let host = appState.endpoint(forSessionId: id) ?? appState.selectedHost {
             SessionDetailView(sessionId: id, host: host)
                 .id("\(host.id.uuidString)-\(id)")
         } else {
@@ -550,8 +554,8 @@ struct MacCommandCenter: View {
         }
         ToolbarItem(placement: .status) {
             MacStatusPill(
-                apiUp: localHost.apiReachable || appState.socket.isConnected,
-                wsLive: appState.socket.isConnected,
+                apiUp: localHost.apiReachable || appState.isSocketLive,
+                wsLive: appState.isSocketLive,
                 hostName: appState.selectedHost?.name,
                 processLabel: localHost.apiReachable
                     ? (localHost.loadedAgentLabel.map { "agent · \($0.hasSuffix("clankerspanker-host") ? "app" : "repo")" } ?? "external")

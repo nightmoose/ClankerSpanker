@@ -30,6 +30,7 @@ enum SessionCreditMeter {
 
 struct SessionRowView: View {
     let session: SessionSummary
+    @EnvironmentObject private var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,7 +42,13 @@ struct SessionRowView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    profileChip
+                    HStack(spacing: 6) {
+                        profileChip
+                        // RFC-024: host chip so cross-host sessions are
+                        // visually distinguishable. Single-host installs
+                        // show nothing (no regression on the common case).
+                        hostChip
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -122,6 +129,25 @@ struct SessionRowView: View {
                 .padding(.vertical, 3)
                 .foregroundStyle(Color.orange)
                 .background(Color.orange.opacity(0.15))
+                .clipShape(Capsule())
+        }
+    }
+
+    /// Small trailing capsule with the session's host name (RFC-024). Only
+    /// shows when the user has multiple hosts registered — a solo-host
+    /// setup keeps rows uncluttered.
+    @ViewBuilder
+    private var hostChip: some View {
+        if appState.hosts.count > 1,
+           let raw = session.hostId,
+           let uuid = UUID(uuidString: raw),
+           let host = appState.hosts.first(where: { $0.id == uuid }) {
+            Text(host.name)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .foregroundStyle(.secondary)
+                .background(Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
         }
     }

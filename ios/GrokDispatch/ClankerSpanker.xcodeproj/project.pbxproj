@@ -25,6 +25,7 @@
 		1F42562536B794A48F2FF0B4 /* PhoneMainTabStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0967D24F8E6EF7E6EA50B083 /* PhoneMainTabStrip.swift */; };
 		217A40CE790CA8A921E18F80 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824F5F99CAD6D4621AC0B67E /* SessionRowView.swift */; };
 		218DEA058AB6F3F67BC7D5D5 /* MarkdownLinkResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B94A243B58C5A8B439A2326 /* MarkdownLinkResolver.swift */; };
+		247285EA5396B56AD3B4F97B /* HostSocketPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE919E57E172DEBE65A2F05C /* HostSocketPool.swift */; };
 		24EA637411DB1B2B16FDD1E9 /* GrokDispatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2315C70325F7DED760F60ABF /* GrokDispatchApp.swift */; };
 		269C04AC7F7FEE24FFC43A3C /* DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFD3543FE070072BA74786C /* DiffView.swift */; };
 		274C1E8F0576BB9BAA710096 /* FileViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC78D3A777596858C7DCF92A /* FileViewerRenderer.swift */; };
@@ -52,6 +53,7 @@
 		48EF81BEFF16016F0481783B /* DispatchRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED12B678941A0286FD8609D2 /* DispatchRequest.swift */; };
 		507FC2695AC71D3A633537FA /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824F5F99CAD6D4621AC0B67E /* SessionRowView.swift */; };
 		5099BAA57AAFDF34712F2714 /* HostInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD39D3A401A05FB88D63E7B3 /* HostInstaller.swift */; };
+		51D0EE267E63F3BBDC6AB912 /* HostSocketPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE919E57E172DEBE65A2F05C /* HostSocketPool.swift */; };
 		572B0817E020608D29AE6D0A /* MacSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C9792F7449578EEDD5262EE /* MacSettingsPane.swift */; };
 		5ECC67F3455F65FCBA408451 /* LocalHostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F3B91D1A3D750EF83C5E96 /* LocalHostController.swift */; };
 		613808DEA93FDC7DA947719E /* DispatchRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED12B678941A0286FD8609D2 /* DispatchRequest.swift */; };
@@ -194,6 +196,7 @@
 		EC78D3A777596858C7DCF92A /* FileViewerRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerRenderer.swift; sourceTree = "<group>"; };
 		ED12B678941A0286FD8609D2 /* DispatchRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DispatchRequest.swift; sourceTree = "<group>"; };
 		EDE409D1A0C10B8CAA1D6119 /* QuestionBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionBarView.swift; sourceTree = "<group>"; };
+		EE919E57E172DEBE65A2F05C /* HostSocketPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSocketPool.swift; sourceTree = "<group>"; };
 		F04526ED720B0B6910D5677E /* FileViewerPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerPane.swift; sourceTree = "<group>"; };
 		F35A339E8BAE290BDFDF6DD4 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		F75B309F4A99CE203B9C62AE /* ProjectEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectEditorView.swift; sourceTree = "<group>"; };
@@ -218,6 +221,7 @@
 				5E08811578FCB09EB2E360AD /* APIClient.swift */,
 				EBACA4454D2EE482CAD03E31 /* FolderPicker.swift */,
 				DD39D3A401A05FB88D63E7B3 /* HostInstaller.swift */,
+				EE919E57E172DEBE65A2F05C /* HostSocketPool.swift */,
 				6348CD40338446AD4F318DE8 /* KeychainHelper.swift */,
 				E4F3B91D1A3D750EF83C5E96 /* LocalHostController.swift */,
 				60398E332640794CFD228E9D /* NotificationService.swift */,
@@ -590,6 +594,7 @@
 				0B5F5C3FF9C89354D52B38F7 /* GrokDispatchApp.swift in Sources */,
 				6B7FB6EAF978DDEF27701883 /* HostEndpoint.swift in Sources */,
 				F2288C7346FEC56B93AF3F2A /* HostInstaller.swift in Sources */,
+				51D0EE267E63F3BBDC6AB912 /* HostSocketPool.swift in Sources */,
 				DD2639F0F29B9CB005E76495 /* KeychainHelper.swift in Sources */,
 				B8FB2118028D054B510F47CD /* LocalHostController.swift in Sources */,
 				B221CBEB279AE4A7F026C668 /* MacCommandCenter.swift in Sources */,
@@ -654,6 +659,7 @@
 				24EA637411DB1B2B16FDD1E9 /* GrokDispatchApp.swift in Sources */,
 				DF3AD69275499150FE906FC2 /* HostEndpoint.swift in Sources */,
 				5099BAA57AAFDF34712F2714 /* HostInstaller.swift in Sources */,
+				247285EA5396B56AD3B4F97B /* HostSocketPool.swift in Sources */,
 				7F2DF7D8E260723AB2AF798C /* KeychainHelper.swift in Sources */,
 				5ECC67F3455F65FCBA408451 /* LocalHostController.swift in Sources */,
 				A93DC1EBB7A596B8C1C99C90 /* MacCommandCenter.swift in Sources */,

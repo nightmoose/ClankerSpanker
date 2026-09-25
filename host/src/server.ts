@@ -296,7 +296,7 @@ async function handleHttp(
   // RFC-026: never on token-less routes — a cross-origin page could read them.
   if (corsAllowedFor(path)) {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Grok-Dispatch-Token");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-ClankerSpanker-Token, X-Grok-Dispatch-Token");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   }
   if (method === "OPTIONS") {

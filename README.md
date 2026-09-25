@@ -23,7 +23,7 @@ ClankerSpanker/                 # GitHub name (folder may still be GrokDispatch)
 │   ├── web/                    # Browser UI at /app/
 │   └── scripts/                # launchd + systemd install
 ├── desktop/                    # Electron — Linux laptop command center
-├── ios/GrokDispatch/           # SwiftUI — iOS + Mac native (Mac is the laptop shell)
+├── ios/ClankerSpanker/           # SwiftUI — iOS + Mac native (Mac is the laptop shell)
 ├── docs/
 │   ├── CLIENTS.md              # Who owns which client
 │   └── ARCHITECTURE.md
@@ -54,13 +54,13 @@ Port `8787` is intentional (Bricklayer uses `8791`). Same Mac can run both.
 ### macOS — native app (authoritative Mac UX)
 
 ```bash
-cd ios/GrokDispatch
+cd ios/ClankerSpanker
 ./run-mac.sh
 # or Xcode: scheme ClankerSpanker → destination My Mac (not Designed for iPad)
 ```
 
 Sessions, host install/LaunchAgent, menu bar service, multi-folder projects.  
-Details: `ios/GrokDispatch/RUN-MAC.md`.
+Details: `ios/ClankerSpanker/RUN-MAC.md`.
 
 ### Linux — Electron (`desktop/`)
 
@@ -81,7 +81,7 @@ Open `/app/` with the host token. No local process management.
 ### iPhone
 
 ```bash
-open ios/GrokDispatch/ClankerSpanker.xcodeproj
+open ios/ClankerSpanker/ClankerSpanker.xcodeproj
 # Scheme: ClankerSpankerPhone → your iPhone (unlocked + trusted) → Run
 ```
 

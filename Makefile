@@ -21,5 +21,5 @@ rfc:
 
 # RFC-046: Swift unit tests (macOS only; hosted by the Mac app). Not in `check` — CI is Linux.
 test-swift:
-	cd ios/GrokDispatch && xcodebuild test -project ClankerSpanker.xcodeproj -scheme ClankerSpanker \
+	cd ios/ClankerSpanker && xcodebuild test -project ClankerSpanker.xcodeproj -scheme ClankerSpanker \
 		-destination 'platform=macOS' -derivedDataPath /tmp/ClankerSpanker-tests -quiet

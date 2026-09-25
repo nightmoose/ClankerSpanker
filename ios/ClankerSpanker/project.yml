@@ -21,7 +21,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: GrokDispatch
+      - path: ClankerSpanker
         excludes:
           - Info.plist
           - Info-macOS.plist
@@ -40,14 +40,14 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         # Critical: do not generate+merge Info.plist — ATS for LAN HTTP was lost in the merge.
         GENERATE_INFOPLIST_FILE: NO
-        INFOPLIST_FILE: GrokDispatch/Info.plist
+        INFOPLIST_FILE: ClankerSpanker/Info.plist
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Debug.entitlements
+          CODE_SIGN_ENTITLEMENTS: ClankerSpanker/ClankerSpanker-Debug.entitlements
         Release:
-          CODE_SIGN_ENTITLEMENTS: GrokDispatch/ClankerSpanker-Release.entitlements
+          CODE_SIGN_ENTITLEMENTS: ClankerSpanker/ClankerSpanker-Release.entitlements
     info:
-      path: GrokDispatch/Info.plist
+      path: ClankerSpanker/Info.plist
       properties:
         CFBundleDisplayName: ClankerSpanker
         CFBundleName: ClankerSpankerPhone
@@ -75,7 +75,7 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: GrokDispatch
+      - path: ClankerSpanker
         excludes:
           - Info.plist
           - Info-macOS.plist
@@ -96,7 +96,7 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.developer-tools"
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © nightmoose"
     info:
-      path: GrokDispatch/Info-macOS.plist
+      path: ClankerSpanker/Info-macOS.plist
       properties:
         CFBundleDisplayName: ClankerSpanker
         CFBundleName: ClankerSpanker

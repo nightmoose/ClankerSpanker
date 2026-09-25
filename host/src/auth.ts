@@ -34,11 +34,13 @@ export function isAuthorized(req: IncomingMessage, config: HostConfigFile): bool
   const token = extractBearer(req);
   if (token) return tokensMatch(token, config.hostToken);
 
-  // Also accept X-Grok-Dispatch-Token (handy for WS clients, which cannot set
-  // arbitrary headers in a browser). Named for the old product name; renaming
-  // it breaks every client already holding a token, so it stays for now.
-  const alt = req.headers["x-grok-dispatch-token"];
-  if (typeof alt === "string") return tokensMatch(alt, config.hostToken);
+  // Also accept a token header. `x-clankerspanker-token` is the current name
+  // (RFC-047); `x-grok-dispatch-token` stays accepted so existing clients keep
+  // working. Same constant-time comparison for both.
+  for (const name of ["x-clankerspanker-token", "x-grok-dispatch-token"]) {
+    const alt = req.headers[name];
+    if (typeof alt === "string") return tokensMatch(alt, config.hostToken);
+  }
   return false;
 }
 

@@ -157,7 +157,18 @@ export function publicProfiles(config: HostConfigFile): PublicAgentProfile[] {
     autoApprovalSignatures: p.autoApprovalSignatures,
     mcpServers: publicMcpServers(p.mcpServers),
     hasCredentials: profileHasCredentials(p),
+    autoApprovesTools: p.backend === "antigravity" && antigravityAutoApproves(p.env ?? {}),
   }));
+}
+
+/**
+ * Headless `agy` cannot ask the phone for approval, so Antigravity runs with
+ * `--dangerously-skip-permissions` unless the profile opts out with
+ * `ANTIGRAVITY_REQUIRE_PERMISSIONS=1` (RFC-030). Clients show a warning when true.
+ */
+export function antigravityAutoApproves(env: Record<string, string | undefined>): boolean {
+  const v = (env.ANTIGRAVITY_REQUIRE_PERMISSIONS ?? "").trim().toLowerCase();
+  return !(v === "1" || v === "true");
 }
 
 export function profileHasCredentials(p: AgentProfile): boolean {

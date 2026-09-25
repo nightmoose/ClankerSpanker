@@ -50,6 +50,7 @@ import {
   profileProcessEnv,
   resolveProfile,
   wrapWithProfileSystemPrompt,
+  antigravityAutoApproves,
 } from "../profiles.js";
 import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
@@ -3091,9 +3092,7 @@ export class SessionManager extends EventEmitter {
     this.emitEvent(session, "session.updated", { status: "running", backend: "antigravity" });
 
     const profileEnv = this.profileEnvFor(session);
-    const requirePerms =
-      profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "1" ||
-      profileEnv.ANTIGRAVITY_REQUIRE_PERMISSIONS === "true";
+    const requirePerms = !antigravityAutoApproves(profileEnv);
 
     const profile = this.profileFor(session);
     const runner = new AntigravityRunner({

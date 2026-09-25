@@ -365,6 +365,7 @@ function renderDetail() {
       </div>
       ${d.error ? `<p class="preview" style="color:var(--danger)">${escapeHtml(d.error)}</p>` : ""}
     </div>
+    ${toolRowsHtml(d.toolCalls)}
     <div class="transcript">
       ${transcript.map((t) => `
         <div class="bubble ${t.role === "user" ? "user" : ""}">
@@ -508,37 +509,70 @@ function renderDetail() {
   });
 }
 
+// RFC-050: parity with the Swift composer — profile picker, Gemini warning,
+// project setup on an empty host, remembered project, labeled options.
+const LAST_PROJECT_KEY = "clankerspanker.lastProjectId";
+
 async function renderCompose() {
   const root = $("#view-compose");
-  const profile = state.profiles.find((p) => p.id === state.profileId);
+  const choices = state.profiles.filter((p) => !p.hidden);
+  // Compose keeps its own profile choice so it doesn't filter the session list.
+  if (!state.composeProfileId) state.composeProfileId = state.profileId || choices[0]?.id || null;
+  const profile = state.profiles.find((p) => p.id === state.composeProfileId);
   const isBot = profile?.backend === "bot";
-  const opts = state.projects
-    .filter((p) => !p.archived)
-    .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} — ${escapeHtml(p.path)}</option>`)
+  const isGrok = !profile || profile.backend === "grok";
+  const projects = state.projects.filter((p) => !p.archived);
+  let last = null;
+  try { last = localStorage.getItem(LAST_PROJECT_KEY); } catch { /* private mode */ }
+  const opts = projects
+    .map((p) => `<option value="${escapeAttr(p.id)}" ${p.id === last ? "selected" : ""}>${escapeHtml(p.name)} — ${escapeHtml(p.path)}</option>`)
     .join("");
   root.innerHTML = `
     <div class="card">
       <h3>Dispatch a task</h3>
+      <label class="field" for="c-profile">Agent profile</label>
+      <select id="c-profile">${choices
+        .map((p) => `<option value="${escapeAttr(p.id)}" ${p.id === state.composeProfileId ? "selected" : ""}>${escapeHtml(p.name)} · ${escapeHtml(BACKEND_LABEL[p.backend] || p.backend)}</option>`)
+        .join("")}</select>
+      ${profile?.autoApprovesTools ? `<p class="warn">Runs edits and shell commands without asking. Set ANTIGRAVITY_REQUIRE_PERMISSIONS=1 on this profile to require approval.</p>` : ""}
       ${isBot ? `<p class="preview">Hunter bot — this becomes a normal session. Review the transcript and approve outbound drafts there. Nothing is sent.</p>` : ""}
-      <label class="field">Project</label>
-      <select id="c-project">${opts || `<option value="">(configure projects on host)</option>`}</select>
-      <label class="field">Title (optional)</label>
+      <label class="field" for="c-project">Project</label>
+      ${
+        projects.length
+          ? `<select id="c-project">${opts}</select>
+             <button type="button" class="link" id="c-add-project">+ Add project</button>`
+          : `<p class="preview">No projects on this host yet. Agents need a real folder to work in (not /).</p>
+             <div class="row-actions">
+               <button type="button" class="primary" id="c-import">Import from this host…</button>
+               <button type="button" id="c-add-project">New project…</button>
+             </div>`
+      }
+      <div id="c-project-setup"></div>
+      <label class="field" for="c-title">Title (optional)</label>
       <input id="c-title" placeholder="Short name" />
-      <label class="field">Prompt</label>
+      <label class="field" for="c-prompt">Prompt</label>
       <textarea id="c-prompt" placeholder="What should the agent do?"></textarea>
       ${
-        isBot
-          ? ""
-          : `<label class="field"><input type="checkbox" id="c-plan" checked /> Plan mode</label>
-      <label class="field"><input type="checkbox" id="c-wt" checked /> Worktree</label>`
+        isGrok
+          ? `<label class="check"><input type="checkbox" id="c-plan" /> Plan mode first (read-only until you approve)</label>
+             <label class="check"><input type="checkbox" id="c-wt" /> Isolated git worktree</label>`
+          : ""
       }
       <button type="button" class="primary" id="c-go" style="width:100%;margin-top:12px">Spank a clanker</button>
     </div>`;
+
+  $("#c-profile")?.addEventListener("change", (e) => {
+    state.composeProfileId = e.target.value;
+    renderCompose();
+  });
+  $("#c-import")?.addEventListener("click", () => importProjectsUI());
+  $("#c-add-project")?.addEventListener("click", () => newProjectUI());
+
   if (isBot) {
     try {
       const res = await api("/bots");
       const bot =
-        (res.bots || []).find((b) => b.profileId === state.profileId) || (res.bots || [])[0];
+        (res.bots || []).find((b) => b.profileId === state.composeProfileId) || (res.bots || [])[0];
       if (bot) {
         const ta = $("#c-prompt");
         if (ta && !ta.value.trim()) ta.value = bot.job;
@@ -555,24 +589,104 @@ async function renderCompose() {
       banner("Write a prompt first", true);
       return;
     }
+    const projectId = $("#c-project")?.value || undefined;
+    if (!projectId) {
+      banner("Pick or add a project first", true);
+      return;
+    }
     try {
       const detail = await api("/dispatch", {
         method: "POST",
         body: JSON.stringify({
           prompt,
-          projectId: $("#c-project").value || undefined,
+          projectId,
           title: $("#c-title").value.trim() || undefined,
           planMode: $("#c-plan")?.checked ?? false,
           worktree: $("#c-wt")?.checked ?? false,
           subagents: true,
-          profileId: state.profileId || undefined,
+          profileId: state.composeProfileId || undefined,
         }),
       });
+      try { localStorage.setItem(LAST_PROJECT_KEY, projectId); } catch { /* private mode */ }
       banner("Dispatched");
       state.tab = "active";
       syncTabs();
       await refresh();
       openSession(detail.id);
+    } catch (e) {
+      banner(e.message, true);
+    }
+  });
+}
+
+async function reloadProjects(selectId) {
+  const res = await api("/projects").catch(() => ({ projects: [] }));
+  state.projects = res.projects || [];
+  if (selectId) {
+    try { localStorage.setItem(LAST_PROJECT_KEY, selectId); } catch { /* private mode */ }
+  }
+  renderCompose();
+}
+
+/** Discover git repos on the host and pick which to add (RFC-036/050). */
+async function importProjectsUI() {
+  const box = $("#c-project-setup");
+  box.innerHTML = `<p class="preview">Scanning…</p>`;
+  let candidates = [];
+  try {
+    candidates = (await api("/projects/discover", { method: "POST", body: "{}" })).projects || [];
+  } catch (e) {
+    box.innerHTML = `<p class="warn">${escapeHtml(e.message)}</p>`;
+    return;
+  }
+  if (!candidates.length) {
+    box.innerHTML = `<p class="preview">This host didn't suggest any folders. Use New project… and type a path.</p>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="card inset">
+      ${candidates
+        .map((c, i) => `<label class="check"><input type="checkbox" id="imp-${i}" checked /> ${escapeHtml(c.name)} <span class="meta">${escapeHtml(c.path)}</span></label>`)
+        .join("")}
+      <button type="button" class="primary" id="imp-go">Import selected</button>
+    </div>`;
+  $("#imp-go").addEventListener("click", async () => {
+    let first = null;
+    for (const [i, c] of candidates.entries()) {
+      if (!$(`#imp-${i}`).checked) continue;
+      try {
+        const r = await api("/projects", { method: "POST", body: JSON.stringify({ id: c.id, name: c.name, paths: c.paths || [c.path] }) });
+        first = first || r.project?.id;
+      } catch (e) {
+        banner(e.message, true);
+      }
+    }
+    await reloadProjects(first);
+  });
+}
+
+/** Add one project by name + absolute path (RFC-050). */
+function newProjectUI() {
+  const box = $("#c-project-setup");
+  box.innerHTML = `
+    <div class="card inset">
+      <label class="field" for="np-name">Name</label>
+      <input id="np-name" placeholder="e.g. Bricklayer" />
+      <label class="field" for="np-path">Folder on the host</label>
+      <input id="np-path" placeholder="~/Projects/my-repo" />
+      <button type="button" class="primary" id="np-go">Add project</button>
+    </div>`;
+  $("#np-go").addEventListener("click", async () => {
+    const name = $("#np-name").value.trim();
+    const path = $("#np-path").value.trim();
+    if (!name || !path) {
+      banner("Name and folder are both needed", true);
+      return;
+    }
+    try {
+      const r = await api("/projects", { method: "POST", body: JSON.stringify({ name, paths: [path] }) });
+      if (r.warnings?.length) banner(r.warnings.join("; "));
+      await reloadProjects(r.project?.id);
     } catch (e) {
       banner(e.message, true);
     }
@@ -1333,6 +1447,25 @@ async function connectWs() {
 function syncTabs() {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === state.tab));
   $("#btn-archived")?.classList.toggle("active", state.showArchived);
+}
+
+/** Recent tool calls with output tail + exit code (RFC-040/050). Newest first. */
+function toolRowsHtml(tools) {
+  const list = [...(tools || [])].slice(-12).reverse();
+  if (!list.length) return "";
+  return `<details class="card tools" open>
+    <summary>Tools (${(tools || []).length})</summary>
+    ${list
+      .map(
+        (t) => `<div class="tool">
+          <div class="tool-head"><span>${escapeHtml(t.title || "Tool")}</span>
+            ${typeof t.exitCode === "number" && t.exitCode !== 0 ? `<span class="exit">exit ${t.exitCode}</span>` : ""}
+            <span class="meta">${escapeHtml(t.status || "")}</span></div>
+          ${t.outputPreview ? `<pre class="${t.exitCode ? "fail" : ""}">${escapeHtml(t.outputPreview)}</pre>` : ""}
+        </div>`,
+      )
+      .join("")}
+  </details>`;
 }
 
 /** Diff or command the approval will run (RFC-033). */

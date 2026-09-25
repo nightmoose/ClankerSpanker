@@ -2,6 +2,13 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-041 toolbar labels
+
+Mac toolbar buttons were bare SF Symbols (VoiceOver read "server.rack",
+overflow menu showed no text). Now `Label`s; verified in the AX tree.
+
+---
+
 ## Run: 2026-09-25 — RFC-040 tool output in rows
 
 Tool rows said only "done". Host now keeps a short output tail + exit

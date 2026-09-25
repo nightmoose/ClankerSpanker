@@ -46,3 +46,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 038 | [Session list status follows live events](rfcs/038-live-list-status.md) | Shipped | `nightly-maintenance-2026-09-25-rfc038-live-list-status` |
 | 039 | [Mac composer + project form fixes](rfcs/039-mac-composer-fixes.md) | Shipped | `nightly-maintenance-2026-09-25-rfc039-mac-composer-fixes` |
 | 040 | [Tool rows show command output and exit code](rfcs/040-tool-output.md) | Shipped | `nightly-maintenance-2026-09-25-rfc040-tool-output` |
+| 041 | [Mac toolbar buttons have names](rfcs/041-toolbar-labels.md) | Shipped | `nightly-maintenance-2026-09-25-rfc041-toolbar-labels` |

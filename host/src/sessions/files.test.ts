@@ -171,9 +171,12 @@ describe("RFC-023: PDF mime + new-in-cwd surfacing", () => {
     writeFileSync(oldFile, "before");
     const oneHourAgo = new Date(Date.now() - 60 * 60_000);
     utimesSync(oldFile, oneHourAgo, oneHourAgo);
-    // File written AFTER session start — must appear.
+    // Session starts first; the file is written AFTER it — must appear.
+    // (Creating the session after the write made this pass only when both
+    // landed in the same millisecond — flaky on Linux CI.)
+    const started = new Date(Date.now() - 1_000).toISOString();
+    const s = session(cwd, { createdAt: started, updatedAt: started });
     writeFileSync(join(cwd, "sketch.pdf"), "not-really-pdf");
-    const s = session(cwd);
     const files = listSessionFiles(s, config(dataDir));
     const paths = files.map((f) => f.path);
     expect(paths.some((p) => p.endsWith("sketch.pdf"))).toBe(true);

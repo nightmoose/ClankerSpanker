@@ -54,6 +54,7 @@ import {
 } from "../profiles.js";
 import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
 import { approvalPreview } from "../approval-preview.js";
+import { toolOutputSummary } from "../tool-output.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
@@ -3788,6 +3789,7 @@ export class SessionManager extends EventEmitter {
             rawInput: update.rawInput,
             locations: update.locations as ToolCallRecord["locations"],
             content: update.content,
+            ...toolOutputSummary(update.content, update.rawOutput),
             updatedAt: now(),
           };
           const idx = session.toolCalls.findIndex((t) => t.toolCallId === record.toolCallId);
@@ -3810,6 +3812,12 @@ export class SessionManager extends EventEmitter {
             if (update.locations) existing.locations = update.locations as ToolCallRecord["locations"];
             if (update.title) existing.title = String(update.title);
             if (update.kind) existing.kind = String(update.kind);
+            // RFC-040: keep a short tail of command output + exit code.
+            if (update.content || update.rawOutput) {
+              const summary = toolOutputSummary(existing.content, update.rawOutput);
+              if (summary.outputPreview !== undefined) existing.outputPreview = summary.outputPreview;
+              if (summary.exitCode !== undefined) existing.exitCode = summary.exitCode;
+            }
             existing.updatedAt = now();
           }
           session.updatedAt = now();

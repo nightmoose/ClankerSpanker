@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-055 Grok ACP inbound handling split out
+
+Phase C of the SessionManager split: the Grok `session/update` /
+permission / questionnaire / plan-exit handlers moved to
+`acp/runners/grok-events.ts` with 10 direct tests. `session-manager.ts`
+3,489 → 3,028 lines. No behaviour change; live Grok approval smoke passed.
+
+---
+
 ## Run: 2026-09-25 — RFC-054 Claude MCP config uses `type`
 
 Claude rejected the generated `.mcp.json` (`transport: "http"`), so every

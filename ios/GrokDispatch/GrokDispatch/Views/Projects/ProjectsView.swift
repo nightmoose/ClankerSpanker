@@ -769,7 +769,7 @@ struct ProjectsView: View {
 
 /// Simple "pick which to add" list surfaced by the /projects/discover endpoint.
 /// User taps rows to toggle inclusion, then Import creates them.
-private struct ProjectImportSheet: View {
+struct ProjectImportSheet: View {
     let candidates: [ProjectInfo]
     let host: HostEndpoint
     var onDone: () -> Void

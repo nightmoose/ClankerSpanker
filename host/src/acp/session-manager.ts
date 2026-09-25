@@ -53,6 +53,7 @@ import {
   antigravityAutoApproves,
 } from "../profiles.js";
 import { isAuthFailureMessage, isMcpOAuthRequiredMessage, mcpOAuthRequiredHost } from "../login.js";
+import { approvalPreview } from "../approval-preview.js";
 import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
@@ -1490,6 +1491,7 @@ export class SessionManager extends EventEmitter {
       createdAt: approval.createdAt,
       expiresAt: expiresInIso(DEFAULT_APPROVAL_TTL_MS),
       rawInput: body.toolInput,
+      preview: approvalPreview(body.toolInput),
     };
 
     // Park on session for phone UI even without ACP live client
@@ -4166,6 +4168,7 @@ export class SessionManager extends EventEmitter {
       kind: toolCall.kind,
       rawInput: toolCall.rawInput,
       locations: toolCall.locations,
+      preview: approvalPreview(toolCall.rawInput, (toolCall as { content?: unknown }).content),
       options,
       createdAt: now(),
       expiresAt: expiresInIso(DEFAULT_APPROVAL_TTL_MS),

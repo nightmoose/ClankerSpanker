@@ -73,6 +73,7 @@ export class SessionStore {
     return {
       id: s.id,
       grokSessionId: s.grokSessionId,
+      grokHomeLabel: s.grokHomeLabel,
       title: s.title,
       prompt: s.prompt,
       cwd: s.cwd,

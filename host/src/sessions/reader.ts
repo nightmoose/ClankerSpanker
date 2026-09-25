@@ -20,6 +20,10 @@ export interface DiskSessionHint {
   model?: string;
   /** Absolute path to Claude jsonl when source=claude */
   transcriptPath?: string;
+  /** Grok home the session was found in, its label, and owning profile (RFC-048). */
+  grokHome?: string;
+  grokHomeLabel?: string;
+  profileId?: string;
 }
 
 /** Decode a Grok sessions group dir (`%2FUsers%2F…`) or a raw path. */

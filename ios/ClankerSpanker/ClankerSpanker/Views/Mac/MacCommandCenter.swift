@@ -913,6 +913,17 @@ private struct MacSessionRow: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(DispatchColors.accent)
                 }
+                if let home = session.grokHomeLabel, !home.isEmpty {
+                    // RFC-048: this Grok chat lives in another Grok home (e.g. the TUI's ~/.grok).
+                    Text(home)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .foregroundStyle(.secondary)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                        .help("Grok session stored in \(home); it resumes there.")
+                }
                 if let badge = SessionCreditMeter.badge(for: session.creditsUsedDeltaPct) {
                     Text(badge.label)
                         .font(.caption2.weight(.bold))

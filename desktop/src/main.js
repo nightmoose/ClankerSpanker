@@ -24,7 +24,7 @@ const {
   setActiveHost,
   updateActiveHostToken,
 } = require("./config-store");
-const { HostWsMonitor } = require("./host-ws");
+const { HostWsPool } = require("./host-ws-pool");
 const { HostProcessManager } = require("./host-process");
 const {
   ensureHostConfig,
@@ -40,10 +40,18 @@ const hostInstaller = require("./host-installer.js");
 let mainWindow = null;
 /** @type {Tray | null} */
 let tray = null;
-/** @type {'offline' | 'connecting' | 'live'} */
+/**
+ * RFC-025: aggregate connection status derived from `connStatusByHost`.
+ * `connStatus` is the "worst" state — offline > connecting > live so a
+ * single dead host doesn't hide a healthy one, and a single live host
+ * shows the tray as live for the whole pool.
+ * @type {'offline' | 'connecting' | 'live'}
+ */
 let connStatus = "offline";
-/** @type {HostWsMonitor | null} */
-let monitor = null;
+/** @type {Map<string, 'offline' | 'connecting' | 'live'>} */
+const connStatusByHost = new Map();
+/** @type {HostWsPool | null} */
+let wsPool = null;
 const hostProc = new HostProcessManager();
 
 const isLinux = process.platform === "linux";
@@ -88,16 +96,23 @@ function syncTokenFromHostFile() {
 
 function effectiveConnection() {
   const active = getActiveHost();
-  if (!active) return { hostURL: "", token: "" };
-  if (active.mode === "managed") {
+  return connectionFor(active);
+}
+
+/** Resolve `{hostURL, token}` for any host record (managed or remote).
+ *  Multi-host callers (`syncPool`, notification handlers) need this for
+ *  hosts that aren't the currently active one. */
+function connectionFor(host) {
+  if (!host) return { hostURL: "", token: "" };
+  if (host.mode === "managed") {
     const { config } = readHostConfig();
     const port = config?.bindPort || 8787;
     return {
       hostURL: `http://127.0.0.1:${port}`,
-      token: active.token || config?.hostToken || "",
+      token: host.token || config?.hostToken || "",
     };
   }
-  return { hostURL: active.hostURL, token: active.token };
+  return { hostURL: host.hostURL || "", token: host.token || "" };
 }
 
 function createMainWindow() {
@@ -146,25 +161,41 @@ function showMain() {
   win.focus();
 }
 
-function focusSession(sessionId) {
+function focusSession(sessionId, hostId) {
   showMain();
-  if (sessionId) sendToRenderer("session:focus", { sessionId });
+  if (sessionId) sendToRenderer("session:focus", { sessionId, hostId });
 }
 
-function setConnStatus(status) {
-  connStatus = status;
+/** Per-host WS status update from the pool. Recomputes aggregate for the tray. */
+function setHostConnStatus(hostId, status) {
+  connStatusByHost.set(hostId, status);
+  const values = Array.from(connStatusByHost.values());
+  const anyLive = values.includes("live");
+  const anyConnecting = values.includes("connecting");
+  connStatus = anyLive ? "live" : anyConnecting ? "connecting" : "offline";
   updateTrayMenu();
-  sendToRenderer("host:ws-status", { status });
+  sendToRenderer("host:ws-status", {
+    status: connStatus,
+    perHost: Object.fromEntries(connStatusByHost),
+  });
 }
 
-function notify(title, body, sessionId, meta) {
+/** RFC-025: notifications originate from a specific host; every payload
+ *  carries `hostId` so the renderer can route the resulting REST call to
+ *  the owning host instead of falling back to the active one. */
+function notify(hostId, title, body, sessionId, meta) {
   if (!Notification.isSupported()) return;
+  const hosts = loadConfig().hosts || [];
+  const host = hosts.find((h) => h.id === hostId);
+  const multiHost = hosts.length > 1;
+  const hostLabel = host?.name || "host";
   // macOS Notification supports inline "actions"; Linux libnotify does not
   // via Electron's built-in API. On both platforms the click still routes
-  // to the session, and the (enriched) body carries the "what" so the user
-  // can decide without opening.
+  // to the session (with the correct hostId).
   const opts = {
-    title: `ClankerSpanker — ${title}`,
+    title: multiHost
+      ? `ClankerSpanker — ${title} · ${hostLabel}`
+      : `ClankerSpanker — ${title}`,
     body,
     icon: iconPath(),
     silent: false,
@@ -173,11 +204,12 @@ function notify(title, body, sessionId, meta) {
     opts.actions = [{ type: "button", text: "Approve" }, { type: "button", text: "Reject" }];
   }
   const n = new Notification(opts);
-  n.on("click", () => focusSession(sessionId));
+  n.on("click", () => focusSession(sessionId, hostId));
   if (isMac && meta?.kind === "approval" && meta.approvalId && sessionId) {
     n.on("action", (_e, idx) => {
       showMain();
       sendToRenderer("session:approval-action", {
+        hostId,
         sessionId,
         approvalId: meta.approvalId,
         action: idx === 0 ? "approve" : "reject",
@@ -201,7 +233,7 @@ function updateTrayMenu() {
     click: () => {
       setActiveHost(h.id);
       pushDesktopConfig();
-      startMonitor();
+      syncPool();
       updateTrayMenu();
     },
   }));
@@ -250,20 +282,30 @@ function createTray() {
   updateTrayMenu();
 }
 
-function startMonitor() {
-  if (monitor) monitor.stop();
-  monitor = new HostWsMonitor({
-    getConfig: () => {
-      const c = effectiveConnection();
-      return { ...c, notifications: loadConfig().notifications !== false };
-    },
-    onStatus: setConnStatus,
-    onNotify: notify,
-    onEvent: (event) => sendToRenderer("host:event", { event }),
+/** RFC-025: reconcile the WS pool to the current host list. Replaces
+ *  the pre-RFC single-monitor `startMonitor()` that only observed the
+ *  active host. */
+function syncPool() {
+  if (!wsPool) {
+    wsPool = new HostWsPool({
+      onStatus: setHostConnStatus,
+      onNotify: notify,
+      onEvent: (hostId, event) => sendToRenderer("host:event", { hostId, event }),
+      notificationsEnabled: () => loadConfig().notifications !== false,
+    });
+  }
+  const hosts = loadConfig().hosts || [];
+  // Drop stale per-host statuses for hosts that were removed.
+  const currentIds = new Set(hosts.map((h) => h.id));
+  for (const id of Array.from(connStatusByHost.keys())) {
+    if (!currentIds.has(id)) connStatusByHost.delete(id);
+  }
+  wsPool.sync(hosts, (id) => {
+    const host = hosts.find((h) => h.id === id);
+    return connectionFor(host);
   });
-  const c = effectiveConnection();
-  if (c.hostURL && c.token) monitor.start();
-  else setConnStatus("offline");
+  // If no hosts are configured, keep the aggregate at offline.
+  if (!hosts.length) setHostConnStatus("__none__", "offline");
   updateTrayMenu();
 }
 
@@ -283,7 +325,7 @@ async function ipcStartHost() {
       await new Promise((r) => setTimeout(r, 250));
     }
     syncTokenFromHostFile();
-    startMonitor();
+    syncPool();
   }
   sendToRenderer("host:process", hostProc.snapshot());
   updateTrayMenu();
@@ -292,7 +334,7 @@ async function ipcStartHost() {
 
 async function ipcStopHost(force) {
   const result = await hostProc.stop({ force: Boolean(force) });
-  startMonitor();
+  syncPool();
   sendToRenderer("host:process", hostProc.snapshot());
   updateTrayMenu();
   return result;
@@ -302,25 +344,39 @@ function registerIpc() {
   ipcMain.handle("desktop:get-config", () => loadConfig());
   ipcMain.handle("desktop:save-config", (_e, partial) => {
     const next = saveConfig(partial || {});
-    startMonitor();
+    syncPool();
     updateTrayMenu();
     pushDesktopConfig();
     return next;
   });
   ipcMain.handle("desktop:connection", () => effectiveConnection());
+  /** RFC-025: per-host connections for the renderer's fan-out. Returns a
+   *  plain object `{[hostId]: {hostURL, token}}` covering every configured
+   *  host, including remotes and the managed local (which mixes in the
+   *  gateway config's bindPort/hostToken). */
+  ipcMain.handle("desktop:connections", () => {
+    const hosts = loadConfig().hosts || [];
+    /** @type {Record<string, {hostURL: string, token: string, mode?: string}>} */
+    const out = {};
+    for (const h of hosts) {
+      const conn = connectionFor(h);
+      out[h.id] = { ...conn, mode: h.mode || "remote" };
+    }
+    return out;
+  });
 
   ipcMain.handle("desktop:host-save", (_e, patch) => {
     const next = upsertHost(patch || {});
     const active = getActiveHost();
     if (active?.mode === "managed") syncTokenFromHostFile();
-    startMonitor();
+    syncPool();
     updateTrayMenu();
     pushDesktopConfig();
     return next;
   });
   ipcMain.handle("desktop:host-remove", (_e, id) => {
     const next = removeHost(id);
-    startMonitor();
+    syncPool();
     updateTrayMenu();
     pushDesktopConfig();
     return next;
@@ -329,7 +385,7 @@ function registerIpc() {
     const next = setActiveHost(id);
     const active = getActiveHost();
     if (active?.mode === "managed") syncTokenFromHostFile();
-    startMonitor();
+    syncPool();
     updateTrayMenu();
     pushDesktopConfig();
     return next;
@@ -387,7 +443,7 @@ function registerIpc() {
         await ipcStartHost();
         probe = await hostProc.probe(conn.hostURL);
       }
-      startMonitor();
+      syncPool();
       pushDesktopConfig();
       return { ok: true, ...result, logs, probe };
     } catch (e) {
@@ -451,14 +507,14 @@ function registerIpc() {
   ipcMain.handle("host:save-config", (_e, patch) => {
     const published = writeHostConfigPatch(patch || {});
     syncTokenFromHostFile();
-    startMonitor();
+    syncPool();
     return { ok: true, config: published, path: hostConfigPath() };
   });
 
   ipcMain.handle("host:regenerate-token", () => {
     const token = regenerateHostToken();
     syncTokenFromHostFile();
-    startMonitor();
+    syncPool();
     return { ok: true, token };
   });
 
@@ -654,7 +710,7 @@ hostProc.on("log", (line) => {
 hostProc.on("exit", () => {
   sendToRenderer("host:process", hostProc.snapshot());
   updateTrayMenu();
-  startMonitor();
+  syncPool();
 });
 
 app.whenReady().then(async () => {
@@ -691,7 +747,7 @@ app.whenReady().then(async () => {
     }
   }
 
-  startMonitor();
+  syncPool();
   updateTrayMenu();
   console.log(`[desktop] shell config: ${configPath()}`);
   console.log(`[desktop] host config:  ${hostConfigPath()}`);
@@ -701,7 +757,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", async (e) => {
   app.isQuitting = true;
-  monitor?.stop();
+  wsPool?.stop();
   const desktop = loadConfig();
   if (desktop.stopHostOnQuit !== false && hostProc.startedByUs && hostProc.isRunning()) {
     e.preventDefault();

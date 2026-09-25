@@ -2,6 +2,12 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-045 dev-dependency audit
+
+vitest 5 + nanoid fix; `npm audit` 3 → 0 in `host/`. 350 tests green.
+
+---
+
 ## Run: 2026-09-25 — RFC-044 OpenAPI contract test
 
 34 of 61 routes were missing from `shared/openapi.yaml`. Added a vitest

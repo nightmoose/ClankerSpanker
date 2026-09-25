@@ -663,6 +663,7 @@ function renderSessionList() {
             ${projectNameFor(s) ? `<span>${escapeHtml(projectNameFor(s))}</span>` : ""}
             <span>${escapeHtml(shortPath(s.cwd))}</span>
             ${s.isLive ? "<span>live</span>" : ""}
+            ${s.grokHomeLabel ? `<span class="badge" title="Grok session stored in ${escapeHtml(s.grokHomeLabel)}; it resumes there.">${escapeHtml(s.grokHomeLabel)}</span>` : ""}
             ${creditBadge(s)}
           </div>
           <div class="preview">${escapeHtml(s.transcriptPreview || s.prompt || "")}</div>

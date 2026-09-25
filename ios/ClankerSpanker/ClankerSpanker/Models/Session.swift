@@ -250,6 +250,8 @@ extension Color {
 struct SessionSummary: Codable, Identifiable, Hashable, Sendable {
     let id: String
     var grokSessionId: String?
+    /// Set when a Grok session lives outside its profile's home, e.g. "~/.grok" (RFC-048).
+    var grokHomeLabel: String?
     var title: String
     var prompt: String
     var cwd: String

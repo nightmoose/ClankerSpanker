@@ -67,14 +67,25 @@
         return { cols: 80, rows: 24 };
       }
 
-      function wsUrlFromPage(token, cols, rows) {
+      function wsUrlFromPage(ticket, cols, rows) {
         const loc = window.location;
         const proto = loc.protocol === "https:" ? "wss:" : "ws:";
         const u = new URL("/ws/terminal", proto + "//" + loc.host);
-        if (token) u.searchParams.set("token", token);
+        if (ticket) u.searchParams.set("ticket", ticket);
         u.searchParams.set("cols", String(cols));
         u.searchParams.set("rows", String(rows));
         return u.toString();
+      }
+
+      // RFC-029: trade the host token for a single-use ticket; the token
+      // itself never goes into the WebSocket URL.
+      async function fetchTicket(token) {
+        const res = await fetch("/ws/ticket", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token },
+        });
+        if (!res.ok) throw new Error(res.status === 401 ? "unauthorized" : "ticket " + res.status);
+        return (await res.json()).ticket;
       }
 
       let socket = null;
@@ -88,17 +99,25 @@
         }
       }
 
-      window.startClankerTerminal = function startClankerTerminal(cfg) {
+      window.startClankerTerminal = async function startClankerTerminal(cfg) {
         cfg = cfg || {};
         const hash = new URLSearchParams((location.hash || "").replace(/^#/, ""));
         const token = cfg.token || hash.get("token") || "";
         const { cols, rows } = measure();
         try { term.resize(cols, rows); } catch (e) { /* */ }
-        const url = cfg.wsUrl || wsUrlFromPage(token, term.cols, term.rows);
         if (socket) {
           try { socket.close(); } catch (e) { /* */ }
         }
         setStatus("connecting…");
+        let url = cfg.wsUrl;
+        if (!url) {
+          try {
+            url = wsUrlFromPage(token ? await fetchTicket(token) : "", term.cols, term.rows);
+          } catch (e) {
+            setStatus(String(e && e.message) === "unauthorized" ? "unauthorized" : "disconnected", false);
+            return;
+          }
+        }
         const ws = new WebSocket(url);
         socket = ws;
         ws.onopen = function () {

@@ -15,6 +15,13 @@ paths:
         Returns { hostId, name, version, bindPort }. hostId is minted on
         first boot and persisted in config.json.
       security: [{ bearerAuth: [] }]
+  /ws/ticket:
+    post:
+      summary: |
+        Single-use WebSocket ticket, valid 30 s (RFC-029). Returns
+        { ticket, expiresInMs }. Connect with /ws?ticket=… or
+        /ws/terminal?ticket=… instead of putting the host token in the URL.
+      security: [{ bearerAuth: [] }]
   /auth/validate:
     post:
       summary: Validate host token
@@ -111,10 +118,10 @@ paths:
       security: [{ bearerAuth: [] }]
   /ws:
     get:
-      summary: WebSocket event stream (?token=)
+      summary: WebSocket event stream. Auth header, or ?ticket= from POST /ws/ticket (RFC-029). ?token= only from the host machine.
   /ws/terminal:
     get:
-      summary: Interactive host PTY (login shell). Same host token as /ws (?token=). JSON frames in/out/resize.
+      summary: Interactive host PTY (login shell). Same auth as /ws (header or ?ticket=). JSON frames in/out/resize.
   /app/terminal.html:
     get:
       summary: xterm.js page for the host terminal (static; socket is the auth gate)

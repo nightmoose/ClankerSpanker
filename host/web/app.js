@@ -1257,7 +1257,7 @@ async function refresh() {
   }
 }
 
-function connectWs() {
+async function connectWs() {
   if (state.ws) {
     try {
       state.ws.close();
@@ -1267,10 +1267,13 @@ function connectWs() {
   }
   if (!state.token) return;
   try {
+    // RFC-029: never put the host token in the WebSocket URL — trade it for
+    // a single-use ticket first.
+    const { ticket } = await api("/ws/ticket", { method: "POST" });
     const u = new URL(state.baseURL);
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     u.pathname = "/ws";
-    u.search = `token=${encodeURIComponent(state.token)}`;
+    u.search = `ticket=${encodeURIComponent(ticket)}`;
     const ws = new WebSocket(u.toString());
     state.ws = ws;
     ws.onopen = () => setConn(true);

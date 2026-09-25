@@ -1107,9 +1107,10 @@ function renderToolRow(t) {
   return `<div class="tool-row ${statusCls}">
     <span class="tool-ico">${toolIconSvg(t.kind, t.title)}</span>
     <span class="tool-title">${escapeHtml(t.title || t.kind || "tool")}</span>
-    ${path ? `<button type="button" class="tool-path" data-open-path="${escapeAttr(path)}">${escapeHtml(path)}</button>` : ""}
+    ${path && !String(t.title || "").includes(path) ? `<button type="button" class="tool-path" data-open-path="${escapeAttr(path)}">${escapeHtml(path)}</button>` : ""}
+    ${typeof t.exitCode === "number" && t.exitCode !== 0 ? `<span class="tool-exit">exit ${t.exitCode}</span>` : ""}
     <span class="tool-status ${statusCls}">${escapeHtml(statusLabel)}</span>
-  </div>`;
+  </div>${t.outputPreview ? `<pre class="tool-output ${t.exitCode ? "fail" : ""}">${escapeHtml(t.outputPreview)}</pre>` : ""}`;
 }
 
 function renderToolsTab(d) {
@@ -2102,10 +2103,12 @@ function renderCompose() {
       <div class="card">
         <h3>Dispatch a task</h3>
         <p class="hint">Runs on the host machine under ${escapeHtml(profile?.name || "default profile")}${profile?.backend ? ` · ${escapeHtml(profile.backend)}` : ""}.${isBot ? " This is a hunter bot: dispatch opens a normal session — review the transcript and approve outbound drafts there. Nothing is sent." : ""}</p>
+        ${profile?.autoApprovesTools ? `<p class="warn">Runs edits and shell commands without asking. Set ANTIGRAVITY_REQUIRE_PERMISSIONS=1 on this profile to require approval.</p>` : ""}
         <label class="field">Project</label>
         <div class="row-inline">
           <select id="c-project"><option value="">—</option>${opts}</select>
-          <button type="button" class="secondary" id="c-add-folder">Add folder…</button>
+          <button type="button" class="secondary" id="c-import">Import from host…</button>
+          ${activeHostIsLocal() ? `<button type="button" class="secondary" id="c-add-folder" title="Pick a folder on this machine">Add folder…</button>` : ""}
         </div>
         <label class="field">Custom cwd (optional)</label>
         <input id="c-cwd" placeholder="/absolute/path when host allows custom paths" value="${escapeAttr(draft.cwd || "")}" />
@@ -2187,6 +2190,10 @@ function renderCompose() {
       (state.composeDraft.extraDirs || []).splice(i, 1);
       renderCompose();
     });
+  });
+  $("#c-import")?.addEventListener("click", async () => {
+    await discoverAndImport();
+    renderCompose();
   });
   $("#c-add-folder")?.addEventListener("click", async () => {
     const dir = await window.clanker.pickDirectory();
@@ -2556,6 +2563,21 @@ async function renderProjects() {
   });
   $("#p-new")?.addEventListener("click", () => editProject(null));
   $("#p-discover")?.addEventListener("click", async () => {
+    await discoverAndImport();
+    renderProjects();
+  });
+  root.querySelectorAll("[data-compose-project]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.composeDraft.projectId = btn.getAttribute("data-compose-project");
+      setNav("compose");
+    });
+  });
+  bindProjectEditButtons(root);
+}
+
+/** RFC-050: pick git repos the host found (Projects tab and Compose). */
+async function discoverAndImport() {
     try {
       const res = await Api.discoverProjects();
       const cands = res.projects || [];
@@ -2579,18 +2601,12 @@ async function renderProjects() {
       }
       banner(`Imported ${idxs.length}`);
       await refreshSessions();
-      renderProjects();
     } catch (e) {
       banner(e.message, true);
     }
-  });
-  root.querySelectorAll("[data-compose-project]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      state.composeDraft.projectId = btn.getAttribute("data-compose-project");
-      setNav("compose");
-    });
-  });
+}
+
+function bindProjectEditButtons(root) {
   root.querySelectorAll("[data-edit-project]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4116,4 +4132,20 @@ function approvalPreviewHtml(p) {
     <pre>${lines.join("")}</pre>
     ${p.truncated ? `<div class="meta">Preview truncated.</div>` : ""}
   </div>`;
+}
+
+
+/** RFC-050: the folder picker browses THIS machine — only offer it for a local host. */
+function activeHostIsLocal() {
+  const d = state.desktopConfig;
+  const hosts = Array.isArray(d?.hosts) ? d.hosts : [];
+  const active = hosts.find((h) => h.id === d?.activeHostId) || hosts[0];
+  const url = String(active?.hostURL || "");
+  if (!url) return true;
+  try {
+    const h = new URL(url).hostname;
+    return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]";
+  } catch {
+    return true;
+  }
 }

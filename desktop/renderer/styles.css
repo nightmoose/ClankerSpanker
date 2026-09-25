@@ -1086,3 +1086,9 @@ button.tool-path {
 
 /* RFC-048: Grok home label on session cards */
 .badge { display:inline-block; font-size:11px; font-weight:600; padding:1px 6px; border-radius:999px; color:#a1a1aa; background:rgba(161,161,170,0.15); }
+
+/* RFC-050 parity */
+.tool-exit { color:#ff6b7a; font-weight:700; font-size:11px; }
+pre.tool-output { margin:2px 0 6px 28px; font:11px/1.4 ui-monospace, Menlo, monospace; color:#a1a1aa; white-space:pre-wrap; }
+pre.tool-output.fail { color:#ff6b7a; }
+.warn { color:#f5a524; font-size:12px; margin:4px 0; }

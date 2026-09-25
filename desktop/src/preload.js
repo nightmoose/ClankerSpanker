@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("clanker", {
   getDesktopConfig: () => ipcRenderer.invoke("desktop:get-config"),
   saveDesktopConfig: (partial) => ipcRenderer.invoke("desktop:save-config", partial),
   getConnection: () => ipcRenderer.invoke("desktop:connection"),
+  /** RFC-025: per-host connection map for renderer fan-out. */
+  getConnections: () => ipcRenderer.invoke("desktop:connections"),
 
   // Multi-host registry
   saveHost: (patch) => ipcRenderer.invoke("desktop:host-save", patch),

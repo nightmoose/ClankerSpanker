@@ -22,6 +22,7 @@
 		18D0964AD3BBC7AF01241A60 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683082A20E1800578F7CFF3B /* WebSocketClient.swift */; };
 		193451355AD2BCEBB041F9BF /* Bot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D99FD98B5B34D623D18B2396 /* Bot.swift */; };
 		1AB86FB490EB2B5CEC3F2CC0 /* SessionNotesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47843CC758EC1A51C630D6C /* SessionNotesTab.swift */; };
+		1B20C9E1AE62E5968B2144B0 /* EmptyHostProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BB085168699C2AEB49A9C2 /* EmptyHostProjectsView.swift */; };
 		1F42562536B794A48F2FF0B4 /* PhoneMainTabStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0967D24F8E6EF7E6EA50B083 /* PhoneMainTabStrip.swift */; };
 		217A40CE790CA8A921E18F80 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824F5F99CAD6D4621AC0B67E /* SessionRowView.swift */; };
 		218DEA058AB6F3F67BC7D5D5 /* MarkdownLinkResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B94A243B58C5A8B439A2326 /* MarkdownLinkResolver.swift */; };
@@ -122,6 +123,7 @@
 		EC5A6B96E014DA0BF7908B47 /* SessionDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000102DBF13531D5802145FA /* SessionDetailViewModel.swift */; };
 		ED88FD28770298F04B89811B /* PlatformImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70CDE2E1B31EBACA58AA029 /* PlatformImage.swift */; };
 		EF973D15BBC11EFE6BE94509 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714F44F9CE7D64E4DFD7A867 /* Session.swift */; };
+		F0F190CDC30EA48D6DB6F207 /* EmptyHostProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BB085168699C2AEB49A9C2 /* EmptyHostProjectsView.swift */; };
 		F1FE1A6C4EFDDD3FB97D7C94 /* PlatformImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70CDE2E1B31EBACA58AA029 /* PlatformImage.swift */; };
 		F20C1D2C39D1945FA8680D68 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3489EFB2EEF31176CF55AA42 /* OnboardingView.swift */; };
 		F2288C7346FEC56B93AF3F2A /* HostInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD39D3A401A05FB88D63E7B3 /* HostInstaller.swift */; };
@@ -146,6 +148,7 @@
 		2B2A3B7AF7C26BA0CF515F2C /* HostEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEndpoint.swift; sourceTree = "<group>"; };
 		31F1C53C9F6DCC5B4EEE1922 /* ProjectAttachmentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectAttachmentsSection.swift; sourceTree = "<group>"; };
 		3489EFB2EEF31176CF55AA42 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		35BB085168699C2AEB49A9C2 /* EmptyHostProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyHostProjectsView.swift; sourceTree = "<group>"; };
 		3DDD6C0EB7EF66B552538DC3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		41A34E8C53D0D70D3EDA81E4 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
 		42EF6D3ECE19412F8B6E19C6 /* MacComposePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComposePane.swift; sourceTree = "<group>"; };
@@ -323,6 +326,7 @@
 		A2460228E009A2778BB5F4FE /* Composer */ = {
 			isa = PBXGroup;
 			children = (
+				35BB085168699C2AEB49A9C2 /* EmptyHostProjectsView.swift */,
 				B1C54E265F3E7A4EB846CC33 /* TaskComposerView.swift */,
 			);
 			path = Composer;
@@ -586,6 +590,7 @@
 				921E465998C70D1828B59632 /* DesignSystem.swift in Sources */,
 				BE17770A539B5A1DD373AD0E /* DiffView.swift in Sources */,
 				48EF81BEFF16016F0481783B /* DispatchRequest.swift in Sources */,
+				F0F190CDC30EA48D6DB6F207 /* EmptyHostProjectsView.swift in Sources */,
 				3095A84933BCB1F3814FB744 /* ExtraFoldersSheet.swift in Sources */,
 				10DCA0FA01792AF42C6B9598 /* FileViewerPane.swift in Sources */,
 				998033C2E4C2E7CC2F60829F /* FileViewerRenderer.swift in Sources */,
@@ -651,6 +656,7 @@
 				79A28A5B8BEC6FCFD0C85627 /* DesignSystem.swift in Sources */,
 				269C04AC7F7FEE24FFC43A3C /* DiffView.swift in Sources */,
 				613808DEA93FDC7DA947719E /* DispatchRequest.swift in Sources */,
+				1B20C9E1AE62E5968B2144B0 /* EmptyHostProjectsView.swift in Sources */,
 				6FA05206FC96853993F1A99B /* ExtraFoldersSheet.swift in Sources */,
 				2E9133BE937CF6AD96FA13CC /* FileViewerPane.swift in Sources */,
 				274C1E8F0576BB9BAA710096 /* FileViewerRenderer.swift in Sources */,

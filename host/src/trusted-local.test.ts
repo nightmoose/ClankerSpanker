@@ -22,7 +22,7 @@ describe("isTrustedLocalPageRequest", () => {
   });
 
   it("refuses a peer on the network (phone, other laptop)", () => {
-    expect(isTrustedLocalPageRequest(req("192.168.1.50", { host: "100.66.33.89:8787" }), NAMES)).toBe(false);
+    expect(isTrustedLocalPageRequest(req("10.0.0.50", { host: "100.66.33.89:8787" }), NAMES)).toBe(false);
   });
 
   it("refuses DNS rebinding (loopback peer, foreign Host header)", () => {

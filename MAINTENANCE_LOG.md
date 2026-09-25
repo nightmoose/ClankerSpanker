@@ -2,6 +2,22 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-029 WebSocket tickets
+
+`/ws` and `/ws/terminal` took `?token=<hostToken>` from every client.
+Added `POST /ws/ticket` (single use, 30 s) and `wsUpgradeAuthorized`:
+header, else ticket, else legacy `?token=` from this machine only.
+Browser `/app/`, `terminal.html` and Electron fetch a ticket; iOS/Mac
+send `Authorization: Bearer`. 11 new tests. Deploy together with the
+phone build — the old phone build sends `?token=` over Tailscale.
+
+Process note: `make check` was red on `main` from the RFC-028 merge until
+this one — the house-style LAN-IP rule flagged `192.168.*` fixtures in the
+RFC-026/028 tests and a filtered grep of the output hid the failure.
+Fixtures now use `10.0.0.x`; gate on the exit code, not on grep.
+
+---
+
 ## Run: 2026-09-25 — RFC-028 listen on loopback + Tailscale
 
 New `bindHost: "auto"` listens on 127.0.0.1, ::1 and this machine's

@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-052 session-manager split, phase B
+
+Claude / Antigravity / bot turns moved to `acp/runners/*` behind a narrow
+`TurnContext`; now unit-tested with a fake context (10 tests). Class
+3,493 lines. The live Claude smoke failed with a bare "exited with code
+1" — not this change: the Personal profile's MCP config is invalid for
+Claude. Follow-ups RFC-053 (say why) and RFC-054 (fix the schema).
+
+---
+
 ## Run: 2026-09-25 — RFC-051 session-manager split, phase A
 
 Helpers, types, questionnaire/image support and a unified TombstoneFile

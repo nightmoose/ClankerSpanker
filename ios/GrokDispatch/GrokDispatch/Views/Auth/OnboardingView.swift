@@ -281,7 +281,7 @@ struct OnboardingView: View {
                 continue
             }
         }
-        errorMessage = "Could not reach the Mac. Same Wi‑Fi? Host running? Try Safari → \(ConnectionDefaults.lanHostURL)/setup"
+        errorMessage = "The host only shares its token with apps on the same machine. On the Mac, open http://localhost:8787/setup and scan the QR code with this iPhone's camera."
     }
 
     private func saveAndTest() async {

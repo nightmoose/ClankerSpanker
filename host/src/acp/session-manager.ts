@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HostConfigFile } from "../types.js";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -11,13 +11,12 @@ import { extraDirsAgentNote, listSessionFiles, readSessionFile } from "../sessio
 import { SessionStore, toolBlobToJson } from "../sessions/store.js";
 import { extractClaudeContext, gitDiff, isGrokHelperCwd, listAgySessions, listClaudeSessions, type DiskSessionHint } from "../sessions/reader.js";
 import { notifyDesktop } from "../notify/local.js";
-import { allowlistAllowsTool, defaultModelForBackend, grokAgentModelArgs, isGrokBackend, profileProcessEnv, resolveProfile, antigravityAutoApproves } from "../profiles.js";
-import { isAuthFailureMessage } from "../login.js";
+import { allowlistAllowsTool, defaultModelForBackend, grokAgentModelArgs, isGrokBackend, profileProcessEnv, resolveProfile } from "../profiles.js";
 import { approvalPreview } from "../approval-preview.js";
 import { toolOutputSummary } from "../tool-output.js";
 import { knownGrokHomes, listGrokHomeSessions } from "../grok-home.js";
 import { TombstoneFile } from "./tombstones.js";
-import { mcpEnvFor, toAcpMcpServers, writeProfileMcpJson } from "../mcp.js";
+import { mcpEnvFor, toAcpMcpServers } from "../mcp.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
 import {
@@ -35,19 +34,21 @@ import {
   questionCancelledResult,
   questionChatResult,
 } from "./grok-ext.js";
-import { ClaudeRunner } from "../claude/runner.js";
-import { AntigravityRunner } from "../antigravity/runner.js";
-import { runBotSession } from "../bot/runner.js";
 import { BotScheduler } from "../bot/scheduler.js";
 
 const execFileAsync = promisify(execFile);
 
 import { APPROVAL_SWEEP_INTERVAL_MS, DEFAULT_APPROVAL_TTL_MS, botTaggedTitle, buildOrphanedApprovalResumePrompt, claudeApprovalSignature, composeGrokOpeningPrompt, drainPendingQuestionsByToolCall, expiresInIso, grokApprovalSignature, isSafeBashCommand, lastUserTextIs, matchesProfileAllowlist, now, shortTitle, shouldFlipToIdleAfterTurn, toolNameFromParkedApproval } from "./session-helpers.js";
-import { ensureAttachmentDirs, extractQuestionsFromUnknown, findClaudeTranscriptPath, findPendingAskUserTool, isGrokExitPlanApproval, mapAgentExitError, materializeImagesInCwd, normalizeAcpMethod, normalizeImages, normalizeQuestions, rawIsExitPlan, savePromptImagesForSession } from "./session-support.js";
+import { extractQuestionsFromUnknown, findClaudeTranscriptPath, findPendingAskUserTool, isGrokExitPlanApproval, mapAgentExitError, materializeImagesInCwd, normalizeAcpMethod, normalizeImages, normalizeQuestions, rawIsExitPlan, savePromptImagesForSession } from "./session-support.js";
 import type { BotRunState, ClaudeHookApproval, LiveSession } from "./session-helpers.js";
 // Public helpers stay importable from here (tests, other modules).
 export { buildOrphanedApprovalResumePrompt, composeGrokOpeningPrompt, isSafeBashCommand, lastUserTextIs, drainPendingQuestionsByToolCall, shouldFlipToIdleAfterTurn } from "./session-helpers.js";
 export { materializeImagesInCwd, savePromptImagesForSession } from "./session-support.js";
+
+import { claudeTurn as claudeTurnImpl } from "./runners/claude-turn.js";
+import { antigravityTurn as antigravityTurnImpl } from "./runners/antigravity-turn.js";
+import { botTurn as botTurnImpl } from "./runners/bot-turn.js";
+import type { TurnContext } from "./runners/context.js";
 
 export class SessionManager extends EventEmitter {
   private live = new Map<string, LiveSession>();
@@ -85,6 +86,8 @@ export class SessionManager extends EventEmitter {
    *  <dataDir>/deleted-claude-sessions.json. */
   private readonly forgottenClaude: TombstoneFile;
   private readonly forgottenAgy: TombstoneFile;
+  /** Narrow view of this manager handed to backend runners (RFC-052). */
+  private readonly turnCtx: TurnContext;
 
   constructor(private readonly config: HostConfigFile) {
     super();
@@ -92,6 +95,20 @@ export class SessionManager extends EventEmitter {
     this.forgottenGrok = new TombstoneFile(join(config.dataDir, "deleted-grok-sessions.json"), "grokSessionId");
     this.forgottenClaude = new TombstoneFile(join(config.dataDir, "deleted-claude-sessions.json"), "claudeSessionId");
     this.forgottenAgy = new TombstoneFile(join(config.dataDir, "deleted-agy-sessions.json"), "conversationId");
+    // Arrow wrappers resolve methods at call time, so tests can still patch them.
+    this.turnCtx = {
+      config: this.config,
+      cliRunners: this.cliRunners,
+      botRuns: this.botRuns,
+      get: (id) => this.get(id),
+      persist: (session) => this.persist(session),
+      emitEvent: (session, type, payload) => this.emitEvent(session, type, payload),
+      maybeNotify: (title, message) => this.maybeNotify(title, message),
+      profileFor: (session) => this.profileFor(session),
+      profileEnvFor: (session) => this.profileEnvFor(session),
+      buildTransferHandoffPrompt: (session, message) => this.buildTransferHandoffPrompt(session, message),
+      botBrainProfile: (owner) => this.botBrainProfile(owner),
+    };
     this.startApprovalSweeper();
   }
 
@@ -2392,321 +2409,22 @@ export class SessionManager extends EventEmitter {
 
   // ── internals ──────────────────────────────────────────────
 
-  /** One Claude Code turn: stream-json + optional phone tool approvals. */
-  private async claudeTurn(
+  private claudeTurn(
     sessionId: string,
     prompt: string,
     images: PromptImage[] = [],
     opts?: { recordUser?: boolean },
   ): Promise<DispatchSession> {
-    const session = this.get(sessionId);
-    if (!session) throw new Error("Session not found");
-
-    const extraDirs = ensureAttachmentDirs(this.config, session);
-    const savedPaths = savePromptImagesForSession(this.config, session, images);
-    const promptPaths = materializeImagesInCwd(session.cwd, savedPaths);
-    let claudePrompt =
-      promptPaths.length === 0
-        ? prompt
-        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`;
-
-    // Fresh Claude after profile transfer: inject prior transcript so the new account has context.
-    if (session.transferHandoffPending || (!session.claudeSessionId && session.transcript.length > 1)) {
-      if (session.transferHandoffPending) {
-        claudePrompt = this.buildTransferHandoffPrompt(session, claudePrompt);
-        session.transferHandoffPending = false;
-      }
-    }
-
-    const userText =
-      images.length === 0
-        ? prompt
-        : `📷 ${images.length} screenshot${images.length === 1 ? "" : "s"}${prompt ? `\n${prompt}` : ""}`;
-    const recordUser = opts?.recordUser !== false && !lastUserTextIs(session, userText);
-    const entry: TranscriptEntry = {
-      id: randomUUID(),
-      role: "user",
-      text: userText,
-      at: now(),
-    };
-    if (recordUser) session.transcript.push(entry);
-    session.status = "running";
-    session.error = undefined;
-    session.completedAt = undefined;
-    session.updatedAt = now();
-    this.persist(session);
-    if (recordUser) this.emitEvent(session, "transcript", entry);
-    this.emitEvent(session, "session.updated", { status: "running", backend: "claude" });
-
-    const hostBase = `http://127.0.0.1:${this.config.bindPort}`;
-    const profile = this.profileFor(session);
-    if (profile) {
-      await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
-    }
-    const runner = new ClaudeRunner({
-      cwd: session.cwd,
-      resumeSessionId: session.claudeSessionId,
-      prompt: claudePrompt,
-      dispatchSessionId: session.id,
-      hostBaseUrl: hostBase,
-      hostToken: this.config.hostToken,
-      dataDir: this.config.dataDir,
-      requirePhoneApproval: true,
-      profileEnv: this.profileEnvFor(session),
-      model: session.model,
-      appendSystemPrompt: profile?.systemPrompt,
-      extraDirs,
-      toolAllowlist: profile?.toolAllowlist,
-      mcpConfigPath: profile
-        ? writeProfileMcpJson(this.config.dataDir, profile, mcpEnvFor(profile))
-        : undefined,
-    });
-    this.cliRunners.set(sessionId, runner);
-
-    let streamBuf = "";
-    let thoughtBuf = "";
-    runner.on("text", (chunk: string) => {
-      streamBuf += chunk;
-      this.emitEvent(session, "transcript", { role: "assistant", text: chunk, streaming: true });
-    });
-    runner.on("thought", (chunk: string) => {
-      thoughtBuf += chunk;
-      this.emitEvent(session, "thought", { role: "thought", text: chunk, streaming: true });
-    });
-    runner.on("usage", (u: {
-      inputTokens: number;
-      outputTokens: number;
-      cacheReadTokens: number;
-      cacheCreationTokens: number;
-    }) => {
-      const prev = session.usage;
-      session.usage = {
-        inputTokens: (prev?.inputTokens ?? 0) + u.inputTokens,
-        outputTokens: (prev?.outputTokens ?? 0) + u.outputTokens,
-        cacheReadTokens: (prev?.cacheReadTokens ?? 0) + u.cacheReadTokens,
-        cacheCreationTokens: (prev?.cacheCreationTokens ?? 0) + u.cacheCreationTokens,
-        turns: (prev?.turns ?? 0) + 1,
-        updatedAt: now(),
-      };
-      this.persist(session);
-      this.emitEvent(session, "usage", session.usage);
-    });
-    runner.on("tool", (info: { name: string; id?: string; input?: unknown; status: string }) => {
-      const record: ToolCallRecord = {
-        toolCallId: info.id ?? randomUUID(),
-        title: info.name,
-        kind: /edit|write|delete/i.test(info.name) ? "edit" : /bash/i.test(info.name) ? "execute" : "other",
-        status: info.status,
-        rawInput: info.input,
-        updatedAt: now(),
-      };
-      const idx = session.toolCalls.findIndex((t) => t.toolCallId === record.toolCallId);
-      if (idx >= 0) session.toolCalls[idx] = { ...session.toolCalls[idx]!, ...record };
-      else session.toolCalls.push(record);
-      this.persist(session);
-      this.emitEvent(session, "tool_call", record);
-    });
-
-    try {
-      const { text, sessionId: claudeSid } = await runner.run();
-      if (claudeSid) session.claudeSessionId = claudeSid;
-      // Persist the extended-thinking transcript ahead of the reply so the
-      // phone renders it above the answer bubble (matches typical chat UX).
-      if (thoughtBuf.trim()) {
-        session.transcript.push({
-          id: randomUUID(),
-          role: "thought",
-          text: thoughtBuf,
-          at: now(),
-        });
-      }
-      const finalText = text || streamBuf || "(Claude returned empty output)";
-      const assistantEntry: TranscriptEntry = {
-        id: randomUUID(),
-        role: "assistant",
-        text: finalText,
-        at: now(),
-      };
-      session.transcript.push(assistantEntry);
-      session.status = "idle";
-      session.updatedAt = now();
-      session.stopReason = "end_turn";
-      this.persist(session);
-      this.emitEvent(session, "transcript", assistantEntry);
-      this.emitEvent(session, "session.updated", { status: "idle", backend: "claude" });
-      this.maybeNotify("ClankerSpanker", `Claude ready: ${session.title}`);
-      return session;
-    } catch (err) {
-      const e = err as { message?: string };
-      const msg = (e.message ?? String(err)).slice(0, 2000);
-      session.status = "failed";
-      session.error = msg;
-      session.updatedAt = now();
-      if (isAuthFailureMessage(msg)) {
-        const name = session.profileName ?? session.profileId ?? "this profile";
-        const note = {
-          id: randomUUID(),
-          role: "system" as const,
-          text:
-            `Sign-in required for ${name}. OAuth token missing or revoked. ` +
-            `Use “Sign in…” in the app to open a browser login on this Mac, then retry.`,
-          at: now(),
-        };
-        session.transcript.push(note);
-        this.emitEvent(session, "transcript", note);
-        this.emitEvent(session, "session.updated", {
-          status: "failed",
-          needsLogin: true,
-          profileId: session.profileId,
-          backend: "claude",
-        });
-      }
-      this.persist(session);
-      this.emitEvent(session, "session.failed", {
-        error: session.error,
-        needsLogin: isAuthFailureMessage(msg),
-        profileId: session.profileId,
-      });
-      throw new Error(session.error);
-    } finally {
-      this.cliRunners.delete(sessionId);
-    }
+    return claudeTurnImpl(this.turnCtx, sessionId, prompt, images, opts);
   }
 
-  /**
-   * One Antigravity CLI (`agy`) turn: headless -p + stream-json + conversation resume.
-   * Phone tool-approval hooks are not available (agy soft-denies shell in headless unless
-   * --dangerously-skip-permissions or settings allow rules). We default to skip-permissions
-   * so Dispatch tasks can actually edit/run like Claude acceptEdits; tighten via profile env
-   * ANTIGRAVITY_REQUIRE_PERMISSIONS=1 if desired.
-   */
-  private async antigravityTurn(
+  private antigravityTurn(
     sessionId: string,
     prompt: string,
     images: PromptImage[] = [],
     opts?: { recordUser?: boolean },
   ): Promise<DispatchSession> {
-    const session = this.get(sessionId);
-    if (!session) throw new Error("Session not found");
-
-    const savedPaths = savePromptImagesForSession(this.config, session, images);
-    const promptPaths = materializeImagesInCwd(session.cwd, savedPaths);
-    let agentPrompt =
-      extraDirsAgentNote(session.extraDirs) +
-      (promptPaths.length === 0
-        ? prompt
-        : `${prompt}\n\n[User attached screenshot file(s) for debugging — open/read these paths with your tools:]\n${promptPaths.map((p) => `- ${p}`).join("\n")}`);
-
-    if (session.transferHandoffPending || (!session.antigravityConversationId && session.transcript.length > 1)) {
-      if (session.transferHandoffPending) {
-        agentPrompt = this.buildTransferHandoffPrompt(session, agentPrompt);
-        session.transferHandoffPending = false;
-      }
-    }
-
-    const userText =
-      images.length === 0
-        ? prompt
-        : `📷 ${images.length} screenshot${images.length === 1 ? "" : "s"}${prompt ? `\n${prompt}` : ""}`;
-    const recordUser = opts?.recordUser !== false && !lastUserTextIs(session, userText);
-    const entry: TranscriptEntry = {
-      id: randomUUID(),
-      role: "user",
-      text: userText,
-      at: now(),
-    };
-    if (recordUser) session.transcript.push(entry);
-    session.status = "running";
-    session.error = undefined;
-    session.completedAt = undefined;
-    session.updatedAt = now();
-    this.persist(session);
-    if (recordUser) this.emitEvent(session, "transcript", entry);
-    this.emitEvent(session, "session.updated", { status: "running", backend: "antigravity" });
-
-    const profileEnv = this.profileEnvFor(session);
-    const requirePerms = !antigravityAutoApproves(profileEnv);
-
-    const profile = this.profileFor(session);
-    const runner = new AntigravityRunner({
-      cwd: session.cwd,
-      conversationId: session.antigravityConversationId,
-      prompt: agentPrompt,
-      model: session.model,
-      skipPermissions: !requirePerms,
-      profileEnv,
-      systemPrompt: profile?.systemPrompt,
-      toolAllowlist: profile?.toolAllowlist,
-    });
-    this.cliRunners.set(sessionId, runner);
-
-    let streamBuf = "";
-    runner.on("text", (chunk: string) => {
-      streamBuf += chunk;
-      this.emitEvent(session, "transcript", { role: "assistant", text: chunk, streaming: true });
-    });
-    runner.on("system", (text: string) => {
-      this.emitEvent(session, "session.updated", { diagnostic: text.slice(0, 200) });
-    });
-    runner.on("tool", (info: { name: string; id?: string; input?: unknown; status: string }) => {
-      const record: ToolCallRecord = {
-        toolCallId: info.id ?? randomUUID(),
-        title: info.name,
-        kind: /write|edit|delete|file/i.test(info.name)
-          ? "edit"
-          : /command|bash|shell|run/i.test(info.name)
-            ? "execute"
-            : "other",
-        status: info.status,
-        rawInput: info.input,
-        updatedAt: now(),
-      };
-      // Match by title when no stable id (agy stream often omits ids)
-      const idx = info.id
-        ? session.toolCalls.findIndex((t) => t.toolCallId === info.id)
-        : session.toolCalls.findIndex(
-            (t) => t.title === record.title && t.status === "pending",
-          );
-      if (idx >= 0) session.toolCalls[idx] = { ...session.toolCalls[idx]!, ...record };
-      else session.toolCalls.push(record);
-      this.persist(session);
-      this.emitEvent(session, "tool_call", record);
-    });
-
-    try {
-      const { text, conversationId } = await runner.run();
-      if (conversationId) session.antigravityConversationId = conversationId;
-      const finalText = text || streamBuf || "(Antigravity returned empty output)";
-      const assistantEntry: TranscriptEntry = {
-        id: randomUUID(),
-        role: "assistant",
-        text: finalText,
-        at: now(),
-      };
-      session.transcript.push(assistantEntry);
-      session.status = "idle";
-      session.updatedAt = now();
-      session.stopReason = "end_turn";
-      this.persist(session);
-      this.emitEvent(session, "transcript", assistantEntry);
-      this.emitEvent(session, "session.updated", {
-        status: "idle",
-        backend: "antigravity",
-        antigravityConversationId: session.antigravityConversationId,
-      });
-      this.maybeNotify("ClankerSpanker", `Antigravity ready: ${session.title}`);
-      return session;
-    } catch (err) {
-      const e = err as { message?: string };
-      session.status = "failed";
-      session.error = (e.message ?? String(err)).slice(0, 2000);
-      session.updatedAt = now();
-      this.persist(session);
-      this.emitEvent(session, "session.failed", { error: session.error });
-      throw new Error(session.error);
-    } finally {
-      this.cliRunners.delete(sessionId);
-    }
+    return antigravityTurnImpl(this.turnCtx, sessionId, prompt, images, opts);
   }
 
   /** Get live handle, re-spawning ACP + session/load when needed. */
@@ -3042,66 +2760,14 @@ export class SessionManager extends EventEmitter {
     return false;
   }
 
-  private async botTurn(
+  private botTurn(
     session: DispatchSession,
     prompt: string,
     isFollowUp: boolean,
     maxTurns?: number,
     botTools?: string[],
   ): Promise<void> {
-    if (isFollowUp) {
-      const entry: TranscriptEntry = {
-        id: randomUUID(),
-        role: "user",
-        text: prompt,
-        at: now(),
-      };
-      session.transcript.push(entry);
-      session.status = "running";
-      session.error = undefined;
-      session.completedAt = undefined;
-      session.updatedAt = now();
-      this.persist(session);
-      this.emitEvent(session, "transcript", entry);
-    }
-
-    const owner = this.profileFor(session);
-    if (!owner) throw new Error("Bot session has no profile");
-    const profile = this.botBrainProfile(owner);
-
-    const abort = new AbortController();
-    const run: BotRunState = { sessionId: session.id, cancelled: false, abort };
-    this.botRuns.set(session.id, run);
-
-    try {
-      await runBotSession({
-        session,
-        profile,
-        prompt,
-        isFollowUp,
-        maxTurns: maxTurns ?? 20,
-        toolsAllowlist: botTools?.length ? botTools : owner.toolAllowlist,
-        promptMaxMs: this.config.promptMaxMs,
-        autoApproveKinds: (this.config.autoApproveKinds ?? []).map((k) => k.toLowerCase()),
-        callbacks: {
-          persist: (s) => this.persist(s),
-          emit: (s, type, payload) => this.emitEvent(s, type, payload),
-          isCancelled: () => run.cancelled,
-          requestApproval: (s, approval) =>
-            new Promise((resolve, reject) => {
-              if (run.cancelled) {
-                reject(new Error("cancelled"));
-                return;
-              }
-              run.pending = { approvalId: approval.id, resolve, reject };
-              this.maybeNotify("Bot needs approval", `${s.title}: ${approval.title}`);
-            }),
-        },
-        signal: abort.signal,
-      });
-    } finally {
-      this.botRuns.delete(session.id);
-    }
+    return botTurnImpl(this.turnCtx, session, prompt, isFollowUp, maxTurns, botTools);
   }
 
   private async runSession(session: DispatchSession, req: DispatchRequest): Promise<void> {

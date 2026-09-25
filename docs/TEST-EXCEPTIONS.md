@@ -13,6 +13,7 @@ Adding a line requires an RFC (new untested surface is the failure mode).
 | `host/src/notify/local.ts` | Desktop notification shell-out |
 | `host/src/server.ts` | HTTP+WS monolith — **highest-value follow-up** |
 | `host/src/acp/client.ts` | Agent stdio client |
+| `host/src/acp/runners/context.ts` | Types only (RFC-052) |
 | `host/src/acp/session-manager.ts` | Partial: `session-manager.approvals.test.ts` covers resume-after-restart + opening prompt |
 | `host/src/bot/index.ts` | Barrel |
 | `host/src/bot/protocol.ts` | Types / constants |

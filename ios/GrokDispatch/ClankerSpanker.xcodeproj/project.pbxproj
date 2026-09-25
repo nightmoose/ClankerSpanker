@@ -65,6 +65,7 @@
 		6846F09722178EBBEAB07E9D /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617D682514E197478D03E351 /* TerminalView.swift */; };
 		6858D0D1D67BD5F39C6B3FAF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 55345BFD3C49B41270831FBD /* Assets.xcassets */; };
 		699B01BB715D0286AC359553 /* QuestionBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDE409D1A0C10B8CAA1D6119 /* QuestionBarView.swift */; };
+		6A3FE45381383FE210BC420A /* DecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D9D349B0D6C19DC83D1828 /* DecodingTests.swift */; };
 		6B7FB6EAF978DDEF27701883 /* HostEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2A3B7AF7C26BA0CF515F2C /* HostEndpoint.swift */; };
 		6F88A2F4CC3CFE870FFD8445 /* ComposerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59AE47EC508A6307DEABD8A9 /* ComposerViewModel.swift */; };
 		6FA05206FC96853993F1A99B /* ExtraFoldersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17ECF185E12C4DF0561D3EF /* ExtraFoldersSheet.swift */; };
@@ -100,6 +101,7 @@
 		A760FE3CA56B8A197DA7E2A3 /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B27DB3DA8C4CB872859618B7 /* ProjectsView.swift */; };
 		A8CDB9585CD224DAE2255E5D /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BDCFA0539F93F140DADA28E /* SplashView.swift */; };
 		A93DC1EBB7A596B8C1C99C90 /* MacCommandCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED9C8C1980AFCD08DC94B6C /* MacCommandCenter.swift */; };
+		AAFD62022FABF74A0291024C /* LiveStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */; };
 		ABA01FE7F88C6CEC435F5486 /* ProjectAttachmentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F1C53C9F6DCC5B4EEE1922 /* ProjectAttachmentsSection.swift */; };
 		B0A6DE75BFA37E85F40B5717 /* ApprovalBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153B5F557BBBBEBE2834673A /* ApprovalBarView.swift */; };
 		B0FCE611635078FB2C11EAA8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB2B868A6D8625E7F9C0616 /* ContentView.swift */; };
@@ -113,6 +115,7 @@
 		D3AED35EFB62232D72B02671 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C6727C6EF56522D6EEFBFC /* DashboardView.swift */; };
 		D3CA0059FB2B3131258B8237 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 55345BFD3C49B41270831FBD /* Assets.xcassets */; };
 		D59C5623508AAA05BEC853E0 /* ComposerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59AE47EC508A6307DEABD8A9 /* ComposerViewModel.swift */; };
+		D8B38324857BB87ABF61FDB5 /* HostEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9444ED3E123672241DA974A3 /* HostEndpointTests.swift */; };
 		DD2639F0F29B9CB005E76495 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6348CD40338446AD4F318DE8 /* KeychainHelper.swift */; };
 		DEC31E6D1880189501E4178F /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78DB4C02B3EC0F2E3577E36 /* AppState.swift */; };
 		DF3AD69275499150FE906FC2 /* HostEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2A3B7AF7C26BA0CF515F2C /* HostEndpoint.swift */; };
@@ -134,6 +137,16 @@
 		FAE5EE2F797E8BEF59AD91FA /* ProjectAttachmentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F1C53C9F6DCC5B4EEE1922 /* ProjectAttachmentsSection.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6B122590AF6D6DC0D604D29D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A4CE49005A1B2AF3432C2860 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 455F64796E6F14A09E40F2D2;
+			remoteInfo = ClankerSpankerMac;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		000102DBF13531D5802145FA /* SessionDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailViewModel.swift; sourceTree = "<group>"; };
 		01931171F271297250746AB7 /* HostTrayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrayStore.swift; sourceTree = "<group>"; };
@@ -152,8 +165,10 @@
 		3DDD6C0EB7EF66B552538DC3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		41A34E8C53D0D70D3EDA81E4 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
 		42EF6D3ECE19412F8B6E19C6 /* MacComposePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComposePane.swift; sourceTree = "<group>"; };
+		48D9D349B0D6C19DC83D1828 /* DecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingTests.swift; sourceTree = "<group>"; };
 		4BAD3C9551C253B3F9E783EF /* FileViewerWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerWebView.swift; sourceTree = "<group>"; };
 		4BDCFA0539F93F140DADA28E /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		4D0311D754BFB1099DB3CC2D /* ClankerSpankerMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClankerSpankerMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D736DAA334D64C03AD13198 /* BotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotsView.swift; sourceTree = "<group>"; };
 		55345BFD3C49B41270831FBD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59AE47EC508A6307DEABD8A9 /* ComposerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerViewModel.swift; sourceTree = "<group>"; };
@@ -177,6 +192,8 @@
 		8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClankerSpankerHostTray.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C10142E529BE1802E6106FC /* BotsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotsViewModel.swift; sourceTree = "<group>"; };
 		8C73742B5DD261F9F27151E9 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStatusTests.swift; sourceTree = "<group>"; };
+		9444ED3E123672241DA974A3 /* HostEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEndpointTests.swift; sourceTree = "<group>"; };
 		9CB2B868A6D8625E7F9C0616 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A3294449B296EB18B0F3425F /* NewBotSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewBotSheet.swift; sourceTree = "<group>"; };
 		A47843CC758EC1A51C630D6C /* SessionNotesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNotesTab.swift; sourceTree = "<group>"; };
@@ -232,6 +249,16 @@
 				683082A20E1800578F7CFF3B /* WebSocketClient.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		3C242443587564DDA563A1FD /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				48D9D349B0D6C19DC83D1828 /* DecodingTests.swift */,
+				9444ED3E123672241DA974A3 /* HostEndpointTests.swift */,
+				936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 		4DA1D58B5BDA30F3B29E8243 /* Projects */ = {
@@ -319,6 +346,7 @@
 				74AB3A087C7D83F9FAA7CFA4 /* ClankerSpanker.app */,
 				8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */,
 				88B5E8EAB8AEDCB3B42E8E51 /* ClankerSpankerMac.app */,
+				4D0311D754BFB1099DB3CC2D /* ClankerSpankerMacTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -337,6 +365,7 @@
 			children = (
 				E349C400B8787CBF5EED64F2 /* GrokDispatch */,
 				1661EB076FB912A2DA5D1474 /* HostTray */,
+				3C242443587564DDA563A1FD /* Tests */,
 				A01CFEA3CA42565E04B0E2D2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -489,6 +518,24 @@
 			productReference = 74AB3A087C7D83F9FAA7CFA4 /* ClankerSpanker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A6B4A573A20EC1496505B1EF /* ClankerSpankerMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 45EE23A4DF2120AA2F867788 /* Build configuration list for PBXNativeTarget "ClankerSpankerMacTests" */;
+			buildPhases = (
+				762E98C6A6950BAA163FE171 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				27C7F85A72543A5AC58B9CCB /* PBXTargetDependency */,
+			);
+			name = ClankerSpankerMacTests;
+			packageProductDependencies = (
+			);
+			productName = ClankerSpankerMacTests;
+			productReference = 4D0311D754BFB1099DB3CC2D /* ClankerSpankerMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -507,6 +554,10 @@
 						ProvisioningStyle = Automatic;
 					};
 					4ED1CC7DF28415C7D1E03B62 = {
+						DevelopmentTeam = XHS7K665C9;
+						ProvisioningStyle = Automatic;
+					};
+					A6B4A573A20EC1496505B1EF = {
 						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
 					};
@@ -529,6 +580,7 @@
 				4ED1CC7DF28415C7D1E03B62 /* ClankerSpanker */,
 				34126F9E5312E2A223C3BCEB /* ClankerSpankerHostTray */,
 				455F64796E6F14A09E40F2D2 /* ClankerSpankerMac */,
+				A6B4A573A20EC1496505B1EF /* ClankerSpankerMacTests */,
 			);
 		};
 /* End PBXProject section */
@@ -638,6 +690,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		762E98C6A6950BAA163FE171 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A3FE45381383FE210BC420A /* DecodingTests.swift in Sources */,
+				D8B38324857BB87ABF61FDB5 /* HostEndpointTests.swift in Sources */,
+				AAFD62022FABF74A0291024C /* LiveStatusTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A4295E5854921F92D4B6773F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -705,6 +767,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		27C7F85A72543A5AC58B9CCB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 455F64796E6F14A09E40F2D2 /* ClankerSpankerMac */;
+			targetProxy = 6B122590AF6D6DC0D604D29D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		615A02A1602959254BE92A95 /* Release */ = {
@@ -837,6 +907,25 @@
 			};
 			name = Debug;
 		};
+		84330CE628966AE472E73138 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = XHS7K665C9;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
+			};
+			name = Debug;
+		};
 		9C9C188B13E887214FF04E06 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -886,6 +975,25 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		A3AFA796DD61FD2AEA2F1B8F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = XHS7K665C9;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
+			};
+			name = Release;
 		};
 		C7825A0954AAC8D80F1E34AD /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -979,6 +1087,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		45EE23A4DF2120AA2F867788 /* Build configuration list for PBXNativeTarget "ClankerSpankerMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				84330CE628966AE472E73138 /* Debug */,
+				A3AFA796DD61FD2AEA2F1B8F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		74DD6EE62374597E450F9D89 /* Build configuration list for PBXNativeTarget "ClankerSpanker" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

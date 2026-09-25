@@ -306,7 +306,8 @@ struct MacHostPanel: View {
             ) { line in
                 installLog.append(line)
             }
-            host.savePackagePath(HostInstaller.installRoot.path)
+            // RFC-027: HostInstaller already saved the source path. Saving the
+            // install root here made the next update install from itself.
             await host.refreshStatus()
             if let pair = await host.bootstrapLocalHost() {
                 appState.saveConfiguration(hostURL: pair.url, hostToken: pair.token, xaiKey: nil)

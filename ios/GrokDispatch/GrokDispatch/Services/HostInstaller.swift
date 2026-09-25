@@ -46,8 +46,11 @@ enum HostInstaller {
         log("Source: \(src.path)")
 
         let distIndex = src.appendingPathComponent("dist/index.js")
-        if !fm.fileExists(atPath: distIndex.path) {
-            log("Building host (npm run build)…")
+        // RFC-027: a checkout always rebuilds, so a stale dist/ is never installed.
+        let isCheckout = fm.fileExists(atPath: src.appendingPathComponent("src").path)
+            && fm.fileExists(atPath: src.appendingPathComponent("tsconfig.json").path)
+        if isCheckout || !fm.fileExists(atPath: distIndex.path) {
+            log("Building host (npm install && npm run build)…")
             try run(cmd: "/bin/bash", args: ["-lc", "cd \(shellQuote(src.path)) && npm install && npm run build"], log: log)
         }
         guard fm.fileExists(atPath: distIndex.path) else {
@@ -92,7 +95,9 @@ enum HostInstaller {
             try installLaunchAgent(takeoverStandalone: takeoverStandalone, log: log)
         }
 
-        LocalHostController.shared.savePackagePath(installRoot.path)
+        // RFC-027: remember where we installed FROM. Saving installRoot made the
+        // next update copy the install root onto itself and delete dist/.
+        LocalHostController.shared.savePackagePath(src.path)
         log("Installed host → \(installRoot.path)")
     }
 
@@ -199,14 +204,16 @@ enum HostInstaller {
     // MARK: - helpers
 
     private static func resolveSource(_ source: URL?) throws -> URL {
-        if let source {
-            return source
-        }
+        let installed = (installRoot.path as NSString).standardizingPath
         let candidates = [
+            source?.path ?? "",
             LocalHostController.shared.hostPackagePath,
             LocalHostConfigFile.homeDirectory.appendingPathComponent("Projects/GrokDispatch/host").path,
             LocalHostConfigFile.homeDirectory.appendingPathComponent("Projects/ClankerSpanker/host").path,
-        ].filter { !$0.isEmpty }
+        ]
+        .filter { !$0.isEmpty }
+        // RFC-027: never install the install root onto itself.
+        .filter { ($0 as NSString).standardizingPath != installed }
         for c in candidates {
             let url = URL(fileURLWithPath: c)
             if FileManager.default.fileExists(atPath: url.appendingPathComponent("package.json").path) {
@@ -214,7 +221,7 @@ enum HostInstaller {
             }
         }
         throw InstallError.message(
-            "No host source found. Point Host package path at a built host/ folder (contains package.json)."
+            "No host source found. Point Host package path at your ClankerSpanker checkout's host/ folder."
         )
     }
 

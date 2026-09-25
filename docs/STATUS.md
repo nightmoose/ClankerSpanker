@@ -39,3 +39,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 031 | [Keep push notifications under the APNs size limit](rfcs/031-apns-payload-size.md) | Shipped | `nightly-maintenance-2026-09-25-rfc031-apns-payload-size` |
 | 032 | [Projects follow the folder: ~ expansion, inference, overlap warnings](rfcs/032-project-resolution.md) | Shipped | `nightly-maintenance-2026-09-25-rfc032-project-resolution` |
 | 033 | [Approval cards show the diff or command; Diff tab shows new files](rfcs/033-approval-preview.md) | Shipped | `nightly-maintenance-2026-09-25-rfc033-approval-preview` |
+| 034 | [One-command host update for a Mac](rfcs/034-update-mac-host-script.md) | Shipped | `nightly-maintenance-2026-09-25-rfc034-update-mac-host-script` |

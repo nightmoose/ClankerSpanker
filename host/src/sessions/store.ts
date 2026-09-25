@@ -122,7 +122,9 @@ export class SessionStore {
         status: t.status,
         updatedAt: t.updatedAt,
         locations: t.locations,
-        // drop rawInput/content from wire response
+        // RFC-040: small, so it rides along; rawInput/content stay off the wire.
+        outputPreview: t.outputPreview,
+        exitCode: t.exitCode,
       })),
       extraDirs: slim.extraDirs,
       plan: slim.plan,
@@ -148,6 +150,8 @@ function slimSession(session: DispatchSession): DispatchSession {
     locations: t.locations?.slice(0, 5),
     rawInput: capToolBlob(t.rawInput),
     content: capToolBlob(t.content),
+    outputPreview: t.outputPreview,
+    exitCode: t.exitCode,
   }));
   return {
     ...session,

@@ -410,6 +410,10 @@ export interface ToolCallRecord {
   rawInput?: unknown;
   locations?: Array<{ path: string; line?: number }>;
   content?: unknown;
+  /** Last lines of command output (RFC-040). */
+  outputPreview?: string;
+  /** Command exit code when the agent reports one (RFC-040). */
+  exitCode?: number;
   updatedAt: string;
 }
 

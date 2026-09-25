@@ -1,6 +1,6 @@
 # RFC-036 — A host with no projects is usable from the composer
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-25
 **Branch:** nightly-maintenance-2026-09-25-rfc036-composer-empty-host
 **Severity:** P1
@@ -42,7 +42,7 @@ expanded either.
 - [x] `discover-repos.test.ts` (4): roots/depth, skips + nested repos,
       limit, stable ids.
 - [x] `project-resolve.test.ts`: `~` cwd expands; `/` message is generic.
-- [ ] Manual: phone → Astrodata profile → Import from Astrodata… → pick →
+- [x] Manual: phone → Astrodata profile → Import from Astrodata… (4 candidates) → pick →
       picker shows it → dispatch.
 
 ## Rollout

@@ -57,6 +57,32 @@ import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
 import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
+import { WsTicketStore } from "./ws-tickets.js";
+
+/** Single-use WebSocket tickets (RFC-029), shared by /ws and /ws/terminal. */
+const wsTickets = new WsTicketStore();
+
+/**
+ * WebSocket upgrade auth (RFC-029). Accepts, in order:
+ *  1. `Authorization: Bearer` / `X-Grok-Dispatch-Token` header (native clients);
+ *  2. a single-use `?ticket=` from `POST /ws/ticket` (browsers, Electron);
+ *  3. legacy `?token=` — only from this machine, so old local builds keep
+ *     working while the long-lived token never crosses the network in a URL.
+ */
+export function wsUpgradeAuthorized(
+  req: Pick<IncomingMessage, "headers" | "url"> & { socket: { remoteAddress?: string | null } },
+  config: Pick<HostConfigFile, "hostToken">,
+  tickets: WsTicketStore,
+): boolean {
+  if (isAuthorized(req as IncomingMessage, config as HostConfigFile)) return true;
+  const url = new URL(req.url ?? "", "http://localhost");
+  if (tickets.consume(url.searchParams.get("ticket"))) return true;
+  const legacy = url.searchParams.get("token");
+  if (legacy && isLocalMachineAddr(req.socket.remoteAddress)) {
+    return tokensMatch(legacy, config.hostToken);
+  }
+  return false;
+}
 import QRCode from "qrcode";
 import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
 import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
@@ -127,14 +153,8 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     socket.destroy();
   };
 
-  function terminalAuthorized(req: IncomingMessage): boolean {
-    if (isAuthorized(req, config)) return true;
-    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
-    return tokensMatch(url.searchParams.get("token"), config.hostToken);
-  }
-
   termWss.on("connection", (ws, req) => {
-    if (!terminalAuthorized(req)) {
+    if (!wsUpgradeAuthorized(req, config, wsTickets)) {
       ws.close(4401, "Unauthorized");
       return;
     }
@@ -150,11 +170,8 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
   manager.setLocalClientChecker(() => localClients.size > 0);
 
   wss.on("connection", (ws: WsClient, req) => {
-    // Auth via query ?token= or header
-    const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
-    const qToken = url.searchParams.get("token");
-    const headerOk = isAuthorized(req, config);
-    if (!headerOk && !tokensMatch(qToken, config.hostToken)) {
+    // RFC-029: header, single-use ticket, or (local only) legacy ?token=.
+    if (!wsUpgradeAuthorized(req, config, wsTickets)) {
       ws.close(4401, "Unauthorized");
       return;
     }
@@ -375,6 +392,13 @@ async function handleHttp(
   if (!isAuthorized(req, config)) {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(unauthorizedBody());
+    return;
+  }
+
+  // POST /ws/ticket — single-use, 30s ticket for a WebSocket connect (RFC-029).
+  if (method === "POST" && path === "/ws/ticket") {
+    res.setHeader("Cache-Control", "no-store");
+    json(res, 200, wsTickets.issue());
     return;
   }
 

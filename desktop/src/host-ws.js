@@ -67,10 +67,11 @@ class HostWsMonitor {
     }
   }
 
-  connect() {
+  async connect() {
     if (this.stopped) return;
     this.clearReconnect();
     this.closeSocket();
+    const attempt = (this.attempt = (this.attempt || 0) + 1);
 
     const { hostURL, token } = this.getConfig();
     if (!hostURL || !token) {
@@ -78,19 +79,32 @@ class HostWsMonitor {
       return;
     }
 
+    this.onStatus("connecting");
+
+    // RFC-029: trade the host token for a single-use ticket so the long-lived
+    // token never appears in a WebSocket URL.
     let url;
     try {
+      const base = String(hostURL).replace(/\/$/, "");
+      const res = await fetch(`${base}/ws/ticket`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`ticket ${res.status}`);
+      const { ticket } = await res.json();
       const u = new URL(hostURL);
       u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
       u.pathname = "/ws";
-      u.search = `token=${encodeURIComponent(token)}`;
+      u.search = `ticket=${encodeURIComponent(ticket)}`;
       url = u.toString();
     } catch {
+      if (this.stopped || attempt !== this.attempt) return;
       this.onStatus("offline");
+      this.scheduleReconnect();
       return;
     }
-
-    this.onStatus("connecting");
+    // A newer connect() / stop() ran while we awaited the ticket.
+    if (this.stopped || attempt !== this.attempt) return;
 
     const WS = globalThis.WebSocket;
     if (!WS) {

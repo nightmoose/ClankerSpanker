@@ -25,7 +25,10 @@ final class WebSocketClient: NSObject, ObservableObject {
         components.scheme = (components.scheme == "https") ? "wss" : "ws"
         let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         components.path = basePath.isEmpty ? "/ws" : "/\(basePath)/ws"
-        components.queryItems = [URLQueryItem(name: "token", value: token)]
+        // RFC-029: authenticate with a header — the host token never goes in
+        // the URL (where it lands in logs). Network peers can no longer use
+        // `?token=` at all.
+        components.queryItems = nil
 
         guard let url = components.url else {
             lastError = "Bad WebSocket URL"
@@ -36,7 +39,9 @@ final class WebSocketClient: NSObject, ObservableObject {
         config.waitsForConnectivity = false
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         self.session = session
-        let task = session.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let task = session.webSocketTask(with: request)
         self.task = task
         connectedHostId = host.id
         // Do NOT mark Live until didOpen — premature Live hid broken REST.

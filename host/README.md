@@ -96,7 +96,8 @@ Authorization: Bearer <hostToken>
 | POST | `/bots/:id/run` | Manual fire (allowed even when disabled). Body `{ note }` is a one-shot extra instruction. |
 | GET | `/bots/:id/outbox` | Markdown drafts under the bot project's `.bot-outbox/` |
 | POST | `/sessions/:id/cancel` | Cancel |
-| WS | `/ws?token=<hostToken>` | Live event stream |
+| POST | `/ws/ticket` | Single-use 30 s WebSocket ticket (RFC-029) |
+| WS | `/ws` | Live event stream. Auth: `Authorization: Bearer` header, or `?ticket=` from `/ws/ticket`. `?token=` is accepted only from the host machine itself. |
 
 ## Config
 

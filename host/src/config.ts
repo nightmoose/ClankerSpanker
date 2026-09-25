@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, 
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { expandHome, inferProjectId } from "./project-resolve.js";
+import { discoverRepoProjects } from "./discover-repos.js";
 import { fileURLToPath } from "node:url";
 import type { HostConfigFile, ProjectInfo } from "./types.js";
 import {
@@ -66,7 +67,8 @@ export function normalizeProject(
  * no longer merged automatically at boot).
  */
 export function discoverKnownProjects(): ProjectInfo[] {
-  return knownWorkspaceProjects();
+  // RFC-036: scan for git repos instead of one Mac's hardcoded folder list.
+  return discoverRepoProjects().map(normalizeProject);
 }
 
 function defaultProjects(): ProjectInfo[] {
@@ -375,7 +377,7 @@ export function resolveProjectPath(
     // If the caller passed a cwd, honor it as long as it's one of the
     // project's declared paths (multi-path projects need to pick one).
     if (cwd && cwd.trim().length > 0) {
-      const wanted = resolve(cwd);
+      const wanted = resolve(expandHome(cwd));
       const match = projectPaths.find((p) => resolve(p) === wanted);
       if (match) {
         assertUsableCwd(match, `project ${project.id}`);
@@ -388,7 +390,7 @@ export function resolveProjectPath(
   }
 
   if (cwd) {
-    const resolved = resolve(cwd);
+    const resolved = resolve(expandHome(cwd)); // RFC-036: typed ~/x works
     assertUsableCwd(resolved, "cwd");
     if (!config.allowCustomPaths) {
       const allowed = config.projects.some(
@@ -441,8 +443,8 @@ export function normalizeExtraDirs(
 function assertUsableCwd(path: string, label: string): void {
   if (!isUsableCwd(path)) {
     throw new Error(
-      `Invalid ${label}: "${path}". Agents need a real project directory, not / or a missing path. ` +
-        `Pick Mercenary iOS / ClankerSpanker / etc. from the working-directory list.`,
+      `Invalid ${label}: "${path}". Agents need a real folder to work in — "/" and missing folders are refused ` +
+        `so an agent can't roam the whole disk. Pick a project, or type a folder such as ~/Projects/my-repo.`,
     );
   }
 }

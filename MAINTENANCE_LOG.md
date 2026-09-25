@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-032 projects follow the folder
+
+37% of sessions had no project; `~/journeyquest` never resolved; two
+projects claim `~/Projects`. New `project-resolve.ts` (expand `~`,
+longest-prefix inference that refuses ambiguous ties, overlap warnings,
+absolute-path check) wired into `normalizeProject`, `resolveProjectPath`,
+`GET /sessions` (display backfill) and `POST/PATCH /projects`. Browser
+cards show project names; composer hides archived projects. 10 new tests.
+
+---
+
 ## Run: 2026-09-25 — Soak: RFC-026…031 on Deez Nutz, token rotated
 
 Host deployed with RFC-026…031; phone build installed on Deez Nutz.

@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — Fix flaky RFC-023 test (red CI on main)
+
+CI on `main` failed after the push: `files.test.ts` "surfaces top-level
+files in cwd modified during the session" created the session *after*
+writing the file, so it only passed when both landed in the same
+millisecond (usual on macOS, not on Linux runners). The session now
+starts first. Test-only change.
+
+---
+
 ## Run: 2026-09-25 — Owner-approved project list cleanup (this Mac's config)
 
 Via the host API after RFC-032 (backup `config.json.bak-20260925-115508`,

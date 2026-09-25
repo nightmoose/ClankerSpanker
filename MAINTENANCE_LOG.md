@@ -2,6 +2,20 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-027 installer installed from itself
+
+`localHostPackagePath` pointed at the Application Support install root
+(both `HostInstaller.install` and `MacHostPanel.runInstall` saved it), so
+the next **Install / update host** would delete `dist/` and copy from the
+folder it had just emptied. Source resolution now skips the install root,
+the source path is what gets saved, and a checkout always rebuilds (a
+stale `dist/` used to install silently). Verified twice from the Host
+panel: source `~/Projects/GrokDispatch/host`, saved path stays the
+checkout, host healthy. Follow-up: `npm audit` reports 3 dev-dependency
+findings (1 high) in `host/`; production deps are clean.
+
+---
+
 ## Run: 2026-09-25 — RFC-026 stop handing out the host token
 
 `GET /setup`, `GET /` and `GET /connect.json` served the host token to any

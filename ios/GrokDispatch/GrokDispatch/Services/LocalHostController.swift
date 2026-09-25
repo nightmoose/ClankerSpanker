@@ -154,7 +154,10 @@ final class LocalHostController: ObservableObject {
     var hostConfigURL: URL { LocalHostConfigFile.configURL }
 
     private init() {
-        if let saved = UserDefaults.standard.string(forKey: "localHostPackagePath"), !saved.isEmpty {
+        // RFC-027: a saved path equal to the install root is the old bug's
+        // leftover — fall back to the checkout.
+        if let saved = UserDefaults.standard.string(forKey: "localHostPackagePath"), !saved.isEmpty,
+           (saved as NSString).standardizingPath != (LocalHostConfigFile.installedHostRoot.path as NSString).standardizingPath {
             hostPackagePath = saved
         } else {
             hostPackagePath = Self.defaultHostPackagePath() ?? ""
@@ -163,10 +166,8 @@ final class LocalHostController: ObservableObject {
     }
 
     private static func defaultHostPackagePath() -> String? {
-        let installed = LocalHostConfigFile.installedHostRoot.path
-        if FileManager.default.fileExists(atPath: (installed as NSString).appendingPathComponent("dist/index.js")) {
-            return installed
-        }
+        // RFC-027: the package path is the SOURCE for Install / update; never
+        // the install root.
         let home = LocalHostConfigFile.homeDirectory.path
         let candidates = [
             "\(home)/Projects/GrokDispatch/host",

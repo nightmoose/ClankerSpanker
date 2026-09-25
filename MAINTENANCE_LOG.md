@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-031 APNs payload size
+
+Host log showed `PayloadTooLarge`: approval titles carrying whole commands
+exceeded APNs' 4 KB. `encodeApnsBody` now clamps title (120) and body
+(400) by code point and shrinks the body until the JSON is ≤ 4000 bytes;
+routing data is untouched. 4 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-030 Gemini auto-approve is visible
 
 README claimed every agent waits for approval; Antigravity runs

@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HostConfigFile } from "../types.js";
 import {
+  APNS_MAX_BYTES,
   apnsJwt,
+  clampText,
   derToJoseP256,
   encodeApnsBody,
   normalizeApnsKey,
@@ -131,5 +133,36 @@ describe("encodeApnsBody", () => {
     const body = JSON.parse(encodeApnsBody({ badge: 0 })) as { aps: Record<string, unknown> };
     expect(body.aps).toEqual({ badge: 0 });
     expect(body.aps.alert).toBeUndefined();
+  });
+});
+
+describe("encodeApnsBody payload size (RFC-031)", () => {
+  const base = { badge: 1, sound: "default", category: "APPROVAL_REQUEST", data: { hostId: "h", sessionId: "s", kind: "approval" } };
+
+  it("keeps a huge approval title under the APNs limit", () => {
+    const huge = "rm -rf /tmp/x && " + "echo a very long shell command ".repeat(500);
+    const json = encodeApnsBody({ ...base, title: `Approval needed — ${huge}`, body: huge });
+    expect(Buffer.byteLength(json, "utf8")).toBeLessThanOrEqual(APNS_MAX_BYTES);
+    const parsed = JSON.parse(json);
+    expect(parsed.sessionId).toBe("s");
+    expect(parsed.aps.alert.title.endsWith("…")).toBe(true);
+  });
+
+  it("fits multi-byte text too", () => {
+    const emoji = "🦀".repeat(3000);
+    const json = encodeApnsBody({ ...base, title: emoji, body: emoji });
+    expect(Buffer.byteLength(json, "utf8")).toBeLessThanOrEqual(APNS_MAX_BYTES);
+  });
+
+  it("leaves short payloads untouched", () => {
+    const parsed = JSON.parse(encodeApnsBody({ ...base, title: "Approval needed — Fix", body: "Edit calc.py" }));
+    expect(parsed.aps.alert).toEqual({ title: "Approval needed — Fix", body: "Edit calc.py" });
+  });
+});
+
+describe("clampText", () => {
+  it("never splits a surrogate pair", () => {
+    expect(clampText("🦀🦀🦀", 2)).toBe("🦀…");
+    expect(clampText("abc", 5)).toBe("abc");
   });
 });

@@ -2,6 +2,18 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-028 listen on loopback + Tailscale
+
+New `bindHost: "auto"` listens on 127.0.0.1, ::1 and this machine's
+Tailscale addresses, re-scanned every 30 s; one `http.Server` per address
+shares the request/upgrade handlers. `"0.0.0.0"` still works but warns.
+New installs (host, Electron, Mac app) default to `auto`. Owner config
+switched `0.0.0.0` → `auto` (phone uses Tailscale). Verified: listeners
+on 127.0.0.1, [::1], 100.66.33.89 and the Tailscale IPv6 address; the
+Wi-Fi address (192.168.1.220) refuses connections.
+
+---
+
 ## Run: 2026-09-25 — RFC-027 installer installed from itself
 
 `localHostPackagePath` pointed at the Application Support install root

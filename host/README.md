@@ -38,6 +38,18 @@ answer a browser or app **on the host machine**, addressed by one of its own
 names, with no cross-site `Origin` (RFC-026). They never send CORS headers.
 Everyone else pairs by scanning the `/setup` QR code.
 
+### Where the host listens
+
+`"bindHost"` in `config.json`:
+
+| Value | Listens on |
+|---|---|
+| `"auto"` (default for new installs) | `127.0.0.1`, `::1`, and this machine's Tailscale addresses (re-checked every 30 s) |
+| `"0.0.0.0"` | Every network, including public Wi-Fi (logs a warning) |
+| `"127.0.0.1,100.66.33.89"` | Exactly the listed addresses |
+
+Phones and other laptops should connect over Tailscale.
+
 ### Pairing a phone
 
 1. On the host machine open `http://localhost:8787/setup`.

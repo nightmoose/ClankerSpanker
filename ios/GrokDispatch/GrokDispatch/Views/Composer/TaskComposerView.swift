@@ -275,7 +275,10 @@ struct TaskComposerView: View {
                                         .foregroundStyle(.secondary)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 } else if bound?.profile.isAntigravity == true {
-                                    Text("Antigravity (agy) runs headless on the host. Authenticate once with `agy` on that machine. Shell tools need YOLO or settings allow rules.")
+                                    if bound?.profile.autoApprovesTools == true {
+                                        AutoApproveWarning()
+                                    }
+                                    Text("Antigravity (agy) runs headless on the host. Authenticate once with `agy` on that machine.")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -366,5 +369,21 @@ struct TaskComposerView: View {
             vm.addImages(images)
         }
         photoPickerItems = []
+    }
+}
+
+
+/// Gemini / Antigravity can't ask for approval headless, so it runs every
+/// tool without asking unless the profile opts out (RFC-030).
+struct AutoApproveWarning: View {
+    var body: some View {
+        Label {
+            Text("Runs edits and shell commands without asking. To require approval, set ANTIGRAVITY_REQUIRE_PERMISSIONS=1 on this profile (Gemini will then refuse shell tools).")
+        } icon: {
+            Image(systemName: "exclamationmark.shield.fill")
+        }
+        .font(.caption)
+        .foregroundStyle(DispatchColors.warning)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

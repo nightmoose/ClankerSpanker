@@ -132,6 +132,8 @@ struct AgentProfile: Codable, Identifiable, Hashable, Sendable {
     var hasCredentials: Bool?
     /// Live quota / readiness from GET /profiles?usage=1.
     var usage: ProfileUsage?
+    /// Sessions run tools without asking (Antigravity default, RFC-030).
+    var autoApprovesTools: Bool?
 
     var isClaude: Bool { backend == "claude" }
     var isGrok: Bool { backend == "grok" }

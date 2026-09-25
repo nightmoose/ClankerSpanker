@@ -184,6 +184,8 @@ export interface PublicAgentProfile {
   model?: string;
   /** True when a non-empty API key / env is configured for this profile. */
   hasCredentials: boolean;
+  /** True when sessions on this profile run tools without asking (Antigravity default, RFC-030). */
+  autoApprovesTools: boolean;
   /** Persona / system-prompt fragment configured for this profile. */
   systemPrompt?: string;
   /** Pre-flight tool names this profile may invoke. */

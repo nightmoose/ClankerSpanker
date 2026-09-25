@@ -97,9 +97,14 @@ Do not use “My Mac (Designed for iPad)” for the phone scheme.
 
 ## Security
 
-- Tailscale or LAN only; bearer host token
+- Listens on loopback + Tailscale by default (`bindHost: "auto"`, RFC-028); bearer host token
+- The token is only shown on the host machine (`/setup`, RFC-026) and never goes in WebSocket URLs (RFC-029)
 - Grok: never yolo — file edits / dangerous tools wait for the client
 - Claude: PreToolUse hook parks Edit/Bash until approved
+- **Gemini / Antigravity: not approval-gated.** Headless `agy` can't ask, so it runs with
+  `--dangerously-skip-permissions`. The composer shows a warning on these profiles. Set
+  `ANTIGRAVITY_REQUIRE_PERMISSIONS=1` in the profile's env to require permissions (shell
+  tools are then refused). RFC-030.
 - `host/src/auth.ts` is the security boundary (constant-time compare; empty token authorizes nobody)
 
 ## Git

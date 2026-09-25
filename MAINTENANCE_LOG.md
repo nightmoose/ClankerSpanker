@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-030 Gemini auto-approve is visible
+
+README claimed every agent waits for approval; Antigravity runs
+`--dangerously-skip-permissions` by default. Owner kept the default.
+`antigravityAutoApproves` is now the one rule (runner + profile API);
+profiles expose `autoApprovesTools`; iOS and Mac composers warn on those
+profiles; README → Security says so. 3 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-029 WebSocket tickets
 
 `/ws` and `/ws/terminal` took `?token=<hostToken>` from every client.

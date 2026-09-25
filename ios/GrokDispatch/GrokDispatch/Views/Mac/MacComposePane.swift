@@ -24,6 +24,9 @@ struct MacComposePane: View {
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 8).fill(bound.uiColor.opacity(0.12)))
+                    if bound.profile.autoApprovesTools == true {
+                        AutoApproveWarning()
+                    }
                 } else {
                     Text("No profile yet — connect a host first.")
                         .foregroundStyle(.secondary)

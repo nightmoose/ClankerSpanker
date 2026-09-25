@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-040 tool output in rows
+
+Tool rows said only "done". Host now keeps a short output tail + exit
+code per Grok tool call (and no longer drops them when slimming for disk
+and the wire); Mac/iOS rows render them. First live run showed nothing —
+`slimSession`/`toDetail` copied a fixed field list — fixed and covered by
+a test. 5 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-039 Mac composer + project form
 
 Prompt focus, per-host last project, local-only folder buttons (remote

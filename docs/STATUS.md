@@ -45,3 +45,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 037 | [Import from disk finds GitHub Desktop clones; configurable roots](rfcs/037-discover-roots.md) | Accepted | `nightly-maintenance-2026-09-25-rfc037-discover-roots` |
 | 038 | [Session list status follows live events](rfcs/038-live-list-status.md) | Shipped | `nightly-maintenance-2026-09-25-rfc038-live-list-status` |
 | 039 | [Mac composer + project form fixes](rfcs/039-mac-composer-fixes.md) | Shipped | `nightly-maintenance-2026-09-25-rfc039-mac-composer-fixes` |
+| 040 | [Tool rows show command output and exit code](rfcs/040-tool-output.md) | Shipped | `nightly-maintenance-2026-09-25-rfc040-tool-output` |

@@ -222,25 +222,42 @@ struct TranscriptView: View {
 
     @ViewBuilder
     private func toolRow(_ tool: ToolCallRecord) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: toolIcon(for: tool))
-                .font(.caption)
-                .foregroundStyle(toolColor(for: tool.status))
-                .frame(width: 16)
-            Text(tool.title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-            if let subtitle = toolSubtitle(for: tool) {
-                Text(subtitle)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: toolIcon(for: tool))
+                    .font(.caption)
+                    .foregroundStyle(toolColor(for: tool.status))
+                    .frame(width: 16)
+                Text(tool.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                // RFC-040: don't repeat a path the title already shows.
+                if let subtitle = toolSubtitle(for: tool), !tool.title.contains(subtitle) {
+                    Text(subtitle)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if let code = tool.exitCode, code != 0 {
+                    Text("exit \(code)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(DispatchColors.danger)
+                }
+                Text(toolStatusLabel(tool.status))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(toolColor(for: tool.status))
             }
-            Spacer(minLength: 0)
-            Text(toolStatusLabel(tool.status))
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(toolColor(for: tool.status))
+            // RFC-040: show why a command failed instead of just "done".
+            if let output = tool.outputPreview, !output.isEmpty {
+                Text(output)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle((tool.exitCode ?? 0) != 0 ? DispatchColors.danger.opacity(0.9) : .secondary)
+                    .lineLimit(6)
+                    .textSelection(.enabled)
+                    .padding(.leading, 24)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

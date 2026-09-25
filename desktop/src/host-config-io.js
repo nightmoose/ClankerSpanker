@@ -19,7 +19,7 @@ function ensureHostConfig(configPath = hostConfigPath()) {
   }
   const created = {
     hostToken: crypto.randomBytes(24).toString("hex"),
-    bindHost: "0.0.0.0",
+    bindHost: "auto", // RFC-028: loopback + Tailscale
     bindPort: 8787,
     grokBinary: "grok",
     projects: [],

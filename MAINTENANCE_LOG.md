@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-048 Grok homes
+
+Disk import read only `~/.grok` and resumed everything in the NightMoose
+isolated home. Now scans every Grok home, records each session's home,
+resumes there, and labels `~/.grok` sessions in all four clients. 36 TUI
+sessions + 14 isolated-home sessions tagged on the Mac mini. Found while
+checking: the browser client keeps a rotated-out token and shows only
+"Unauthorized" → RFC-049.
+
+---
+
 ## Run: 2026-09-25 — RFC-047 rename, in-repo parts
 
 `ios/GrokDispatch/GrokDispatch` → `ios/ClankerSpanker/ClankerSpanker`,

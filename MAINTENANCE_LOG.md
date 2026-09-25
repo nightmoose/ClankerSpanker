@@ -2,6 +2,16 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-050 web + Electron parity
+
+Owner chose four first-class clients. Browser Compose gained a profile
+picker, Gemini warning, inline project import/create and labeled options;
+browser session view gained tool rows with output. Electron gained tool
+output, Import from host, and a local-only folder picker. Caught during
+testing: the new picker shared the list-filter state — split it.
+
+---
+
 ## Run: 2026-09-25 — RFC-049 web token recovery
 
 `/app/` stuck on a rotated-out token. On 401 it now re-fetches the token

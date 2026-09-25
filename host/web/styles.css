@@ -278,3 +278,18 @@ textarea { min-height: 120px; resize: vertical; }
 
 /* RFC-048: Grok home label on session cards */
 .badge { display:inline-block; font-size:11px; font-weight:600; padding:1px 6px; border-radius:999px; color:#a1a1aa; background:rgba(161,161,170,0.15); }
+
+/* RFC-050: composer parity */
+label.check { display:flex; align-items:center; gap:8px; margin:8px 0; font-size:14px; }
+label.check input { width:auto; margin:0; }
+.warn { color:#f5a524; font-size:13px; margin:6px 0; }
+button.link { background:none; border:0; color:#73b8ff; padding:4px 0; cursor:pointer; font-size:13px; }
+.card.inset { background:rgba(255,255,255,0.03); margin-top:8px; }
+.meta { color:#a1a1aa; font-size:12px; }
+.tools summary { cursor:pointer; font-weight:600; }
+.tool { padding:6px 0; border-top:1px solid rgba(255,255,255,0.06); }
+.tool-head { display:flex; gap:8px; align-items:baseline; font-size:13px; }
+.tool-head .meta { margin-left:auto; }
+.tool .exit { color:#ff6b7a; font-weight:700; font-size:12px; }
+.tool pre { margin:4px 0 0; font:12px/1.4 ui-monospace, Menlo, monospace; color:#a1a1aa; white-space:pre-wrap; }
+.tool pre.fail { color:#ff6b7a; }

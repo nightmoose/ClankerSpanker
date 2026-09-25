@@ -50,6 +50,13 @@ Everyone else pairs by scanning the `/setup` QR code.
 
 Phones and other laptops should connect over Tailscale.
 
+### Import from disk
+
+`POST /projects/discover` (the apps' **Import from disk…**) lists git repos
+in `~` and two levels under `~/Projects`, `~/Developer`, `~/code`, `~/src`,
+`~/dev`, `~/repos`, `~/GitHub`, `~/Documents` and `~/Documents/GitHub`.
+Add your own with `"discoverRoots": ["~/work"]` in `config.json`.
+
 ### Pairing a phone
 
 1. On the host machine open `http://localhost:8787/setup`.

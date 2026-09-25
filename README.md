@@ -44,7 +44,7 @@ npm start
 | | |
 |--|--|
 | Browser UI | `http://<host-ip>:8787/app/` |
-| Setup / token | `http://<host-ip>:8787/setup` |
+| Pair a phone | `http://localhost:8787/setup` on the host (QR code; host-machine only) |
 | Config | `~/.grok-dispatch/config.json` |
 
 Port `8787` is intentional (Bricklayer uses `8791`). Same Mac can run both.

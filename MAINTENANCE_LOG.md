@@ -2,6 +2,26 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-026 stop handing out the host token
+
+`GET /setup`, `GET /` and `GET /connect.json` served the host token to any
+caller with CORS `*`, and the host binds 0.0.0.0 — anyone on the same
+Wi-Fi (or, possibly, a web page in the local browser) could take the host.
+
+Now: those routes only answer `isTrustedLocalPageRequest` (peer is this
+machine, Host header is one of our names — blocks DNS rebinding — and no
+cross-site Origin / Sec-Fetch-Site). Token-less routes never send CORS.
+`connect.json` drops the project list. `/setup` shows a QR code of the
+deep link (`qrcode` 1.5.4, MIT, server-side SVG); the advertised URL
+prefers the Tailscale address. config.json (and `.bak*`) is written and
+tightened to 0600 by host, Electron and the Mac app. A missing
+`hostToken` is now minted *and saved* (it used to re-randomize every
+boot), which makes rotation a documented manual step. iOS/Mac: deep
+links ask "Add host?" / "Update host token?" and update the existing host
+by address instead of adding a duplicate. 17 new tests.
+
+---
+
 ## Run: 2026-09-25 — Land RFC-024 + RFC-025 (multi-host)
 
 Both branches had sat unmerged since 21–22 Sep. Reviewed the host diff

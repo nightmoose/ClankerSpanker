@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostConfigFile, ProjectInfo } from "./types.js";
 import {
@@ -138,6 +138,40 @@ function findGrokBinary(): string {
  * (project CRUD, attachments, etc.). Non-fatal on I/O error — logs and
  * moves on so the API stays responsive.
  */
+/**
+ * config.json holds the host token and per-profile secrets (GITHUB_TOKEN,
+ * NPM_TOKEN, …). Always owner-only (RFC-026). `mode` on writeFileSync only
+ * applies when the file is created, so chmod explicitly as well.
+ */
+export function writeConfigFile(configPath: string, value: unknown): void {
+  writeFileSync(configPath, JSON.stringify(value, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  chmodSync(configPath, 0o600);
+}
+
+/** Tighten an existing config.json (and its `.bak*` siblings) to 0600. */
+export function tightenConfigPermissions(configPath: string): void {
+  const dir = dirname(configPath);
+  const base = basename(configPath);
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (name !== base && !name.startsWith(`${base}.bak`)) continue;
+    const full = join(dir, name);
+    try {
+      if ((statSync(full).mode & 0o077) !== 0) {
+        chmodSync(full, 0o600);
+        console.log(`[config] Tightened permissions on ${full} to 0600`);
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
 export function saveConfig(
   config: HostConfigFile,
   configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFAULT_CONFIG_PATH,
@@ -148,7 +182,7 @@ export function saveConfig(
     // for legacy clients still reading the old field.
     const projects = (config.projects ?? []).map(normalizeProject);
     const next = { ...config, projects };
-    writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+    writeConfigFile(configPath, next);
     return true;
   } catch (err) {
     console.warn("[config] saveConfig failed:", err instanceof Error ? err.message : err);
@@ -188,9 +222,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
       notifyDesktop: true,
       dataDir: DEFAULT_DATA_DIR,
     };
-    writeFileSync(configPath, JSON.stringify(created, null, 2) + "\n", "utf8");
+    writeConfigFile(configPath, created);
     console.log(`[config] Wrote new config → ${configPath}`);
-    console.log(`[config] Host token (save this for ClankerSpanker):\n  ${created.hostToken}`);
+    console.log(`[config] Host token minted. Pair clients from http://localhost:${created.bindPort}/setup on this machine.`);
     console.log(
       `[config] Profiles: ${created.profiles.map((p) => `${p.name}(${p.backend})`).join(", ")}`,
     );
@@ -202,6 +236,8 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     );
     return created;
   }
+
+  tightenConfigPermissions(configPath);
 
   const raw = JSON.parse(readFileSync(configPath, "utf8")) as Partial<HostConfigFile> & {
     notifyMac?: boolean;
@@ -218,7 +254,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   if (!raw.profiles?.length) {
     try {
       const next = { ...raw, profiles };
-      writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      writeConfigFile(configPath, next);
       console.log(`[config] Added default profiles to ${configPath}`);
     } catch {
       /* non-fatal */
@@ -239,8 +275,21 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   if (needsMigration) {
     try {
       const next = { ...raw, profiles, projects };
-      writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      writeConfigFile(configPath, next);
       console.log(`[config] Migrated ${projects.length} projects to paths[] shape`);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  // Mint + persist a host token when it is missing (e.g. deleted to rotate
+  // it). Before RFC-026 a missing token was re-randomized on every boot and
+  // never saved, so clients could not stay paired across restarts.
+  if (typeof raw.hostToken !== "string") {
+    (raw as Partial<HostConfigFile>).hostToken = randomBytes(24).toString("hex");
+    try {
+      writeConfigFile(configPath, raw);
+      console.log(`[config] Minted a new host token. Re-pair clients from /setup on this machine.`);
     } catch {
       /* non-fatal */
     }
@@ -252,7 +301,7 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     const mintedHostId = randomUUID();
     (raw as Partial<HostConfigFile>).hostId = mintedHostId;
     try {
-      writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n", "utf8");
+      writeConfigFile(configPath, raw);
       console.log(`[config] Minted hostId ${mintedHostId}`);
     } catch {
       /* non-fatal — an in-memory hostId still works for this boot */

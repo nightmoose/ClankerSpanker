@@ -31,3 +31,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 023 | [In-app PDF preview + share on the session file viewer](rfcs/023-file-viewer-pdf.md) | Accepted | `nightly-maintenance-2026-09-21-rfc023-file-viewer-pdf` |
 | 024 | [iOS multi-host: WS pool, per-host fan-out, hostId end-to-end](rfcs/024-ios-multi-host.md) | Shipped | `nightly-maintenance-2026-09-21-rfc024-ios-multi-host` |
 | 025 | [Electron desktop multi-host: WS pool, per-host fan-out, hostId end-to-end](rfcs/025-desktop-multi-host.md) | Shipped | `nightly-maintenance-2026-09-22-rfc025-desktop-multi-host` |
+| 026 | [Stop handing out the host token: local-only setup, QR pairing, private config](rfcs/026-host-token-exposure.md) | Shipped | `nightly-maintenance-2026-09-25-rfc026-host-token-exposure` |

@@ -21,6 +21,7 @@ struct ClankerSpankerApp: App {
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in appState.handleDeepLink(url) }
+                .modifier(HostLinkConfirmation(appState: appState))
                 .frame(minWidth: 1000, minHeight: 680)
         }
         .defaultSize(width: 1320, height: 860)
@@ -62,8 +63,41 @@ struct ClankerSpankerApp: App {
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in appState.handleDeepLink(url) }
+                .modifier(HostLinkConfirmation(appState: appState))
         }
         #endif
+    }
+}
+
+/// "Add host?" / "Update token?" prompt for `clankerspanker://configure`
+/// links (RFC-026).
+struct HostLinkConfirmation: ViewModifier {
+    @ObservedObject var appState: AppState
+
+    func body(content: Content) -> some View {
+        content.alert(
+            title,
+            isPresented: Binding(
+                get: { appState.pendingHostLink != nil },
+                set: { if !$0 { appState.cancelPendingHostLink() } }
+            ),
+            presenting: appState.pendingHostLink
+        ) { _ in
+            Button(appState.pendingHostLink?.existingHostId == nil ? "Add host" : "Update token") {
+                appState.confirmPendingHostLink()
+            }
+            Button("Cancel", role: .cancel) { appState.cancelPendingHostLink() }
+        } message: { link in
+            if let existing = link.existingName {
+                Text("Replace the saved token for \(existing) (\(link.baseURL)) with the one from this link?")
+            } else {
+                Text("Connect to \(link.name) at \(link.baseURL)? Only accept links from your own machines.")
+            }
+        }
+    }
+
+    private var title: String {
+        appState.pendingHostLink?.existingHostId == nil ? "Add a host?" : "Update host token?"
     }
 }
 

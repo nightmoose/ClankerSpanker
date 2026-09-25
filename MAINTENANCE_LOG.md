@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-034 update-mac-host.sh (Astrodata still leaking)
+
+Astrodata (100.66.166.28) answered `/connect.json` with 200 over
+Tailscale — old host, token exposed (not read). SSH closed, and its Mac
+app predates the RFC-027 installer fix. Added
+`scripts/update-mac-host.sh` (pull, build, deploy, optional
+`--bind-auto` / `--rotate-token`, restart, verify). Verified on this Mac;
+owner runs it on Astrodata.
+
+---
+
 ## Run: 2026-09-25 — RFC-033 approval previews + new files in Diff
 
 Approval cards rendered an empty box for Grok edits, Claude edits and

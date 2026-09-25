@@ -127,7 +127,10 @@ export function preferredClientHost(port: number): string {
     }
   }
 
-  const ip = preferred[0] ?? fallback[0];
+  // RFC-026: pair phones over Tailscale when it's up — the LAN address only
+  // works at home, and RFC-027 stops listening on it by default.
+  const tailscale = preferred.find(isTailscaleAddr);
+  const ip = tailscale ?? preferred[0] ?? fallback[0];
   if (ip) return `${ip}:${port}`;
   return `127.0.0.1:${port}`;
 }
@@ -143,4 +146,12 @@ export function defaultProjectPathCandidates(): string[] {
     join(home, "code"),
     join(home, "src"),
   ];
+}
+
+/** Tailscale hands out addresses from the CGNAT block 100.64.0.0/10. */
+export function isTailscaleAddr(addr: string): boolean {
+  const m = /^100\.(\d{1,3})\./.exec(addr);
+  if (!m) return false;
+  const second = Number(m[1]);
+  return second >= 64 && second <= 127;
 }

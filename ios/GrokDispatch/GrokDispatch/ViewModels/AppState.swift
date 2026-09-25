@@ -476,19 +476,63 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// A `clankerspanker://configure` link waiting for the user to confirm
+    /// (RFC-026). Links can arrive from anywhere — a message, a web page — so
+    /// they never add or change a host silently.
+    struct PendingHostLink: Identifiable, Equatable {
+        let id = UUID()
+        let baseURL: String
+        let token: String
+        let name: String
+        /// Set when a host with the same address already exists: the link
+        /// updates that host's token instead of adding a duplicate.
+        let existingHostId: UUID?
+        let existingName: String?
+    }
+
+    @Published var pendingHostLink: PendingHostLink?
+
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "clankerspanker" || url.scheme == "grokdispatch" else { return }
+        // First run: OnboardingView owns the link (it fills the form the user
+        // is already looking at).
+        guard isConfigured else { return }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let hostURL = items.first(where: { $0.name == "url" })?.value
         let token = items.first(where: { $0.name == "token" })?.value
-        let name = items.first(where: { $0.name == "name" })?.value ?? "Primary"
+        let rawName = items.first(where: { $0.name == "name" })?.value ?? ""
         guard let hostURL, let token, !hostURL.isEmpty, !token.isEmpty else { return }
-        let host = HostEndpoint(name: name, baseURL: hostURL)
-        upsertHost(host, token: token)
+        let candidate = HostEndpoint(name: rawName, baseURL: hostURL)
+        let existing = hosts.first(where: { $0.endpointKey == candidate.endpointKey })
+        pendingHostLink = PendingHostLink(
+            baseURL: candidate.baseURL,
+            token: token,
+            name: rawName.isEmpty ? (URL(string: candidate.baseURL)?.host ?? "Host") : rawName,
+            existingHostId: existing?.id,
+            existingName: existing?.name
+        )
+    }
+
+    func confirmPendingHostLink() {
+        guard let link = pendingHostLink else { return }
+        pendingHostLink = nil
+        let host: HostEndpoint
+        if let id = link.existingHostId, var existing = hosts.first(where: { $0.id == id }) {
+            existing.baseURL = link.baseURL
+            if existing.name.isEmpty || existing.name == "Primary" { existing.name = link.name }
+            host = existing
+        } else {
+            host = HostEndpoint(name: link.name, baseURL: link.baseURL)
+        }
+        upsertHost(host, token: link.token)
         Task {
             try? await api.validate(host: host)
             await refreshSessions()
         }
+    }
+
+    func cancelPendingHostLink() {
+        pendingHostLink = nil
     }
 
     /// Toggle a filter chip on/off. Turning one on also focuses it for compose.

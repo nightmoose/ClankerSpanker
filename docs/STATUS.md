@@ -41,4 +41,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 033 | [Approval cards show the diff or command; Diff tab shows new files](rfcs/033-approval-preview.md) | Shipped | `nightly-maintenance-2026-09-25-rfc033-approval-preview` |
 | 034 | [One-command host update for a Mac](rfcs/034-update-mac-host-script.md) | Shipped | `nightly-maintenance-2026-09-25-rfc034-update-mac-host-script` |
 | 035 | [iPhone opens sessions on their own host](rfcs/035-phone-cross-host-open.md) | Shipped | `nightly-maintenance-2026-09-25-rfc035-phone-cross-host-open` |
-| 036 | [A host with no projects is usable from the composer](rfcs/036-composer-empty-host.md) | Accepted | `nightly-maintenance-2026-09-25-rfc036-composer-empty-host` |
+| 036 | [A host with no projects is usable from the composer](rfcs/036-composer-empty-host.md) | Shipped | `nightly-maintenance-2026-09-25-rfc036-composer-empty-host` |

@@ -2,6 +2,18 @@
 
 ---
 
+## Run: 2026-09-25 — Owner-approved project list cleanup (this Mac's config)
+
+Via the host API after RFC-032 (backup `config.json.bak-20260925-115508`,
+0600): ClankerSpanker no longer lists `~/Projects` (the "Projects"
+catch-all keeps it); Bricklayer adds `~/.bricklayer/worktrees`; ArcadeBox
+adds the old `~/Documents/Claude/Projects/IncredibleJourney/ArcadeBox`;
+the archived duplicate "Mercenary iOS" was removed (Mercenary already
+covers `~/mercenary-ios`). Untagged sessions 41 → 21 (all in `~` or
+`/tmp`). Profile defaults left alone (owner's call).
+
+---
+
 ## Run: 2026-09-25 — RFC-032 projects follow the folder
 
 37% of sessions had no project; `~/journeyquest` never resolved; two

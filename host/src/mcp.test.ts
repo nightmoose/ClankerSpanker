@@ -77,8 +77,24 @@ describe("toMcpJson", () => {
     expect(json.mcpServers.linear).toEqual({
       url: "https://mcp.linear.app/mcp",
       headers: { Authorization: "Bearer lin-secret" },
-      transport: "http",
+      type: "http",
     });
+  });
+
+  it("gives every URL server a Claude `type`, never `transport` (RFC-054)", () => {
+    const auth = { Authorization: "Bearer t" };
+    const json = toMcpJson(
+      [
+        { name: "a", url: "https://a.example/mcp", headers: auth, transport: "sse" },
+        { name: "b", url: "https://b.example/mcp", headers: auth, transport: "http" },
+        { name: "c", url: "https://c.example/mcp", headers: auth },
+      ],
+      {},
+    );
+    expect(json.mcpServers.a).toMatchObject({ type: "sse" });
+    expect(json.mcpServers.b).toMatchObject({ type: "http" });
+    expect(json.mcpServers.c).toMatchObject({ type: "http" });
+    for (const e of Object.values(json.mcpServers)) expect(e).not.toHaveProperty("transport");
   });
 
   it("omits HTTP servers with no Authorization", () => {

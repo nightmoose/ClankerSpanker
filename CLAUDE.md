@@ -19,6 +19,6 @@ make rfc SLUG=short-kebab
 - `host/src/auth.ts` — empty token authorises nobody
 - One host gateway (`docs/CLIENTS.md`)
 - Do not rename `x-grok-dispatch-token` casually
-- Do not copy `ConnectionDefaults.lanHostURL` (`192.168.50.9`)
+- No hardcoded LAN IPs in clients (removed in RFC-043; phones pair by QR over Tailscale)
 - iOS client changes: always install on **Deez Nutz** (scheme `ClankerSpankerPhone`). Simulator is not a ship.
 - Phone push when the app is killed: host APNs (`docs/APNS.md`); kick the LaunchAgent after host changes.

@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-043 no hardcoded LAN IP
+
+Removed `ConnectionDefaults.lanHostURL` (192.168.50.9); phone onboarding
+now says to scan the QR on the host's `/setup`. Docs and the house-style
+allowlist updated.
+
+---
+
 ## Run: 2026-09-25 — RFC-042 bounded file-viewer read
 
 `readSessionFile` read whole files before capping; now reads the prefix

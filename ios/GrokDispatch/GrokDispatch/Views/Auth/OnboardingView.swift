@@ -55,9 +55,18 @@ struct OnboardingView: View {
                             Label("Automatic setup", systemImage: "sparkles")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(DispatchColors.accent)
-                            Text("On the same Wi‑Fi as your Mac. Grabs the host URL and token, then you tap Save & connect.")
+                            #if os(iOS) && !targetEnvironment(simulator)
+                            // RFC-043: the host only shares its token with its own
+                            // machine (RFC-026). Pair by QR from the Mac.
+                            Text("On the Mac running the host, open \(ConnectionDefaults.setupPageURL.absoluteString) and point this iPhone's camera at the QR code. The app asks before adding the host.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            #else
+                            Text("Grabs the host URL and token from the host on this machine, then you tap Save & connect.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            #endif
 
                             #if targetEnvironment(simulator)
                             DispatchButton(
@@ -67,9 +76,9 @@ struct OnboardingView: View {
                                 hostURL = ConnectionDefaults.simulatorHostURL
                                 Task { await fetchTokenFromLocalSetup() }
                             }
-                            #else
+                            #elseif os(macOS)
                             DispatchButton(
-                                title: "Fetch token from Mac (same Wi‑Fi)",
+                                title: "Fetch token from this Mac",
                                 icon: "arrow.down.circle"
                             ) {
                                 Task { await fetchTokenFromLocalSetup() }
@@ -82,7 +91,7 @@ struct OnboardingView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             field(
                                 title: "Host URL",
-                                prompt: ConnectionDefaults.lanHostURL,
+                                prompt: ConnectionDefaults.hostURLPlaceholder,
                                 text: $hostURL,
                                 secure: false
                             )
@@ -146,8 +155,7 @@ struct OnboardingView: View {
                                 numbered("Run the host on this Mac or another machine")
                                 numbered("Open the setup page and copy the host token")
                                 #else
-                                numbered("Open Safari on this phone (same Wi‑Fi as the Mac)")
-                                numbered("Go to:")
+                                numbered("On the Mac running the host, open:")
                                 #endif
                                 Text(ConnectionDefaults.setupPageURL.absoluteString)
                                     .font(.system(.footnote, design: .monospaced))
@@ -156,7 +164,7 @@ struct OnboardingView: View {
                                 #if os(macOS)
                                 numbered("Paste URL + token above and Save & connect")
                                 #else
-                                numbered("Tap “Copy Host token”, paste above")
+                                numbered("Scan the QR code with the Camera app — or type the Host URL shown there and paste the token above")
                                 numbered("Tap Save & connect (leave API key blank forever)")
                                 #endif
                             }
@@ -257,7 +265,6 @@ struct OnboardingView: View {
 
         let candidates = [
             hostURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/connect.json",
-            ConnectionDefaults.lanHostURL + "/connect.json",
             ConnectionDefaults.simulatorHostURL + "/connect.json",
         ]
 

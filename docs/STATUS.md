@@ -43,3 +43,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 035 | [iPhone opens sessions on their own host](rfcs/035-phone-cross-host-open.md) | Shipped | `nightly-maintenance-2026-09-25-rfc035-phone-cross-host-open` |
 | 036 | [A host with no projects is usable from the composer](rfcs/036-composer-empty-host.md) | Shipped | `nightly-maintenance-2026-09-25-rfc036-composer-empty-host` |
 | 037 | [Import from disk finds GitHub Desktop clones; configurable roots](rfcs/037-discover-roots.md) | Accepted | `nightly-maintenance-2026-09-25-rfc037-discover-roots` |
+| 038 | [Session list status follows live events](rfcs/038-live-list-status.md) | Shipped | `nightly-maintenance-2026-09-25-rfc038-live-list-status` |

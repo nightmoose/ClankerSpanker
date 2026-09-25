@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-038 list status follows live events
+
+Sidebar lagged the header because every socket event restarted the
+800 ms refresh debounce. Rows now take the status an event implies
+immediately; the debounced refetch is capped at 3 s. Verified on the Mac
+app: Needs approval → Running → Your turn with no lag.
+
+---
+
 ## Run: 2026-09-25 — RFC-037 discover GitHub Desktop clones
 
 Astrodata's Import found 4 repos; the rest are in

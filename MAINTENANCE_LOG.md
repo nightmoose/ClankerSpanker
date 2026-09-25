@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-054 Claude MCP config uses `type`
+
+Claude rejected the generated `.mcp.json` (`transport: "http"`), so every
+Claude turn on the Personal profile died with exit 1. URL servers now get
+`type: "http" | "sse"`. Verified with a live Personal-profile Claude session.
+
+---
+
 ## Run: 2026-09-25 — RFC-053 Claude failures say why
 
 "Claude exited with code 1" now carries Claude's error result or the stderr

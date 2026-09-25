@@ -59,3 +59,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 051 | [Split session-manager.ts, phase A](rfcs/051-split-session-manager-a.md) | Shipped | `nightly-maintenance-2026-09-25-rfc051-split-session-manager-a` |
 | 052 | [Split session-manager.ts, phase B: CLI backends become runners](rfcs/052-split-session-manager-b.md) | Shipped | `nightly-maintenance-2026-09-25-rfc052-split-session-manager-b` |
 | 053 | [Claude failures say why](rfcs/053-claude-error-detail.md) | Shipped | `nightly-maintenance-2026-09-25-rfc053-claude-error-detail` |
+| 054 | [Claude MCP config uses `type`](rfcs/054-claude-mcp-type.md) | Shipped | `nightly-maintenance-2026-09-25-rfc054-claude-mcp-type` |

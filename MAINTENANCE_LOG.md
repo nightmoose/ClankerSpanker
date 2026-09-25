@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-046 Swift unit tests
+
+Added `ClankerSpankerMacTests` (hosted by the Mac app) and `make
+test-swift`: 11 tests over host matching, live status, and optional wire
+fields. One test's assumption was wrong (URL case is kept; matching is
+case-insensitive via `endpointKey`) — the test was corrected, not the app.
+
+---
+
 ## Run: 2026-09-25 — RFC-045 dev-dependency audit
 
 vitest 5 + nanoid fix; `npm audit` 3 → 0 in `host/`. 350 tests green.

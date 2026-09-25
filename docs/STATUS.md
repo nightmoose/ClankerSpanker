@@ -51,3 +51,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 043 | [Remove the hardcoded LAN IP; onboarding pairs by QR](rfcs/043-remove-lan-ip.md) | Shipped | `nightly-maintenance-2026-09-25-rfc043-remove-lan-ip` |
 | 044 | [OpenAPI contract test](rfcs/044-openapi-contract.md) | Shipped | `nightly-maintenance-2026-09-25-rfc044-openapi-contract` |
 | 045 | [Clear host dev-dependency advisories](rfcs/045-dev-deps-audit.md) | Shipped | `nightly-maintenance-2026-09-25-rfc045-dev-deps-audit` |
+| 046 | [First Swift unit tests](rfcs/046-swift-tests.md) | Shipped | `nightly-maintenance-2026-09-25-rfc046-swift-tests` |

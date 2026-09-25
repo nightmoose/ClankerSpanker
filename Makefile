@@ -1,4 +1,4 @@
-.PHONY: check house-style test typecheck build rfc
+.PHONY: check house-style test typecheck build rfc test-swift
 
 # ContractGate-shaped one command. CI runs this.
 check: house-style typecheck build
@@ -18,3 +18,8 @@ build:
 rfc:
 	@test -n "$(SLUG)" || (echo "usage: make rfc SLUG=short-kebab"; exit 2)
 	bash scripts/new-rfc.sh "$(SLUG)"
+
+# RFC-046: Swift unit tests (macOS only; hosted by the Mac app). Not in `check` — CI is Linux.
+test-swift:
+	cd ios/GrokDispatch && xcodebuild test -project ClankerSpanker.xcodeproj -scheme ClankerSpanker \
+		-destination 'platform=macOS' -derivedDataPath /tmp/ClankerSpanker-tests -quiet

@@ -86,5 +86,5 @@ cd host && npm run typecheck
 cd host && npm run build
 ```
 
-The iOS app has **no tests**. Xcode projects come from **xcodegen** via
+Swift unit tests live in `ios/GrokDispatch/Tests` (`make test-swift`, RFC-046). Xcode projects come from **xcodegen** via
 `ios/GrokDispatch/project.yml`; the `.xcodeproj` is a build artifact.

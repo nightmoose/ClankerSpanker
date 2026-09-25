@@ -66,8 +66,9 @@ second feature onto a red PR.
   analog). Raise the baseline when you add tests; never lower it to land a PR.
 - Do not mark a test skipped to make CI pass. If it needs a live host, gate it
   and document why.
-- Swift clients currently have **no** tests. That is a known gap, not permission
-  to add more untested surface without an RFC.
+- Swift: `make test-swift` (RFC-046) runs the `ClankerSpankerMacTests` bundle
+  (hosted by the Mac app). Pure logic you add or change in the Swift clients
+  gets a test there. CI is Linux, so run it locally before merging Swift work.
 
 ## Docs with the code
 

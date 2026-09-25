@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-09-25 — Astrodata updated (RFC-034 soak)
+
+Owner ran `update-mac-host.sh --bind-auto --rotate-token` on Astrodata
+(after a first pairing had gone through its old `/setup`). From this Mac
+over Tailscale: `/connect.json` 403, `/setup` 403, unauthenticated
+`/ws/ticket` 401. Phone re-paired from Astrodata's QR ("Update host
+token"). Both hosts now run RFC-026…034. Note for the runbook: `git pull`
+alone does not update a running host — the script must run.
+
+---
+
 ## Run: 2026-09-25 — RFC-034 update-mac-host.sh (Astrodata still leaking)
 
 Astrodata (100.66.166.28) answered `/connect.json` with 200 over

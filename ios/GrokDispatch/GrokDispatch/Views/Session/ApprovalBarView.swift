@@ -33,7 +33,9 @@ struct ApprovalBarView: View {
                 }
             }
 
-            if let raw = approval?.rawInput {
+            if let preview = approval?.preview {
+                ApprovalPreviewView(preview: preview)
+            } else if let raw = approval?.rawInput {
                 VStack(alignment: .leading, spacing: 6) {
                     if let to = raw.to, !to.isEmpty {
                         Text("\(raw.channel ?? "outbound") → \(to)")
@@ -113,5 +115,66 @@ struct ApprovalBarView: View {
         }
         .padding()
         .background(.ultraThinMaterial)
+    }
+}
+
+
+/// Diff (red/green lines) or command preview on the approval card (RFC-033).
+struct ApprovalPreviewView: View {
+    let preview: ApprovalPreview
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let path = preview.path, !path.isEmpty {
+                Text((path as NSString).lastPathComponent)
+                    .font(.caption.weight(.semibold))
+                    .help(path)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line.text.isEmpty ? " " : line.text)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(line.color)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(line.background)
+                    }
+                }
+                .textSelection(.enabled)
+            }
+            .frame(maxHeight: 220)
+            if preview.truncated == true {
+                Text("Preview truncated — see the Diff tab for everything.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            if preview.type == "command", let cwd = preview.cwd, !cwd.isEmpty {
+                Text("in \(cwd)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private struct Line {
+        let text: String
+        let color: Color
+        let background: Color
+    }
+
+    private var lines: [Line] {
+        if preview.type == "command" {
+            return (preview.command ?? "").components(separatedBy: "\n").enumerated().map { i, l in
+                Line(text: (i == 0 ? "$ " : "  ") + l, color: .primary, background: .clear)
+            }
+        }
+        let removed = (preview.oldText ?? "").isEmpty ? [] : (preview.oldText ?? "").components(separatedBy: "\n")
+        let added = (preview.newText ?? "").isEmpty ? [] : (preview.newText ?? "").components(separatedBy: "\n")
+        return removed.map { Line(text: "- " + $0, color: DispatchColors.danger, background: DispatchColors.danger.opacity(0.08)) }
+            + added.map { Line(text: "+ " + $0, color: DispatchColors.success, background: DispatchColors.success.opacity(0.08)) }
     }
 }

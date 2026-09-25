@@ -383,8 +383,21 @@ struct PendingApproval: Codable, Identifiable, Hashable, Sendable {
     var title: String
     var kind: String?
     var rawInput: ApprovalRawInput?
+    /// Diff or command the tool will run (RFC-033). Absent on older hosts.
+    var preview: ApprovalPreview?
     var options: [ApprovalOption]
     var createdAt: String
+}
+
+/// Host-normalized "what will this do" for approval cards (RFC-033).
+struct ApprovalPreview: Codable, Hashable, Sendable {
+    var type: String            // "diff" | "command"
+    var path: String?
+    var oldText: String?
+    var newText: String?
+    var command: String?
+    var cwd: String?
+    var truncated: Bool?
 }
 
 struct QuestionOption: Codable, Hashable, Sendable {

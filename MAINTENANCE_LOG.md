@@ -2,6 +2,18 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-033 approval previews + new files in Diff
+
+Approval cards rendered an empty box for Grok edits, Claude edits and
+shell commands. Host now attaches `preview` (diff or command, capped) to
+every Grok/Claude approval; iOS/Mac, browser and Electron cards render it.
+`gitDiff` includes untracked files. Verified live in the sandbox: edit,
+new-file and command cards all show content; Diff tab lists both files.
+Seen again during the soak: sidebar said "Needs approval" while the
+header said "Running" → RFC-034. 9 new tests.
+
+---
+
 ## Run: 2026-09-25 — Fix flaky RFC-023 test (red CI on main)
 
 CI on `main` failed after the push: `files.test.ts` "surfaces top-level

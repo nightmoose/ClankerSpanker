@@ -445,6 +445,8 @@ export interface PendingApproval {
   kind?: string;
   rawInput?: unknown;
   locations?: Array<{ path: string; line?: number }>;
+  /** What the tool will do — diff or command — for the approval card (RFC-033). */
+  preview?: import("./approval-preview.js").ApprovalPreview;
   options: ApprovalOption[];
   createdAt: string;
   /** ISO timestamp after which the sweeper auto-rejects this approval. */

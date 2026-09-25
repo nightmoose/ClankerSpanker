@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-051 session-manager split, phase A
+
+Helpers, types, questionnaire/image support and a unified TombstoneFile
+moved out of `session-manager.ts` (4,586 → 3,823 lines), no behavior
+change. 374 tests; live smoke session OK. Phase B (backend runners) next.
+
+---
+
 ## Run: 2026-09-25 — RFC-050 web + Electron parity
 
 Owner chose four first-class clients. Browser Compose gained a profile

@@ -205,6 +205,13 @@ final class AppState: ObservableObject {
         }()
         guard let host else { return }
 
+        // RFC-035: a plain tap on the banner opens that session on its own host
+        // (it used to only refresh, leaving you wherever you were).
+        if action == "com.apple.UNNotificationDefaultActionIdentifier" {
+            selectedTab = .sessions
+            notificationRoute = SessionRoute(hostId: host.id, sessionId: sessionId)
+        }
+
         switch kind {
         case "approval":
             guard let approvalId = info["approvalId"] as? String else { return }
@@ -491,6 +498,10 @@ final class AppState: ObservableObject {
     }
 
     @Published var pendingHostLink: PendingHostLink?
+
+    /// Session to open because a notification was tapped (RFC-035). The
+    /// sessions list consumes it and clears it.
+    @Published var notificationRoute: SessionRoute?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "clankerspanker" || url.scheme == "grokdispatch" else { return }

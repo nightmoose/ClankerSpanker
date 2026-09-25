@@ -48,6 +48,12 @@ struct DashboardView: View {
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
+            // RFC-035: a tapped notification opens its session on its own host.
+            .onChange(of: appState.notificationRoute) { _, route in
+                guard let route else { return }
+                pendingRoute = route
+                appState.notificationRoute = nil
+            }
             .navigationDestination(item: $pendingRoute) { route in
                 if let host = appState.hosts.first(where: { $0.id == route.hostId }) {
                     SessionDetailView(
@@ -225,7 +231,8 @@ struct DashboardView: View {
                 if !attention.isEmpty && !isSearching {
                     Section {
                         ForEach(attention) { session in
-                            if let hostId = appState.selectedHost?.id {
+                            // RFC-035: open on the session's OWN host, not the one in focus.
+                            if let hostId = appState.endpoint(for: session)?.id {
                                 NavigationLink(value: SessionRoute(hostId: hostId, sessionId: session.id)) {
                                     HStack(spacing: 10) {
                                         Image(systemName: session.status.systemImage)
@@ -301,7 +308,8 @@ struct DashboardView: View {
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     } else {
                         ForEach(filteredRows) { session in
-                            if let hostId = appState.selectedHost?.id {
+                            // RFC-035: open on the session's OWN host, not the one in focus.
+                            if let hostId = appState.endpoint(for: session)?.id {
                                 NavigationLink(value: SessionRoute(hostId: hostId, sessionId: session.id)) {
                                     SessionRowView(session: session)
                                 }

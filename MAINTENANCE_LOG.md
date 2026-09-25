@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-042 bounded file-viewer read
+
+`readSessionFile` read whole files before capping; now reads the prefix
+only. Symlink-escape suspicion from the review was wrong (realpath
+already used) — regression test added. 2 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-041 toolbar labels
 
 Mac toolbar buttons were bare SF Symbols (VoiceOver read "server.rack",

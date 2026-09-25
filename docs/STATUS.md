@@ -57,3 +57,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 049 | [Browser client recovers from a rotated token](rfcs/049-web-token-recovery.md) | Shipped | `nightly-maintenance-2026-09-25-rfc049-web-token-recovery` |
 | 050 | [Browser + Electron parity with today's Swift features](rfcs/050-web-electron-parity.md) | Shipped | `nightly-maintenance-2026-09-25-rfc050-web-electron-parity` |
 | 051 | [Split session-manager.ts, phase A](rfcs/051-split-session-manager-a.md) | Shipped | `nightly-maintenance-2026-09-25-rfc051-split-session-manager-a` |
+| 052 | [Split session-manager.ts, phase B: CLI backends become runners](rfcs/052-split-session-manager-b.md) | Shipped | `nightly-maintenance-2026-09-25-rfc052-split-session-manager-b` |

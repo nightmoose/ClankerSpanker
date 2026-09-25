@@ -76,7 +76,7 @@ a person can read or write.
 
 1. Update the existing `docs/` page if one covers that surface.
 2. Otherwise add `docs/<feature>.md` (or a reference page).
-3. Keep `shared/openapi.yaml` in the same change when you add/change host routes.
+3. Keep `shared/openapi.yaml` in the same change when you add/change host routes. `openapi-contract.test.ts` (RFC-044) fails the build if you forget.
 
 ## Log
 

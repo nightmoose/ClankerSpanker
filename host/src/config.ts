@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { expandHome, inferProjectId } from "./project-resolve.js";
 import { fileURLToPath } from "node:url";
 import type { HostConfigFile, ProjectInfo } from "./types.js";
 import {
@@ -47,7 +48,10 @@ export function normalizeProject(
     : [];
   const legacyPath =
     typeof raw.path === "string" && raw.path.trim().length > 0 ? raw.path : undefined;
-  const merged = pathsFromArray.length > 0 ? [...pathsFromArray] : (legacyPath ? [legacyPath] : []);
+  // RFC-032: `~/x` is stored as typed by some clients; resolve() never expands it.
+  const merged = (pathsFromArray.length > 0 ? [...pathsFromArray] : (legacyPath ? [legacyPath] : [])).map((p) =>
+    expandHome(p),
+  );
   const seen = new Set<string>();
   const paths = merged.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
   return {
@@ -392,8 +396,8 @@ export function resolveProjectPath(
       );
       if (!allowed) throw new Error("Custom paths are disabled; pick an allowlisted project");
     }
-    const match = config.projects.find((p) => resolve(p.path) === resolved);
-    return { path: resolved, projectId: match?.id };
+    // RFC-032: longest matching project path, not only an exact first-path match.
+    return { path: resolved, projectId: inferProjectId(config.projects, resolved) };
   }
 
   if (config.projects[0]) {

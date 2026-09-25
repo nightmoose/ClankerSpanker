@@ -36,7 +36,7 @@ the LaunchAgent, wait for `/health`, print listeners and pairing steps.
       listeners loopback + Tailscale.
 - [x] Config step on a scratch file: `0.0.0.0 → auto`, token removed,
       result 0600.
-- [ ] Astrodata: run with `--bind-auto --rotate-token`; from this Mac
+- [x] Astrodata: ran with `--bind-auto --rotate-token`; from this Mac
       `GET http://100.66.166.28:8787/connect.json` → 403.
 
 ## Rollout

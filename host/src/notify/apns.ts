@@ -195,19 +195,44 @@ function requestOnSession(
   });
 }
 
+/** APNs rejects alert payloads over 4096 bytes (`PayloadTooLarge`). Leave headroom. */
+export const APNS_MAX_BYTES = 4000;
+const TITLE_MAX_CHARS = 120;
+const BODY_MAX_CHARS = 400;
+
+/** Cut to `max` code points (never splits a surrogate pair) with an ellipsis. */
+export function clampText(text: string, max: number): string {
+  const chars = Array.from(text);
+  if (chars.length <= max) return text;
+  return chars.slice(0, Math.max(0, max - 1)).join("") + "…";
+}
+
+/**
+ * RFC-031: approval titles can carry a whole shell command or diff, which
+ * blew past 4 KB and APNs dropped the notification. Clamp title/body, then
+ * shrink the body until the encoded JSON fits.
+ */
 export function encodeApnsBody(payload: ApnsPayload): string {
   const aps: Record<string, unknown> = {
     badge: Math.max(0, payload.badge),
   };
-  if (payload.title || payload.body) {
-    aps.alert = {
-      title: payload.title ?? "ClankerSpanker",
-      body: payload.body ?? "",
-    };
-    if (payload.sound) aps.sound = payload.sound;
-    if (payload.category) aps.category = payload.category;
+  const rest = payload.data ?? {};
+  if (!(payload.title || payload.body)) {
+    return JSON.stringify({ aps, ...rest });
   }
-  return JSON.stringify({ aps, ...(payload.data ?? {}) });
+  const title = clampText(payload.title ?? "ClankerSpanker", TITLE_MAX_CHARS);
+  let body = clampText(payload.body ?? "", BODY_MAX_CHARS);
+  if (payload.sound) aps.sound = payload.sound;
+  if (payload.category) aps.category = payload.category;
+  const encode = () => JSON.stringify({ aps: { ...aps, alert: { title, body } }, ...rest });
+  let json = encode();
+  while (Buffer.byteLength(json, "utf8") > APNS_MAX_BYTES && body.length > 0) {
+    const chars = Array.from(body);
+    body = clampText(body, Math.floor(chars.length * 0.75));
+    if (Array.from(body).length >= chars.length) body = "";
+    json = encode();
+  }
+  return json;
 }
 
 async function sendOnEnvironment(

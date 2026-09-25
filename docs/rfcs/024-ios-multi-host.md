@@ -1,6 +1,6 @@
 # RFC-024 — iOS multi-host: WS pool, per-host fan-out, hostId end-to-end
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-21
 **Branch:** nightly-maintenance-2026-09-21-rfc024-ios-multi-host
 **Severity:** P1 — first real two-host test on 2026-09-21 broke visibly. Only the primary host's profiles/sessions/bots/tasks are listed on iOS, secondary-host approvals never push, kill-state pushes are single-host, and the Mac shell clobbers a remote selection on every startup.

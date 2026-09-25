@@ -2,6 +2,22 @@
 
 ---
 
+## Run: 2026-09-25 — Land RFC-024 + RFC-025 (multi-host)
+
+Both branches had sat unmerged since 21–22 Sep. Reviewed the host diff
+(`hostId` mint + `GET /host/self`, push payload already carries the
+client's per-host id) and the Swift pool/fan-out. `make check` green,
+271 host tests; `ClankerSpanker` (macOS) and `ClankerSpankerPhone`
+(iOS Simulator) both build; every `desktop/` JS file passes
+`node --check`. Merged 024 then 025 (stacked) and marked both Shipped.
+Phone two-host soak still to do with the second host.
+
+A duplicate RFC-025 draft ("Electron multi-host", written today by a
+review session that didn't know the 22 Sep branch existed) was dropped;
+its empty branch was deleted.
+
+---
+
 ## Run: 2026-09-22 — RFC-025 Electron desktop multi-host
 
 Mirror of RFC-024 for the Linux Electron client at `desktop/`. Before

@@ -1,6 +1,6 @@
 # RFC-025 — Electron desktop multi-host: WS pool, per-host fan-out, hostId end-to-end
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-22
 **Branch:** nightly-maintenance-2026-09-22-rfc025-desktop-multi-host
 **Severity:** P1 — mirror of RFC-024 for the Linux Electron client. Without this, adding a second host to `desktop/` hides sessions from every host that isn't `activeHostId`, drops WS events, and routes approval-notification clicks to the wrong host.

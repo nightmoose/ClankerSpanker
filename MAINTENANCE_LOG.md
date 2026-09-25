@@ -2,6 +2,17 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-035 two-host soak: phone opened the wrong host
+
+With the phone focused on Astrodata, a Primary approval pushed fine but
+opening it 404'd: iPhone list rows (Dashboard + Projects) still routed by
+`selectedHost`, and tapping a notification banner never navigated. Rows
+now use `endpoint(for:)`; a banner tap opens the session on the push's
+host. Re-tested on Deez Nutz: banner → Primary session with diff →
+approved from the phone → edit landed. Also installed RFC-033 on the phone.
+
+---
+
 ## Run: 2026-09-25 — Astrodata updated (RFC-034 soak)
 
 Owner ran `update-mac-host.sh --bind-auto --rotate-token` on Astrodata

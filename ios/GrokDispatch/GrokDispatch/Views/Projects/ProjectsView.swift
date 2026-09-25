@@ -417,7 +417,7 @@ struct ProjectsView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: SessionSummary) -> some View {
-        if let hostId = appState.selectedHost?.id {
+        if let hostId = appState.endpoint(for: session)?.id {
             Button {
                 pendingRoute = SessionRoute(hostId: hostId, sessionId: session.id)
             } label: {

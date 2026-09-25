@@ -73,6 +73,9 @@ export interface ClaudeRunnerEvents {
 export class ClaudeRunner extends EventEmitter {
   private proc: ChildProcess | null = null;
   private fullText = "";
+  /** Last stderr output and Claude's own error result — for a useful failure message (RFC-053). */
+  private stderrTail = "";
+  private resultError = "";
   private claudeSessionId: string | undefined;
   private turnUsage: ClaudeUsageDelta = {
     inputTokens: 0,
@@ -149,7 +152,10 @@ export class ClaudeRunner extends EventEmitter {
     const proc = this.proc;
     proc.stderr?.on("data", (buf: Buffer) => {
       const t = buf.toString("utf8").trim();
-      if (t) this.emit("system", t.slice(0, 500));
+      if (t) {
+        this.stderrTail = (this.stderrTail + "\n" + t).slice(-800);
+        this.emit("system", t.slice(0, 500));
+      }
     });
 
     if (!proc.stdout) throw new Error("Claude process has no stdout");
@@ -164,7 +170,9 @@ export class ClaudeRunner extends EventEmitter {
     });
 
     if (code && code !== 0 && !this.fullText.trim()) {
-      const err = `Claude exited with code ${code}`;
+      // RFC-053: say why — Claude's error result, else the tail of stderr.
+      const why = (this.resultError || this.stderrTail).trim().split("\n").slice(-3).join(" ").slice(0, 400);
+      const err = why ? `Claude exited with code ${code}: ${why}` : `Claude exited with code ${code}`;
       this.emit("done", { text: "", sessionId: this.claudeSessionId, error: err });
       throw new Error(err);
     }
@@ -291,6 +299,9 @@ export class ClaudeRunner extends EventEmitter {
     }
 
     if (type === "result") {
+      if (msg.is_error === true) {
+        this.resultError = String(msg.result ?? msg.subtype ?? "error").slice(0, 400);
+      }
       const resultText =
         typeof msg.result === "string"
           ? msg.result

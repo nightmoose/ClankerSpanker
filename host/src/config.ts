@@ -66,9 +66,10 @@ export function normalizeProject(
  * Discover known workspaces on disk (used by the opt-in "Import" endpoint,
  * no longer merged automatically at boot).
  */
-export function discoverKnownProjects(): ProjectInfo[] {
+export function discoverKnownProjects(extraRoots: string[] = []): ProjectInfo[] {
   // RFC-036: scan for git repos instead of one Mac's hardcoded folder list.
-  return discoverRepoProjects().map(normalizeProject);
+  // RFC-037: plus config.json "discoverRoots".
+  return discoverRepoProjects(homedir(), extraRoots).map(normalizeProject);
 }
 
 function defaultProjects(): ProjectInfo[] {
@@ -347,6 +348,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     promptIdleTimeoutMs:
       typeof raw.promptIdleTimeoutMs === "number" ? raw.promptIdleTimeoutMs : undefined,
     promptMaxMs: typeof raw.promptMaxMs === "number" ? raw.promptMaxMs : undefined,
+    discoverRoots: Array.isArray(raw.discoverRoots)
+      ? raw.discoverRoots.filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+      : undefined,
   };
 
   // Env overrides

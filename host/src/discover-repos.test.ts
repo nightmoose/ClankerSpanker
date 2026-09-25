@@ -54,3 +54,20 @@ describe("discoverGitRepos (RFC-036)", () => {
     expect(discoverRepoProjects(h)[0]).toMatchObject({ name: "Alpha", paths: [join(h, "Projects", "Alpha")] });
   });
 });
+
+describe("discover roots (RFC-037)", () => {
+  it("reaches GitHub Desktop's ~/Documents/GitHub/<org>/<repo>", () => {
+    const h = home();
+    repo(join(h, "Documents", "GitHub", "Teladoc", "service-a"));
+    repo(join(h, "Documents", "GitHub", "Teladoc", "service-b"));
+    const found = discoverGitRepos(h).map((p) => p.slice(h.length));
+    expect(found).toEqual(expect.arrayContaining(["/Documents/GitHub/Teladoc/service-a", "/Documents/GitHub/Teladoc/service-b"]));
+  });
+
+  it("scans configured extra roots, with ~ expanded", () => {
+    const h = home();
+    repo(join(h, "work", "client", "app"));
+    expect(discoverGitRepos(h).map((p) => p.slice(h.length))).not.toContain("/work/client/app");
+    expect(discoverGitRepos(h, 100, ["~/work"]).map((p) => p.slice(h.length))).toContain("/work/client/app");
+  });
+});

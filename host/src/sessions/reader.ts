@@ -452,18 +452,68 @@ export async function extractClaudeContext(
 }
 
 export async function gitDiff(cwd: string, maxBytes = 200_000): Promise<string> {
+  let tracked: string;
   try {
     const { stdout } = await execFileAsync("git", ["diff", "HEAD"], {
       cwd,
       maxBuffer: maxBytes,
       timeout: 15_000,
     });
-    return stdout.slice(0, maxBytes);
+    tracked = stdout;
   } catch (err) {
     const e = err as { stdout?: string; message?: string };
-    if (e.stdout) return String(e.stdout).slice(0, maxBytes);
-    return `// Unable to read git diff: ${e.message ?? err}`;
+    if (!e.stdout) return `// Unable to read git diff: ${e.message ?? err}`;
+    tracked = String(e.stdout);
   }
+  // RFC-033: `git diff HEAD` ignores files the agent created. Show them too.
+  const untracked = await untrackedFilesDiff(cwd, Math.max(0, maxBytes - tracked.length));
+  return (tracked + untracked).slice(0, maxBytes);
+}
+
+const UNTRACKED_MAX_FILES = 20;
+const UNTRACKED_MAX_FILE_BYTES = 64_000;
+
+/** Untracked (not ignored) files rendered as `new file` unified diffs. */
+export async function untrackedFilesDiff(cwd: string, budget: number): Promise<string> {
+  if (budget <= 0) return "";
+  let names: string[];
+  try {
+    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      cwd,
+      maxBuffer: 1_000_000,
+      timeout: 15_000,
+    });
+    names = stdout.split("\0").filter(Boolean);
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const name of names.slice(0, UNTRACKED_MAX_FILES)) {
+    let buf: Buffer;
+    try {
+      const full = join(cwd, name);
+      if (statSync(full).size > UNTRACKED_MAX_FILE_BYTES) {
+        out += `diff --git a/${name} b/${name}\nnew file (too large to show)\n`;
+        continue;
+      }
+      buf = readFileSync(full);
+    } catch {
+      continue;
+    }
+    if (buf.includes(0)) {
+      out += `diff --git a/${name} b/${name}\nnew file mode 100644\nBinary file ${name} added\n`;
+      continue;
+    }
+    const lines = buf.toString("utf8").replace(/\n$/, "").split("\n");
+    out +=
+      `diff --git a/${name} b/${name}\nnew file mode 100644\n--- /dev/null\n+++ b/${name}\n` +
+      `@@ -0,0 +1,${lines.length} @@\n` +
+      lines.map((l) => `+${l}`).join("\n") +
+      "\n";
+    if (out.length >= budget) break;
+  }
+  if (names.length > UNTRACKED_MAX_FILES) out += `// …and ${names.length - UNTRACKED_MAX_FILES} more new files\n`;
+  return out.slice(0, budget);
 }
 
 export function findClaudeBinary(): string {

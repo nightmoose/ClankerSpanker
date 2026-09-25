@@ -336,6 +336,7 @@ function renderDetail() {
         ? `<div class="approval">
             <strong>${escapeHtml(pendingA.title || "Approval needed")}</strong>
             <p class="preview">${escapeHtml(pendingA.kind || "")}</p>
+            ${approvalPreviewHtml(pendingA.preview)}
             <div class="row-actions" style="margin-top:10px">
               <button type="button" class="primary" id="btn-approve">Approve</button>
               <button type="button" class="danger" id="btn-reject">Reject</button>
@@ -1291,6 +1292,23 @@ async function connectWs() {
 function syncTabs() {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === state.tab));
   $("#btn-archived")?.classList.toggle("active", state.showArchived);
+}
+
+/** Diff or command the approval will run (RFC-033). */
+function approvalPreviewHtml(p) {
+  if (!p) return "";
+  const lines =
+    p.type === "command"
+      ? String(p.command || "").split("\n").map((l, i) => `<div>${i === 0 ? "$ " : "  "}${escapeHtml(l)}</div>`)
+      : [
+          ...(p.oldText ? String(p.oldText).split("\n").map((l) => `<div class="del">- ${escapeHtml(l)}</div>`) : []),
+          ...(p.newText ? String(p.newText).split("\n").map((l) => `<div class="add">+ ${escapeHtml(l)}</div>`) : []),
+        ];
+  return `<div class="approval-preview">
+    ${p.path ? `<div class="meta" title="${escapeHtml(p.path)}">${escapeHtml(String(p.path).split("/").pop())}</div>` : ""}
+    <pre>${lines.join("")}</pre>
+    ${p.truncated ? `<div class="meta">Preview truncated.</div>` : ""}
+  </div>`;
 }
 
 /** Project name when the host knows it (RFC-032 infers it from the folder); else the folder. */

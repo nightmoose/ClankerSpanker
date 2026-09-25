@@ -1336,6 +1336,7 @@ function renderApprovalBar(pendingA) {
       ${pendingA.kind ? `<span class="approval-kind">${escapeHtml(pendingA.kind)}</span>` : ""}
     </div>
     ${detailBits ? `<p class="preview">${escapeHtml(detailBits)}</p>` : ""}
+    ${approvalPreviewHtml(pendingA.preview)}
     <label class="field">Comment (optional)</label>
     <input id="approval-comment" placeholder="Reason or context…" value="${escapeAttr(state.approvalDraftComment || "")}" />
     <div class="inline-actions">
@@ -4097,3 +4098,21 @@ boot().catch((e) => {
   console.error(e);
   banner(e.message || String(e), true);
 });
+
+
+/** Diff or command the approval will run (RFC-033). Mirrors host/web/app.js. */
+function approvalPreviewHtml(p) {
+  if (!p) return "";
+  const lines =
+    p.type === "command"
+      ? String(p.command || "").split("\n").map((l, i) => `<div>${i === 0 ? "$ " : "  "}${escapeHtml(l)}</div>`)
+      : [
+          ...(p.oldText ? String(p.oldText).split("\n").map((l) => `<div class="del">- ${escapeHtml(l)}</div>`) : []),
+          ...(p.newText ? String(p.newText).split("\n").map((l) => `<div class="add">+ ${escapeHtml(l)}</div>`) : []),
+        ];
+  return `<div class="approval-preview">
+    ${p.path ? `<div class="meta" title="${escapeHtml(p.path)}">${escapeHtml(String(p.path).split("/").pop())}</div>` : ""}
+    <pre>${lines.join("")}</pre>
+    ${p.truncated ? `<div class="meta">Preview truncated.</div>` : ""}
+  </div>`;
+}

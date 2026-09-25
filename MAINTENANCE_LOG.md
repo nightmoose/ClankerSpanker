@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-049 web token recovery
+
+`/app/` stuck on a rotated-out token. On 401 it now re-fetches the token
+from the host (single-flight) and retries; Electron explains a 401.
+Verified with a planted stale token.
+
+---
+
 ## Run: 2026-09-25 — RFC-048 Grok homes
 
 Disk import read only `~/.grok` and resumed everything in the NightMoose

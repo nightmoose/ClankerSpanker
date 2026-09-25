@@ -51,6 +51,12 @@ const Api = (() => {
       headers["Content-Type"] = "application/json";
     }
     const res = await fetch(url, { ...opts, headers });
+    if (res.status === 401) {
+      // RFC-049: say what happened instead of a bare "Unauthorized".
+      throw new Error(
+        `${conn.hostURL} rejected the saved token (it may have been rotated). Copy the new token from /setup on that machine into Settings → Hosts.`,
+      );
+    }
     const text = await res.text();
     let body = null;
     try {

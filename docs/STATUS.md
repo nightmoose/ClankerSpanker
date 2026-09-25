@@ -54,3 +54,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 046 | [First Swift unit tests](rfcs/046-swift-tests.md) | Shipped | `nightly-maintenance-2026-09-25-rfc046-swift-tests` |
 | 047 | [Finish the ClankerSpanker rename (in-repo parts only)](rfcs/047-rename-safe-parts.md) | Shipped | `nightly-maintenance-2026-09-25-rfc047-rename-safe-parts` |
 | 048 | [Read every Grok home; resume sessions where they live](rfcs/048-grok-homes.md) | Shipped | `nightly-maintenance-2026-09-25-rfc048-grok-homes` |
+| 049 | [Browser client recovers from a rotated token](rfcs/049-web-token-recovery.md) | Shipped | `nightly-maintenance-2026-09-25-rfc049-web-token-recovery` |

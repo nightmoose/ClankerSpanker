@@ -49,12 +49,52 @@ function authHeaders() {
   };
 }
 
-async function api(path, opts = {}) {
+/**
+ * RFC-049: after a token rotation the stored token is stale. When this UI is
+ * served by the host itself, it can fetch the current token from
+ * /connect.json (same-origin, host machine only — RFC-026). Once per failure.
+ */
+let tokenRefresh = null; // single-flight: parallel 401s share one fetch
+
+async function refreshTokenFromHost(usedToken) {
+  if (state.baseURL.replace(/\/$/, "") !== window.location.origin) return false;
+  if (!tokenRefresh) {
+    tokenRefresh = (async () => {
+      try {
+        const r = await fetch("/connect.json", { cache: "no-store" });
+        if (!r.ok) return null;
+        const c = await r.json();
+        if (c?.hostToken && c.hostToken !== state.token) {
+          state.token = c.hostToken;
+          try { localStorage.setItem(STORAGE_TOKEN, state.token); } catch { /* private mode */ }
+          connectWs();
+        }
+        return c?.hostToken ?? null;
+      } catch {
+        return null;
+      } finally {
+        setTimeout(() => { tokenRefresh = null; }, 0);
+      }
+    })();
+  }
+  const current = await tokenRefresh;
+  return Boolean(current && current !== usedToken);
+}
+
+async function api(path, opts = {}, retried = false) {
   const url = new URL(path, state.baseURL.replace(/\/$/, "") + "/");
+  const usedToken = state.token;
   const res = await fetch(url, {
     ...opts,
     headers: { ...authHeaders(), ...(opts.headers || {}) },
   });
+  if (res.status === 401 && !retried) {
+    // A concurrent request may already have fetched the new token.
+    if (state.token !== usedToken || (await refreshTokenFromHost(usedToken))) return api(path, opts, true);
+    throw new Error(
+      "The host rejected this browser's token (it may have been rotated). On the host machine, open /setup and use Open browser UI, or paste the new token in Settings.",
+    );
+  }
   const text = await res.text();
   let body = null;
   try {

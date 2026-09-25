@@ -32,7 +32,8 @@ function ensureHostConfig(configPath = hostConfigPath()) {
     notifyDesktop: true,
     dataDir: DEFAULT_DATA_DIR,
   };
-  fs.writeFileSync(configPath, JSON.stringify(created, null, 2) + "\n", "utf8");
+  fs.writeFileSync(configPath, JSON.stringify(created, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  fs.chmodSync(configPath, 0o600); // RFC-026: holds the host token + profile secrets
   return created;
 }
 
@@ -149,7 +150,8 @@ function writeHostConfigPatch(patch, configPath = hostConfigPath()) {
 
   if (typeof next.bindPort === "string") next.bindPort = Number(next.bindPort);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+  fs.writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  fs.chmodSync(configPath, 0o600); // RFC-026: holds the host token + profile secrets
   return publicHostConfig(next);
 }
 

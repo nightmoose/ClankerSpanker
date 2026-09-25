@@ -54,6 +54,8 @@ import {
 import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
+import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
+import QRCode from "qrcode";
 import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
 import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
 
@@ -236,10 +238,13 @@ async function handleHttp(
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = (req.method ?? "GET").toUpperCase();
 
-  // CORS for local tooling
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Grok-Dispatch-Token");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  // CORS for clients that run off-origin (Electron renderer is file://).
+  // RFC-026: never on token-less routes — a cross-origin page could read them.
+  if (corsAllowedFor(path)) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Grok-Dispatch-Token");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  }
   if (method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -257,10 +262,23 @@ async function handleHttp(
     return;
   }
 
-  // Setup + landing (LAN / Tailscale only — do not expose publicly)
+  // Setup + landing. Reveals the host token, so it only answers a browser on
+  // THIS machine addressed by one of its own names (RFC-026). Phones pair by
+  // scanning the QR code shown here.
   if (method === "GET" && (path === "/setup" || path === "/")) {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(setupHtml(config, req));
+    if (!isTrustedLocalPageRequest(req)) {
+      htmlPage(
+        res,
+        403,
+        "Setup is only available on the host machine itself. On that machine, open http://localhost:" +
+          config.bindPort +
+          "/setup and scan the QR code with your phone.",
+      );
+      return;
+    }
+    const html = await setupHtml(config, req);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(html);
     return;
   }
 
@@ -270,6 +288,11 @@ async function handleHttp(
   }
 
   if (method === "GET" && path === "/connect.json") {
+    if (!isTrustedLocalPageRequest(req)) {
+      json(res, 403, { error: "Forbidden", message: "connect.json is only served to this machine (RFC-026)" });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
     json(res, 200, connectPayload(config, req));
     return;
   }
@@ -2027,7 +2050,7 @@ function sessionMatchesContentQuery(s: DispatchSession, q: string): boolean {
   return tokens.every((t) => hay.includes(t));
 }
 
-function requestHost(req: IncomingMessage, config: HostConfigFile): string {
+function requestHost(req: Pick<IncomingMessage, "headers">, config: HostConfigFile): string {
   const h = req.headers.host;
   if (h) {
     const lower = h.toLowerCase();
@@ -2040,16 +2063,18 @@ function requestHost(req: IncomingMessage, config: HostConfigFile): string {
   return preferredClientHost(config.bindPort);
 }
 
-function connectPayload(config: HostConfigFile, req: IncomingMessage) {
+export function connectPayload(config: HostConfigFile, req: Pick<IncomingMessage, "headers">) {
   const host = requestHost(req, config);
   const hostURL = `http://${host}`;
+  const name = osHostname().replace(/\.local$/i, "");
   return {
     hostURL,
     hostToken: config.hostToken,
-    deepLink: `clankerspanker://configure?url=${encodeURIComponent(hostURL)}&token=${encodeURIComponent(config.hostToken)}`,
+    deepLink:
+      `clankerspanker://configure?url=${encodeURIComponent(hostURL)}` +
+      `&token=${encodeURIComponent(config.hostToken)}&name=${encodeURIComponent(name)}`,
     webApp: `${hostURL}/app/`,
-    projects: config.projects,
-    note: "Use the browser UI at /app/, or paste hostURL + hostToken into the iOS app / deep link.",
+    note: "Scan the QR code on /setup with the phone, or paste hostURL + hostToken into the app.",
   };
 }
 
@@ -2088,12 +2113,13 @@ function serveWebStatic(req: IncomingMessage, res: ServerResponse, path: string)
   return true;
 }
 
-function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
+async function setupHtml(config: HostConfigFile, req: IncomingMessage): Promise<string> {
   const payload = connectPayload(config, req);
   const token = payload.hostToken;
   const url = payload.hostURL;
   const deep = payload.deepLink;
   const webApp = payload.webApp;
+  const qrSvg = await QRCode.toString(deep, { type: "svg", margin: 1, errorCorrectionLevel: "M" });
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -2117,11 +2143,19 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
     .ok { color:#5fd68a; }
     .steps { padding-left:18px; color:#d4d4d8; }
     .steps li { margin:8px 0; }
+    .qr { background:#fff; border-radius:12px; padding:12px; width:240px; max-width:100%; margin:0 auto 12px; }
+    .qr svg { display:block; width:100%; height:auto; }
   </style>
 </head>
 <body>
   <h1>ClankerSpanker</h1>
   <p>Local-first control plane for Grok Build and Claude Code on this machine. Use the browser UI, or connect the iOS app over LAN / Tailscale.</p>
+
+  <div class="card">
+    <label>Pair your phone</label>
+    <div class="qr">${qrSvg}</div>
+    <p>Point the iPhone camera at this code and tap the banner. The app asks before it adds (or updates) this host.</p>
+  </div>
 
   <a class="btn" href="${escapeHtml(webApp)}?token=${encodeURIComponent(token)}">Open browser UI</a>
 
@@ -2142,7 +2176,7 @@ function setupHtml(config: HostConfigFile, req: IncomingMessage): string {
     <p class="ok">Host is online.</p>
     <ol class="steps">
       <li><strong>Browser:</strong> open the UI above — token is stored in this browser only.</li>
-      <li><strong>iOS:</strong> paste Host URL + token (or deep link). Leave xAI key blank if the host machine already has Grok auth.</li>
+      <li><strong>iPhone:</strong> scan the QR code above, or paste Host URL + token. Leave xAI key blank if the host machine already has Grok auth.</li>
       <li>Do not expose this port on the public internet.</li>
     </ol>
   </div>

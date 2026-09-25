@@ -12,12 +12,12 @@ npm install
 npm run dev          # or: npm run build && npm start
 ```
 
-First run writes `~/.grok-dispatch/config.json` including a **host token**.
+First run writes `~/.grok-dispatch/config.json` (mode `0600`) including a **host token**.
 
 | URL | Purpose |
 |-----|---------|
 | `http://<host>:8787/app/` | Browser control plane |
-| `http://<host>:8787/setup` | Token + deep link for iOS |
+| `http://localhost:8787/setup` | Pairing: QR code + token. **Only answers on the host machine itself** (RFC-026) |
 | `http://<host>:8787/health` | Liveness |
 
 ### Run as a background service
@@ -33,7 +33,25 @@ Or OS-specific:
 
 ## API
 
-All routes except `GET /health`, `GET /`, `GET /setup`, `GET /app/*`, and `GET /connect.json` require:
+`GET /`, `GET /setup` and `GET /connect.json` reveal the token, so they only
+answer a browser or app **on the host machine**, addressed by one of its own
+names, with no cross-site `Origin` (RFC-026). They never send CORS headers.
+Everyone else pairs by scanning the `/setup` QR code.
+
+### Pairing a phone
+
+1. On the host machine open `http://localhost:8787/setup`.
+2. Point the iPhone camera at the QR code and tap the banner.
+3. The app asks **Add host?** (or **Update host token?** when that address is
+   already saved). Tap it.
+
+### Rotating the token
+
+Stop the host, delete `"hostToken"` from `~/.grok-dispatch/config.json`, start
+the host (a new token is minted and saved), then re-pair each client from
+`/setup`. On the phone, the scan updates the existing host in place.
+
+All other routes except `GET /health` and `GET /app/*` require:
 
 ```
 Authorization: Bearer <hostToken>

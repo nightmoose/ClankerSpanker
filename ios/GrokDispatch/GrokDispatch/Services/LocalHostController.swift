@@ -90,6 +90,9 @@ enum LocalHostConfigFile {
         root["allowCustomPaths"] = true
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: configURL, options: .atomic)
+        // RFC-026: config.json holds the host token + profile secrets. An
+        // atomic write creates a fresh file at the default 0644.
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
         return projects.count
     }
 

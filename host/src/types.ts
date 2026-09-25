@@ -649,6 +649,8 @@ export interface ApnsConfig {
 }
 
 export interface HostConfigFile {
+  /** Extra folders "Import from disk" scans (2 levels), e.g. ["~/work"] (RFC-037). */
+  discoverRoots?: string[];
   /**
    * Stable identity for this host machine, minted on first `loadConfig` and
    * persisted to config.json. Clients key per-host state (WS connections,

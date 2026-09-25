@@ -2,6 +2,15 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-037 discover GitHub Desktop clones
+
+Astrodata's Import found 4 repos; the rest are in
+`~/Documents/GitHub/Teladoc/<repo>`. Added Documents/GitHub|Projects|Code
+roots, a `discoverRoots` config key, and depth-aware walk bookkeeping (a
+shallow pass had blocked the deeper one). 2 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-036 fresh host with no projects
 
 Astrodata had no projects; the phone composer dead-ended and Import found

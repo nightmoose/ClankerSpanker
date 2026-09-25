@@ -549,7 +549,7 @@ async function handleHttp(
   // POST /projects/discover — return filesystem-inferred candidates without
   // adding them. Client decides which to import via POST /projects.
   if (method === "POST" && path === "/projects/discover") {
-    const candidates = discoverKnownProjects();
+    const candidates = discoverKnownProjects(config.discoverRoots ?? []);
     const existingIds = new Set((config.projects ?? []).map((p) => p.id));
     const existingPaths = new Set(
       (config.projects ?? []).flatMap((p) => (p.paths ?? []).map((x) => x)),

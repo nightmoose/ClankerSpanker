@@ -186,7 +186,7 @@ function sessionCard(s) {
           <div class="meta">
             <span class="${statusClass(s.status)}">${escapeHtml(s.status)}</span>
             <span>${escapeHtml(s.model || "")}</span>
-            <span>${escapeHtml(shortPath(s.cwd))}</span>
+            <span title="${escapeHtml(s.cwd || "")}">${escapeHtml(projectLabel(s))}</span>
             ${creditBadge(s)}
           </div>
           <div class="preview">${escapeHtml(s.transcriptPreview || s.prompt || "")}</div>
@@ -471,6 +471,7 @@ async function renderCompose() {
   const profile = state.profiles.find((p) => p.id === state.profileId);
   const isBot = profile?.backend === "bot";
   const opts = state.projects
+    .filter((p) => !p.archived)
     .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} — ${escapeHtml(p.path)}</option>`)
     .join("");
   root.innerHTML = `
@@ -1290,6 +1291,12 @@ async function connectWs() {
 function syncTabs() {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === state.tab));
   $("#btn-archived")?.classList.toggle("active", state.showArchived);
+}
+
+/** Project name when the host knows it (RFC-032 infers it from the folder); else the folder. */
+function projectLabel(s) {
+  const p = s.projectId && state.projects.find((x) => x.id === s.projectId);
+  return p ? p.name : shortPath(s.cwd);
 }
 
 function shortPath(p) {

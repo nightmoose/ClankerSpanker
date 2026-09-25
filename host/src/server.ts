@@ -58,6 +58,7 @@ import { isLocalMachineAddr } from "./local-machine.js";
 import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
+import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
 
 /** Single-use WebSocket tickets (RFC-029), shared by /ws and /ws/terminal. */
 const wsTickets = new WsTicketStore();
@@ -449,9 +450,14 @@ async function handleHttp(
         json(res, 409, { error: `Project id "${created.id}" already exists` });
         return;
       }
+      const relative = nonAbsolutePaths(created.paths);
+      if (relative.length) {
+        json(res, 400, { error: `Project paths must be absolute (or start with ~/): ${relative.join(", ")}` });
+        return;
+      }
       config.projects = [...existing, created];
       saveConfig(config);
-      json(res, 201, { project: created });
+      json(res, 201, { project: created, warnings: projectOverlapWarnings(created, existing) });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -492,10 +498,15 @@ async function handleHttp(
           : (typeof body.path === "string" ? [body.path] : (current.paths ?? [])),
         updatedAt: new Date().toISOString(),
       });
+      const relative = nonAbsolutePaths(merged.paths);
+      if (relative.length) {
+        json(res, 400, { error: `Project paths must be absolute (or start with ~/): ${relative.join(", ")}` });
+        return;
+      }
       projects[idx] = merged;
       config.projects = projects;
       saveConfig(config);
-      json(res, 200, { project: merged });
+      json(res, 200, { project: merged, warnings: projectOverlapWarnings(merged, projects) });
     } catch (err) {
       json(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -1220,6 +1231,9 @@ async function handleHttp(
     });
     const all = rawSessions.map((s) => {
       const summary = manager.store.toSummary(s, manager.isLive(s.id));
+      // RFC-032: sessions started with only a folder (and every Claude/Grok
+      // session imported from disk) have no projectId — derive it for display.
+      if (!summary.projectId) summary.projectId = inferProjectId(config.projects ?? [], s.cwd);
       // Backfill profile fields for older sessions — only when exactly one profile
       // matches the backend. With Personal + FullScore both Claude, do NOT invent
       // a profileId (that was dumping every Claude chat onto FullScore).

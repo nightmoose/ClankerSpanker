@@ -49,3 +49,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 041 | [Mac toolbar buttons have names](rfcs/041-toolbar-labels.md) | Shipped | `nightly-maintenance-2026-09-25-rfc041-toolbar-labels` |
 | 042 | [File viewer reads only what it shows](rfcs/042-file-viewer-bounded-read.md) | Shipped | `nightly-maintenance-2026-09-25-rfc042-file-viewer-realpath` |
 | 043 | [Remove the hardcoded LAN IP; onboarding pairs by QR](rfcs/043-remove-lan-ip.md) | Shipped | `nightly-maintenance-2026-09-25-rfc043-remove-lan-ip` |
+| 044 | [OpenAPI contract test](rfcs/044-openapi-contract.md) | Shipped | `nightly-maintenance-2026-09-25-rfc044-openapi-contract` |

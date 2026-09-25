@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-044 OpenAPI contract test
+
+34 of 61 routes were missing from `shared/openapi.yaml`. Added a vitest
+contract test that extracts routes from `server.ts` and fails on drift in
+either direction; documented the 34 routes. 3 new tests.
+
+---
+
 ## Run: 2026-09-25 — RFC-043 no hardcoded LAN IP
 
 Removed `ConnectionDefaults.lanHostURL` (192.168.50.9); phone onboarding

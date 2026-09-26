@@ -62,3 +62,4 @@ All RFCs in `docs/rfcs/`. **Shipped** = on `main`; **Accepted** = signed off;
 | 054 | [Claude MCP config uses `type`](rfcs/054-claude-mcp-type.md) | Shipped | `nightly-maintenance-2026-09-25-rfc054-claude-mcp-type` |
 | 055 | [Split Grok ACP inbound handling](rfcs/055-grok-events-split.md) | Shipped | `nightly-maintenance-2026-09-25-rfc055-grok-events-split` |
 | 056 | [Claude tool rows finish and show output](rfcs/056-claude-tool-results.md) | Shipped | `nightly-maintenance-2026-09-25-rfc056-claude-tool-results` |
+| 057 | [Log what remote clients do](rfcs/057-remote-request-log.md) | Shipped | `nightly-maintenance-2026-09-25-rfc057-remote-request-log` |

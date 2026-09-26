@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-26 — RFC-057 Log what remote clients do
+
+Phone showed empty sessions/projects; host-side everything was healthy and
+the log couldn't say whether the phone ever arrived. The host now logs remote
+arrivals, failures and slow requests (path only, no query string).
+
+---
+
 ## Run: 2026-09-25 — RFC-056 Claude tool rows finish and show output
 
 Claude tool calls never left "pending": results ride stream-json `user`

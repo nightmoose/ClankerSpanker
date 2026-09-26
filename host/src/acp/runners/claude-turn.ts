@@ -9,6 +9,7 @@ import { ClaudeRunner } from "../../claude/runner.js";
 import { lastUserTextIs, now } from "../session-helpers.js";
 import { ensureAttachmentDirs, materializeImagesInCwd, savePromptImagesForSession } from "../session-support.js";
 import type { TurnContext } from "./context.js";
+import { outputTail } from "../../tool-output.js";
 
 /** One Claude Code turn: stream-json + optional phone tool approvals. */
 export async function claudeTurn(
@@ -110,21 +111,37 @@ export async function claudeTurn(
     ctx.persist(session);
     ctx.emitEvent(session, "usage", session.usage);
   });
-  runner.on("tool", (info: { name: string; id?: string; input?: unknown; status: string }) => {
-    const record: ToolCallRecord = {
-      toolCallId: info.id ?? randomUUID(),
-      title: info.name,
-      kind: /edit|write|delete/i.test(info.name) ? "edit" : /bash/i.test(info.name) ? "execute" : "other",
-      status: info.status,
-      rawInput: info.input,
-      updatedAt: now(),
-    };
-    const idx = session.toolCalls.findIndex((t) => t.toolCallId === record.toolCallId);
-    if (idx >= 0) session.toolCalls[idx] = { ...session.toolCalls[idx]!, ...record };
-    else session.toolCalls.push(record);
-    ctx.persist(session);
-    ctx.emitEvent(session, "tool_call", record);
-  });
+  runner.on(
+    "tool",
+    (info: { name?: string; id?: string; input?: unknown; status: string; output?: string }) => {
+      const existing = info.id ? session.toolCalls.find((t) => t.toolCallId === info.id) : undefined;
+      let record: ToolCallRecord;
+      if (existing && !info.name) {
+        // Result for a known call (RFC-056): keep title/input, add status + output tail.
+        existing.status = info.status;
+        const tail = info.output !== undefined ? outputTail(info.output) : undefined;
+        if (tail) existing.outputPreview = tail;
+        existing.updatedAt = now();
+        record = existing;
+      } else {
+        const name = info.name ?? "tool";
+        record = {
+          toolCallId: info.id ?? randomUUID(),
+          title: name,
+          kind: /edit|write|delete/i.test(name) ? "edit" : /bash/i.test(name) ? "execute" : "other",
+          status: info.status,
+          rawInput: info.input,
+          updatedAt: now(),
+        };
+        // A repeated tool_use frame must not reopen a finished call.
+        if (existing && existing.status !== "pending") record.status = existing.status;
+        if (existing) Object.assign(existing, record);
+        else session.toolCalls.push(record);
+      }
+      ctx.persist(session);
+      ctx.emitEvent(session, "tool_call", existing ?? record);
+    },
+  );
 
   try {
     const { text, sessionId: claudeSid } = await runner.run();

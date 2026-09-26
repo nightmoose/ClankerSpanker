@@ -32,11 +32,15 @@ export function toolOutputSummary(
   const out: { outputPreview?: string; exitCode?: number } = {};
   const exit = raw.exit_code ?? raw.exitCode;
   if (typeof exit === "number") out.exitCode = exit;
-  const trimmed = text.replace(/\s+$/, "");
-  if (trimmed) {
-    let tail = trimmed.split("\n").slice(-OUTPUT_PREVIEW_LINES).join("\n");
-    if (tail.length > OUTPUT_PREVIEW_CHARS) tail = "…" + tail.slice(-OUTPUT_PREVIEW_CHARS);
-    out.outputPreview = tail;
-  }
+  const tail = outputTail(text);
+  if (tail) out.outputPreview = tail;
   return out;
+}
+
+/** Last few lines of tool output, capped (RFC-040; Claude path RFC-056). */
+export function outputTail(text: string): string | undefined {
+  const trimmed = text.replace(/\s+$/, "");
+  if (!trimmed) return undefined;
+  const tail = trimmed.split("\n").slice(-OUTPUT_PREVIEW_LINES).join("\n");
+  return tail.length > OUTPUT_PREVIEW_CHARS ? "…" + tail.slice(-OUTPUT_PREVIEW_CHARS) : tail;
 }

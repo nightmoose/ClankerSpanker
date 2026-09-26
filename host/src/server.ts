@@ -85,6 +85,7 @@ export function wsUpgradeAuthorized(
   return false;
 }
 import QRCode from "qrcode";
+import { RemoteRequestLog, cleanAddr } from "./request-log.js";
 import { handleSessionPush, pushStatus, sendTestPush } from "./notify/push.js";
 import { registerPushDevice, unregisterPushDevice } from "./notify/push-devices.js";
 
@@ -117,7 +118,22 @@ function isLocalMachineReq(req: IncomingMessage): boolean {
 }
 
 export function startServer(config: HostConfigFile, manager: SessionManager, bots?: BotRuntime) {
+  const remoteLog = new RemoteRequestLog();
   const onRequest = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!isLocalMachineReq(req)) {
+      const started = Date.now();
+      res.once("finish", () => {
+        const len = Number(res.getHeader("content-length"));
+        remoteLog.record({
+          addr: cleanAddr(req.socket.remoteAddress),
+          method: req.method ?? "?",
+          url: req.url ?? "/",
+          status: res.statusCode,
+          ms: Date.now() - started,
+          bytes: Number.isFinite(len) ? len : undefined,
+        });
+      });
+    }
     try {
       await handleHttp(req, res, config, manager, bots);
     } catch (err) {
@@ -156,6 +172,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
 
   termWss.on("connection", (ws, req) => {
     if (!wsUpgradeAuthorized(req, config, wsTickets)) {
+      if (!isLocalMachineReq(req)) console.log(`[client!] ${cleanAddr(req.socket.remoteAddress)} ws unauthorized`);
       ws.close(4401, "Unauthorized");
       return;
     }

@@ -2,6 +2,14 @@
 
 ---
 
+## Run: 2026-09-25 — RFC-056 Claude tool rows finish and show output
+
+Claude tool calls never left "pending": results ride stream-json `user`
+frames, which the runner ignored, and only the first of several parallel
+tool uses was kept. Rows now complete/fail with an output tail, like Grok.
+
+---
+
 ## Run: 2026-09-25 — RFC-055 Grok ACP inbound handling split out
 
 Phase C of the SessionManager split: the Grok `session/update` /

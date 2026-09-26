@@ -247,8 +247,14 @@ export class ClaudeRunner extends EventEmitter {
       }
       const thought = extractThinkingText(msg);
       if (thought) this.emit("thought", thought);
-      const tool = extractToolUse(msg);
-      if (tool) this.emit("tool", { ...tool, status: "pending" });
+      for (const tool of extractToolUses(msg)) this.emit("tool", { ...tool, status: "pending" });
+      return;
+    }
+
+    // Tool results come back as `user` frames (RFC-056). Without this every
+    // Claude tool row stayed "pending" with no output.
+    if (type === "user") {
+      for (const r of extractToolResults(msg)) this.emit("tool", r);
       return;
     }
 
@@ -291,9 +297,9 @@ export class ClaudeRunner extends EventEmitter {
 
     if (type === "tool_result" || type === "tool_call_result") {
       this.emit("tool", {
-        name: String(msg.name ?? "tool"),
+        ...(msg.name ? { name: String(msg.name) } : {}),
         id: (msg.tool_use_id as string) ?? (msg.id as string),
-        status: "completed",
+        status: msg.is_error === true ? "failed" : "completed",
       });
       return;
     }
@@ -432,17 +438,36 @@ function numberField(obj: Record<string, unknown>, ...keys: string[]): number {
   return 0;
 }
 
-function extractToolUse(msg: Record<string, unknown>): { name: string; id?: string; input?: unknown } | null {
+function extractToolUses(msg: Record<string, unknown>): Array<{ name: string; id?: string; input?: unknown }> {
   const message = msg.message as { content?: unknown } | undefined;
   const content = message?.content ?? msg.content;
-  if (!Array.isArray(content)) return null;
+  if (!Array.isArray(content)) return [];
+  const out: Array<{ name: string; id?: string; input?: unknown }> = [];
   for (const c of content) {
     if (c && typeof c === "object" && (c as { type?: string }).type === "tool_use") {
       const t = c as { name?: string; id?: string; input?: unknown };
-      return { name: t.name ?? "tool", id: t.id, input: t.input };
+      out.push({ name: t.name ?? "tool", id: t.id, input: t.input });
     }
   }
-  return null;
+  return out;
+}
+
+export type ClaudeToolResult = { id: string; status: "completed" | "failed"; output?: string };
+
+/** `tool_result` blocks from a stream-json `user` frame (RFC-056). */
+export function extractToolResults(msg: Record<string, unknown>): ClaudeToolResult[] {
+  const message = msg.message as { content?: unknown } | undefined;
+  const content = message?.content ?? msg.content;
+  if (!Array.isArray(content)) return [];
+  const out: ClaudeToolResult[] = [];
+  for (const c of content) {
+    if (!c || typeof c !== "object") continue;
+    const r = c as { type?: string; tool_use_id?: string; content?: unknown; is_error?: boolean };
+    if (r.type !== "tool_result" || !r.tool_use_id) continue;
+    const output = typeof r.content === "string" ? r.content : contentToText(r.content);
+    out.push({ id: r.tool_use_id, status: r.is_error ? "failed" : "completed", ...(output ? { output } : {}) });
+  }
+  return out;
 }
 
 function contentToText(content: unknown): string | undefined {

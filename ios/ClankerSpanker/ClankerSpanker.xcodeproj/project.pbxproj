@@ -904,6 +904,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac;
 				PRODUCT_NAME = ClankerSpankerMac;
 				SDKROOT = macosx;
+				CONFIGURATION_BUILD_DIR = "$(HOME)/Applications";
+				DWARF_DSYM_FOLDER_PATH = "$(SRCROOT)/build/dSYM";
 			};
 			name = Debug;
 		};
@@ -922,7 +924,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
+				TEST_HOST = "$(HOME)/Applications/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
 			};
 			name = Debug;
 		};
@@ -991,7 +993,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
+				TEST_HOST = "$(HOME)/Applications/ClankerSpankerMac.app/Contents/MacOS/ClankerSpankerMac";
 			};
 			name = Release;
 		};
@@ -1081,6 +1083,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.nightmoose.clankerspanker.mac;
 				PRODUCT_NAME = ClankerSpankerMac;
 				SDKROOT = macosx;
+				CONFIGURATION_BUILD_DIR = "$(HOME)/Applications";
+				DWARF_DSYM_FOLDER_PATH = "$(SRCROOT)/build/dSYM";
 			};
 			name = Release;
 		};

@@ -120,3 +120,44 @@ describe("loadConfig hostId", () => {
     expect(cfg.hostId).toMatch(/^[0-9a-f-]{36}$/i);
   });
 });
+
+describe("loadConfig repo updates (RFC-059)", () => {
+  const base = (dir: string, extra: Record<string, unknown>) => ({
+    hostId: "preset-11111111-2222-3333-4444-555555555555",
+    hostToken: "existing-token-0123456789abcdef",
+    bindHost: "127.0.0.1",
+    bindPort: 8787,
+    grokBinary: "/usr/local/bin/grok",
+    projects: [],
+    allowCustomPaths: true,
+    profiles: [],
+    autoApproveKinds: [],
+    notifyDesktop: true,
+    dataDir: dir,
+    ...extra,
+  });
+
+  it("trims repoDir and turns autoUpdate on only when the flag is exactly true", () => {
+    const prevRepo = process.env.GROK_DISPATCH_REPO;
+    const prevAuto = process.env.GROK_DISPATCH_AUTO_UPDATE;
+    delete process.env.GROK_DISPATCH_REPO;
+    delete process.env.GROK_DISPATCH_AUTO_UPDATE;
+    try {
+      const dir = tmpConfigDir();
+      const on = join(dir, "on.json");
+      writeFileSync(on, JSON.stringify(base(dir, { repoDir: " /tmp/cs-repo ", autoUpdate: true })) + "\n");
+      const enabled = loadConfig(on);
+      expect(enabled.repoDir).toBe("/tmp/cs-repo");
+      expect(enabled.autoUpdate).toBe(true);
+
+      const off = join(dir, "off.json");
+      writeFileSync(off, JSON.stringify(base(dir, { repoDir: "/tmp/cs-repo", autoUpdate: "yes" })) + "\n");
+      expect(loadConfig(off).autoUpdate).toBe(false);
+    } finally {
+      if (prevRepo === undefined) delete process.env.GROK_DISPATCH_REPO;
+      else process.env.GROK_DISPATCH_REPO = prevRepo;
+      if (prevAuto === undefined) delete process.env.GROK_DISPATCH_AUTO_UPDATE;
+      else process.env.GROK_DISPATCH_AUTO_UPDATE = prevAuto;
+    }
+  });
+});

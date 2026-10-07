@@ -47,9 +47,9 @@ struct BotsView: View {
             .navigationDestination(item: $detailBot) { nav in
                 ZStack {
                     DispatchBackground()
-                    BotsDetail(vm: vm, onOpenSession: openSession, pinnedBotId: nav.id, compact: true)
+                    BotsDetail(vm: vm, onOpenSession: { openSession($0) }, pinnedBotId: nav.id, compact: true)
                 }
-                .navigationTitle(vm.bots.first(where: { $0.id == nav.id })?.name ?? "Bot")
+                .navigationTitle(vm.bots.first(where: { $0.routeKey == nav.id })?.name ?? "Bot")
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
@@ -137,7 +137,7 @@ struct BotsView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(vm.bots) { bot in
+                    ForEach(vm.bots, id: \.routeKey) { bot in
                         phoneBotRow(bot)
                     }
                 }
@@ -151,7 +151,7 @@ struct BotsView: View {
         DispatchCard {
             VStack(alignment: .leading, spacing: 10) {
                 Button {
-                    detailBot = BotNav(id: bot.id)
+                    detailBot = BotNav(id: bot.routeKey)
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -177,6 +177,11 @@ struct BotsView: View {
                             Text(BotSchedule.label(bot.interval))
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                            if let hostName = vm.hostLabel(for: bot, appState: appState) {
+                                Text(hostName)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                             if let last = bot.lastRunDate {
                                 Text(last.formatted(.relative(presentation: .named)))
                                     .font(.caption2)
@@ -195,18 +200,18 @@ struct BotsView: View {
                     Button {
                         Task {
                             if let sid = await vm.run(bot, appState: appState) {
-                                openSession(sid)
+                                openSession(sid, bot: bot)
                             }
                         }
                     } label: {
-                        Label(vm.runningId == bot.id ? "Starting…" : "Run now", systemImage: "play.fill")
+                        Label(vm.runningId == bot.routeKey ? "Starting…" : "Run now", systemImage: "play.fill")
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(vm.runningId == bot.id)
+                    .disabled(vm.runningId == bot.routeKey)
 
                     if let sid = bot.lastSessionId {
-                        Button("Last run") { openSession(sid) }
+                        Button("Last run") { openSession(sid, bot: bot) }
                             .font(.subheadline.weight(.semibold))
                     }
                     Spacer(minLength: 0)
@@ -223,10 +228,17 @@ struct BotsView: View {
         return line.map { String($0) } ?? "No standing job"
     }
 
-    private func openSession(_ sessionId: String) {
-        // RFC-024: prefer the session's owning host so a bot run from host B
-        // opens its transcript on host B, not on the current chip host.
-        guard let host = appState.endpoint(forSessionId: sessionId) else { return }
+    private func openSession(_ sessionId: String, bot: Bot? = nil) {
+        // The run may have landed on a different paired host than the row
+        // (that host had no ContractGate project). Prefer the host that
+        // accepted it, then a listed session, then the row's own host.
+        let listed = appState.sessions.first { $0.id == sessionId }
+            ?? appState.archivedSessions.first { $0.id == sessionId }
+        let host = appState.hintedHost(forSessionId: sessionId)
+            ?? listed.flatMap { appState.endpoint(for: $0) }
+            ?? bot.flatMap { vm.hostFor(bot: $0, appState: appState) }
+            ?? appState.selectedHost
+        guard let host else { return }
         pendingRoute = SessionRoute(hostId: host.id, sessionId: sessionId)
     }
 }
@@ -288,9 +300,9 @@ struct BotsSidebar: View {
                     .padding(.vertical, 8)
                 } else {
                     Section {
-                        ForEach(vm.bots) { bot in
-                            BotsSidebarRow(bot: bot)
-                                .tag(bot.id)
+                        ForEach(vm.bots, id: \.routeKey) { bot in
+                            BotsSidebarRow(bot: bot, hostName: vm.hostLabel(for: bot, appState: appState))
+                                .tag(bot.routeKey)
                         }
                     } header: {
                         Text("Hunters")
@@ -318,6 +330,7 @@ struct BotsSidebar: View {
 
 private struct BotsSidebarRow: View {
     let bot: Bot
+    var hostName: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -342,6 +355,11 @@ private struct BotsSidebarRow: View {
                 Text("Every \(bot.interval)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if let hostName {
+                    Text(hostName)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
                 if let last = bot.lastRunDate {
                     Text(last.formatted(.relative(presentation: .named)))
                         .font(.caption2)
@@ -376,7 +394,7 @@ struct BotsDetail: View {
 
     private var displayedBot: Bot? {
         if let pinnedBotId {
-            return vm.bots.first { $0.id == pinnedBotId } ?? vm.selectedBot
+            return vm.bots.first { $0.routeKey == pinnedBotId } ?? vm.selectedBot
         }
         return vm.selectedBot
     }
@@ -463,6 +481,11 @@ struct BotsDetail: View {
             Text(bot.enabled ? "Scheduled" : "Paused · Run now still works")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if let hostName = vm.hostLabel(for: bot, appState: appState) {
+                Text(hostName)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         let interval = Picker("Interval", selection: intervalBinding(bot)) {
             ForEach(intervalChoices(for: bot), id: \.self) { value in
@@ -507,7 +530,7 @@ struct BotsDetail: View {
 
     private func intervalBinding(_ bot: Bot) -> Binding<String> {
         Binding(
-            get: { vm.bots.first(where: { $0.id == bot.id })?.interval ?? bot.interval },
+            get: { vm.bots.first(where: { $0.routeKey == bot.routeKey })?.interval ?? bot.interval },
             set: { newValue in
                 Task { await vm.setInterval(bot, newValue, appState: appState) }
             }
@@ -528,9 +551,9 @@ struct BotsDetail: View {
                 Button {
                     Task { await vm.saveJob(bot, appState: appState) }
                 } label: {
-                    Label(vm.savingId == bot.id ? "Saving…" : "Save job", systemImage: "square.and.arrow.down")
+                    Label(vm.savingId == bot.routeKey ? "Saving…" : "Save job", systemImage: "square.and.arrow.down")
                 }
-                .disabled(vm.savingId == bot.id)
+                .disabled(vm.savingId == bot.routeKey)
                 Spacer()
                 if let last = bot.lastRunDate {
                     Text("Last run \(last.formatted(.relative(presentation: .named)))")
@@ -554,10 +577,10 @@ struct BotsDetail: View {
                         }
                     }
                 } label: {
-                    Label(vm.runningId == bot.id ? "Starting…" : "Run now", systemImage: "play.fill")
+                    Label(vm.runningId == bot.routeKey ? "Starting…" : "Run now", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(vm.runningId == bot.id)
+                .disabled(vm.runningId == bot.routeKey)
 
                 if let sid = bot.lastSessionId {
                     Button("Open last run") {
@@ -570,7 +593,7 @@ struct BotsDetail: View {
 
     @ViewBuilder
     private func outboxSection(_ bot: Bot) -> some View {
-        let items = vm.outbox[bot.id] ?? []
+        let items = vm.outbox[bot.routeKey] ?? []
         VStack(alignment: .leading, spacing: 8) {
             Text("Outbox · \(items.count)")
                 .font(.caption.weight(.semibold))

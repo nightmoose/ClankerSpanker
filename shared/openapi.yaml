@@ -15,6 +15,23 @@ paths:
         Returns { hostId, name, version, bindPort }. hostId is minted on
         first boot and persisted in config.json.
       security: [{ bearerAuth: [] }]
+  /host/update:
+    get:
+      summary: |
+        How this host's git checkout compares to its upstream (RFC-059).
+        Query fetch=1 runs git fetch. Otherwise a recent check is reused.
+        Never changes the tree. States: current, behind, ahead, diverged,
+        dirty, missing, no-upstream, error. canApply is true only for a
+        clean fast-forward.
+      security: [{ bearerAuth: [] }]
+    post:
+      summary: |
+        Fast-forward the checkout, rebuild, copy into the install root when
+        this process is the Application Support / XDG copy, and restart the
+        user service (RFC-059). 202 once the detached script has started.
+        409 when the tree is dirty, diverged, already current, or missing.
+        Does not discard local edits or switch branches. Restarts drop live sessions.
+      security: [{ bearerAuth: [] }]
   /ws/ticket:
     post:
       summary: |
@@ -96,6 +113,10 @@ paths:
   /push/test:
     post:
       summary: Send a one-shot test alert to registered devices
+      security: [{ bearerAuth: [] }]
+  /exec:
+    post:
+      summary: Run a shell command on the host; returns stdout/stderr/exitCode/durationMs (RFC-058).
       security: [{ bearerAuth: [] }]
   /dispatch:
     post:

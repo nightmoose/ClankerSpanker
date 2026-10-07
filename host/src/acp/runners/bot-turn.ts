@@ -48,6 +48,7 @@ export async function botTurn(
       toolsAllowlist: botTools?.length ? botTools : owner.toolAllowlist,
       promptMaxMs: ctx.config.promptMaxMs,
       autoApproveKinds: (ctx.config.autoApproveKinds ?? []).map((k) => k.toLowerCase()),
+      dataDir: ctx.config.dataDir,
       callbacks: {
         persist: (s) => ctx.persist(s),
         emit: (s, type, payload) => ctx.emitEvent(s, type, payload),

@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import type { HostConfigFile } from "../types.js";
+import { join, resolve } from "node:path";
+import type { HostConfigFile, ProjectInfo } from "../types.js";
 import { isUsableCwd, normalizeProject, saveConfig } from "../config.js";
+import { expandHome } from "../project-resolve.js";
 import type { BotStore } from "./store.js";
 
 export const HUNTER_BOT_ID = "contractgate-hunter";
@@ -22,16 +23,33 @@ Each run:
 
 Never use shell. File writes stay in .bot-outbox/. Do not conclude there is no market because a search tool returned nothing.`;
 
+export interface SeedHunterOptions {
+  /** Checkout to bind. Defaults to ~/contractgate. */
+  contractgateDir?: string;
+  /** Where project adds are written. Tests pass a scratch file. */
+  configPath?: string;
+}
+
 /**
- * Idempotent: contractgate project, disabled hunter owned by NightMoose,
- * .bot-outbox gitignore. Does not add a extra profile chip.
+ * Idempotent: bind the hunter to the project that actually covers
+ * ~/contractgate, or create that project when the checkout is on this
+ * machine and nothing covers it. A host with no checkout and no such
+ * project does not keep a hunter pinned to a missing id — Run now on
+ * that copy is a 400 (`Unknown projectId`). Disabled, owned by
+ * NightMoose. Does not add an extra profile chip.
  */
-export function seedHunter(config: HostConfigFile, store: BotStore): void {
-  hideLegacyBotChip(config);
-  ensureContractgateProject(config);
+export function seedHunter(
+  config: HostConfigFile,
+  store: BotStore,
+  opts?: SeedHunterOptions,
+): void {
+  const dir = opts?.contractgateDir ?? join(homedir(), "contractgate");
+  hideLegacyBotChip(config, opts?.configPath);
+  const projectId = ensureContractgateProject(config, dir, opts?.configPath);
   const ownerId = ownerProfileId(config);
-  ensureHunterBot(store, ownerId);
-  ensureOutboxGitignore();
+  if (projectId) ensureHunterBot(store, ownerId, projectId);
+  else dropUnboundHunter(store);
+  ensureOutboxGitignore(dir);
 }
 
 function ownerProfileId(config: HostConfigFile): string {
@@ -42,35 +60,70 @@ function ownerProfileId(config: HostConfigFile): string {
 }
 
 /** Drop the leftover "NightMoose Bot" chip — hunter sessions belong on NightMoose. */
-function hideLegacyBotChip(config: HostConfigFile): void {
+function hideLegacyBotChip(config: HostConfigFile, configPath?: string): void {
   const next = config.profiles.filter((p) => p.id !== BOT_PROFILE_ID && p.backend !== "bot");
   if (next.length === config.profiles.length) return;
   config.profiles = next;
-  saveConfig(config);
+  saveConfig(config, configPath);
 }
 
-function ensureContractgateProject(config: HostConfigFile): void {
-  const path = join(homedir(), "contractgate");
-  if (!existsSync(path) || !isUsableCwd(path)) return;
-  if (config.projects.some((p) => p.id === "contractgate" || p.path === path)) return;
+function projectDirs(project: Pick<ProjectInfo, "path" | "paths">): string[] {
+  const listed = (project.paths ?? []).map((p) => p.trim()).filter(Boolean);
+  const all = listed.length > 0 ? listed : (project.path?.trim() ? [project.path] : []);
+  return all.map((p) => resolve(expandHome(p)));
+}
+
+function coversDir(project: Pick<ProjectInfo, "path" | "paths">, dir: string): boolean {
+  const wanted = resolve(dir);
+  return projectDirs(project).some((p) => p === wanted);
+}
+
+/**
+ * Id of the project Run now can dispatch into, or null when this host
+ * has neither a usable `contractgate` project nor the checkout on disk.
+ */
+function ensureContractgateProject(
+  config: HostConfigFile,
+  dir: string,
+  configPath?: string,
+): string | null {
+  const usable = existsSync(dir) && isUsableCwd(dir);
+  const byPath = config.projects.find((p) => coversDir(p, dir));
+  if (byPath && usable) return byPath.id;
+
+  const byId = config.projects.find((p) => p.id === "contractgate");
+  if (byId) {
+    if (projectDirs(byId).some((p) => isUsableCwd(p))) return byId.id;
+    if (usable) {
+      const idx = config.projects.findIndex((p) => p.id === "contractgate");
+      config.projects[idx] = normalizeProject({ ...byId, name: byId.name || "ContractGate", path: dir, paths: [dir] });
+      saveConfig(config, configPath);
+      return byId.id;
+    }
+    return null;
+  }
+
+  if (!usable) return null;
   config.projects.push(
     normalizeProject({
       id: "contractgate",
       name: "ContractGate",
-      path,
+      path: dir,
       color: "#73B8FF",
     }),
   );
-  saveConfig(config);
+  saveConfig(config, configPath);
+  return "contractgate";
 }
 
-function ensureHunterBot(store: BotStore, profileId: string): void {
+function ensureHunterBot(store: BotStore, profileId: string, projectId: string): void {
   const existing = store.get(HUNTER_BOT_ID);
   if (existing) {
-    const patch: { profileId?: string; job?: string } = {};
+    const patch: { profileId?: string; job?: string; projectId?: string } = {};
     if (existing.profileId === BOT_PROFILE_ID || existing.profileId !== profileId) {
       patch.profileId = profileId;
     }
+    if (existing.projectId !== projectId) patch.projectId = projectId;
     if (!existing.job.includes("Do not conclude there is no market")) {
       patch.job = HUNTER_JOB;
     }
@@ -82,7 +135,7 @@ function ensureHunterBot(store: BotStore, profileId: string): void {
     name: "ContractGate Hunter",
     enabled: false,
     profileId,
-    projectId: "contractgate",
+    projectId,
     job: HUNTER_JOB,
     interval: "6h",
     tools: [],
@@ -90,8 +143,14 @@ function ensureHunterBot(store: BotStore, profileId: string): void {
   });
 }
 
-function ensureOutboxGitignore(): void {
-  const repo = join(homedir(), "contractgate");
+/** Seeded hunter whose project id is not on this host. Leaves any other bot alone. */
+function dropUnboundHunter(store: BotStore): void {
+  const existing = store.get(HUNTER_BOT_ID);
+  if (!existing || existing.projectId !== "contractgate") return;
+  store.delete(HUNTER_BOT_ID);
+}
+
+function ensureOutboxGitignore(repo: string): void {
   if (!existsSync(repo)) return;
   const outbox = join(repo, ".bot-outbox");
   mkdirSync(outbox, { recursive: true });

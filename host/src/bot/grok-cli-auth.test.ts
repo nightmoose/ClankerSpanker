@@ -92,6 +92,42 @@ describe("getGrokCliAccessToken refresh", () => {
     expect(saved["https://auth.x.ai::client"].refresh_token).toBe("rt-2");
   });
 
+  it("force refresh replaces a still-valid token", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "grok-auth-"));
+    const future = new Date(Date.now() + 60 * 60_000).toISOString();
+    const file = writeAuth(dir, {
+      key: "still-good",
+      refresh_token: "rt",
+      oidc_client_id: "client-1",
+      expires_at: future,
+    });
+    const token = await getGrokCliAccessToken([file], async () => {
+      return new Response(
+        JSON.stringify({ access_token: "rotated", refresh_token: "rt-2", expires_in: 3600 }),
+        { status: 200 },
+      );
+    }, { force: true });
+    expect(token).toBe("rotated");
+  });
+
+  it("force refresh returns null when the grant is rejected", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "grok-auth-"));
+    const future = new Date(Date.now() + 60 * 60_000).toISOString();
+    const file = writeAuth(dir, {
+      key: "still-good",
+      refresh_token: "rt",
+      oidc_client_id: "client-1",
+      expires_at: future,
+    });
+    const token = await getGrokCliAccessToken(
+      [file],
+      async () => new Response("no", { status: 400 }),
+      { force: true },
+    );
+    expect(token).toBeNull();
+    expect(readGrokCliAccessToken([file])).toBe("still-good");
+  });
+
   it("does not refresh a still-valid token", async () => {
     const dir = mkdtempSync(join(tmpdir(), "grok-auth-"));
     const future = new Date(Date.now() + 60 * 60_000).toISOString();

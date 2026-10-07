@@ -1,10 +1,12 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { AgentProfile } from "../../types.js";
 import { normalizeBackend, profileProcessEnv } from "../../profiles.js";
 import { getClaudeCliAccessToken, claudeCodeUserAgent } from "../../usage.js";
 import type { ChatProvider, FetchLike } from "../protocol.js";
 import {
   getGrokCliAccessToken,
-  grokAuthJsonPaths,
+  grokAuthJsonPathsForProfile,
   readGrokCliAccessToken,
 } from "../grok-cli-auth.js";
 import { getAgyAccessToken } from "../gemini-cli-auth.js";
@@ -14,20 +16,39 @@ import { createOpenAICompatProvider, remapBotModel } from "./openai-compat.js";
 
 export type ProviderKind = "xai" | "openai-compat" | "anthropic" | "gemini" | "none";
 
-export function envFromProfile(profile: AgentProfile): Record<string, string | undefined> {
+/**
+ * CLI login lives in the profile's isolated grok home
+ * (`{dataDir}/grok-homes/{id}/auth.json`), which the Grok TUI refreshes.
+ * The LaunchAgent has no GROK_HOME, so looking only at ~/.grok sends a
+ * grant that home already rotated — api.x.ai then 403s bad-credentials.
+ * Newest expiry wins inside readGrokCliCreds.
+ */
+export function grokCliAuthPaths(profile: AgentProfile, dataDir?: string): string[] {
+  const dir = dataDir?.trim() || join(homedir(), ".grok-dispatch");
+  return grokAuthJsonPathsForProfile(profile, dir);
+}
+
+export function envFromProfile(
+  profile: AgentProfile,
+  opts?: { dataDir?: string },
+): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...profileProcessEnv(profile) };
   if (!env.XAI_API_KEY?.trim()) {
-    const cli = readGrokCliAccessToken(grokAuthJsonPaths(profile.grokHome));
+    const cli = readGrokCliAccessToken(grokCliAuthPaths(profile, opts?.dataDir));
     if (cli) env.XAI_API_KEY = cli;
   }
   return env;
 }
 
-async function envFromProfileFresh(profile: AgentProfile): Promise<Record<string, string | undefined>> {
+async function envFromProfileFresh(
+  profile: AgentProfile,
+  opts?: { dataDir?: string; fetchImpl?: FetchLike },
+): Promise<Record<string, string | undefined>> {
   const env: Record<string, string | undefined> = { ...profileProcessEnv(profile) };
-  const authPaths = grokAuthJsonPaths(profile.grokHome);
+  const authPaths = grokCliAuthPaths(profile, opts?.dataDir);
+  const fetchImpl = opts?.fetchImpl ?? fetch;
   if (!profile.env?.XAI_API_KEY?.trim() && !process.env.XAI_API_KEY?.trim()) {
-    const cli = await getGrokCliAccessToken(authPaths);
+    const cli = await getGrokCliAccessToken(authPaths, fetchImpl);
     if (cli) env.XAI_API_KEY = cli;
   } else if (!env.XAI_API_KEY?.trim()) {
     const cli = readGrokCliAccessToken(authPaths);
@@ -99,10 +120,11 @@ export function selectProviderKind(
 export async function pickProvider(
   profile: AgentProfile,
   fetchImpl?: FetchLike,
+  opts?: { dataDir?: string },
 ): Promise<ChatProvider> {
   const backend = normalizeBackend(profile.backend);
   const own = profile.env ?? {};
-  const env = await envFromProfileFresh(profile);
+  const env = await envFromProfileFresh(profile, { dataDir: opts?.dataDir, fetchImpl });
   const model = httpModelFor(profile);
 
   if (backend === "claude") {
@@ -174,12 +196,18 @@ export async function pickProvider(
       fetchImpl,
     });
   }
+  const explicitXai = own.XAI_API_KEY?.trim() || process.env.XAI_API_KEY?.trim();
+  const authPaths = grokCliAuthPaths(profile, opts?.dataDir);
   return createOpenAICompatProvider({
     apiKey: env.XAI_API_KEY!.trim(),
     baseUrl: "https://api.x.ai/v1",
     model,
     kind: "xai",
     fetchImpl,
+    // An explicit API key is not a CLI grant. Only the OAuth bearer can be refreshed.
+    refreshKey: explicitXai
+      ? undefined
+      : async () => getGrokCliAccessToken(authPaths, fetchImpl ?? fetch, { force: true }),
   });
 }
 

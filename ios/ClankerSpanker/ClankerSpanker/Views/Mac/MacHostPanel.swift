@@ -14,6 +14,8 @@ struct MacHostPanel: View {
     /// is loaded — installing would boot it out and hand the port to the
     /// Application Support copy.
     @State private var confirmTakeover = false
+    @State private var repoUpdate: APIClient.HostUpdateStatus?
+    @State private var repoUpdateBusy = false
 
     var body: some View {
         ScrollView {
@@ -21,6 +23,8 @@ struct MacHostPanel: View {
                 header
 
                 installCard
+
+                repoUpdateCard
 
                 HStack(alignment: .top, spacing: 16) {
                     processCard
@@ -54,7 +58,10 @@ struct MacHostPanel: View {
         #if os(macOS)
         .navigationSubtitle("Gateway is a LaunchAgent — install ClankerSpanker Host Tray for menu-bar controls without this app")
         #endif
-        .task { await host.refreshStatus() }
+        .task {
+            await host.refreshStatus()
+            await refreshRepoUpdate()
+        }
     }
 
     private var header: some View {
@@ -133,6 +140,65 @@ struct MacHostPanel: View {
                 }
             }
             .padding(4)
+        }
+    }
+
+    private var repoUpdateCard: some View {
+        GroupBox("Update from the git repo") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(repoUpdate?.summary ?? "Checking the checkout…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let repo = repoUpdate?.repoDir {
+                    labeled("Checkout", repo)
+                }
+                if let upstream = repoUpdate?.upstream {
+                    labeled("Upstream", upstream)
+                }
+                HStack(spacing: 10) {
+                    Button(repoUpdateBusy ? "Updating…" : "Update from repo") {
+                        Task { await applyRepoUpdate() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(repoUpdateBusy || repoUpdate?.canApply != true)
+                    Button("Check again") {
+                        Task { await refreshRepoUpdate() }
+                    }
+                    .disabled(repoUpdateBusy)
+                }
+                .controlSize(.large)
+                Text("Fast-forwards a clean checkout, rebuilds, and restarts the LaunchAgent. Dirty or diverged branches are left alone. Set \"autoUpdate\": true in config.json to do this when no session is running.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(4)
+        }
+    }
+
+    private func refreshRepoUpdate() async {
+        let endpoint = HostEndpoint(name: "This Mac", baseURL: host.localBaseURL)
+        do {
+            repoUpdate = try await appState.api.hostUpdate(host: endpoint)
+        } catch {
+            repoUpdate = nil
+            statusNote = error.localizedDescription
+        }
+    }
+
+    private func applyRepoUpdate() async {
+        repoUpdateBusy = true
+        defer { repoUpdateBusy = false }
+        let endpoint = HostEndpoint(name: "This Mac", baseURL: host.localBaseURL)
+        do {
+            let result = try await appState.api.applyHostUpdate(host: endpoint)
+            repoUpdate = result.status
+            statusNote = result.ok
+                ? "Update started. The gateway will drop offline briefly, then come back."
+                : (result.error ?? result.status.summary)
+        } catch {
+            statusNote = error.localizedDescription
         }
     }
 

@@ -57,6 +57,42 @@ actor APIClient {
         try await get("/health", host: host, authorized: false)
     }
 
+    struct HostUpdateStatus: Codable, Sendable {
+        var state: String
+        var repoDir: String?
+        var branch: String?
+        var upstream: String?
+        var behind: Int
+        var ahead: Int
+        var dirty: Bool
+        var summary: String
+        var checkedAt: String
+        var autoUpdate: Bool
+        var canApply: Bool
+    }
+
+    struct HostUpdateApply: Codable, Sendable {
+        var ok: Bool
+        var started: Bool?
+        var logPath: String?
+        var error: String?
+        var status: HostUpdateStatus
+        var busy: Bool
+    }
+
+    /// RFC-059. `fetch` asks the host to `git fetch` before answering.
+    func hostUpdate(host: HostEndpoint, fetch: Bool = true) async throws -> HostUpdateStatus {
+        try await get(
+            "/host/update",
+            host: host,
+            queryItems: fetch ? [URLQueryItem(name: "fetch", value: "1")] : nil
+        )
+    }
+
+    func applyHostUpdate(host: HostEndpoint) async throws -> HostUpdateApply {
+        try await post("/host/update", body: [String: String](), host: host)
+    }
+
     func validate(host: HostEndpoint) async throws {
         struct ValidateResponse: Decodable {
             let ok: Bool?
@@ -577,6 +613,23 @@ actor APIClient {
             body: PromptBody(prompt: text, images: images),
             host: host
         )
+    }
+
+    // MARK: - Inline exec (RFC-058)
+
+    struct ExecResult: Decodable {
+        var stdout: String
+        var stderr: String
+        var exitCode: Int
+        var durationMs: Int
+    }
+
+    func exec(command: String, cwd: String?, host: HostEndpoint) async throws -> ExecResult {
+        struct Body: Encodable {
+            var command: String
+            var cwd: String?
+        }
+        return try await post("/exec", body: Body(command: command, cwd: cwd), host: host)
     }
 
     func approve(

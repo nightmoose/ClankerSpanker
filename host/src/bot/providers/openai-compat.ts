@@ -1,15 +1,28 @@
 import type { ChatMessage, ChatProvider, ChatResponse, FetchLike, ToolCall, ToolSpec } from "../protocol.js";
 
+/** xAI rejects a dead CLI bearer with 403, not 401. */
+export function isStaleOAuthResponse(status: number, body: string): boolean {
+  if (status !== 401 && status !== 403) return false;
+  const b = body.toLowerCase();
+  return (
+    b.includes("unauthenticated:bad-credentials") ||
+    b.includes("oauth2 access token could not be validated")
+  );
+}
+
 export function createOpenAICompatProvider(opts: {
   apiKey: string;
   baseUrl: string;
   model: string;
   kind?: "xai" | "openai-compat";
   fetchImpl?: FetchLike;
+  /** One-shot replacement key after xAI says the bearer failed validation. */
+  refreshKey?: () => Promise<string | null>;
 }): ChatProvider {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const base = opts.baseUrl.replace(/\/+$/, "");
   const kind = opts.kind ?? (base.includes("api.x.ai") ? "xai" : "openai-compat");
+  let apiKey = opts.apiKey;
 
   return {
     kind,
@@ -28,16 +41,35 @@ export function createOpenAICompatProvider(opts: {
         })),
         tool_choice: tools.length ? "auto" : undefined,
       };
-      const res = await fetchImpl(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${opts.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal,
-      });
-      const text = await res.text();
+      let triedRefresh = false;
+      let res: Response;
+      let text: string;
+      for (;;) {
+        res = await fetchImpl(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
+        text = await res.text();
+        if (
+          !res.ok &&
+          !triedRefresh &&
+          opts.refreshKey &&
+          isStaleOAuthResponse(res.status, text)
+        ) {
+          triedRefresh = true;
+          const next = (await opts.refreshKey())?.trim();
+          if (next && next !== apiKey) {
+            apiKey = next;
+            continue;
+          }
+        }
+        break;
+      }
       if (!res.ok) {
         throw new Error(`OpenAI-compat ${res.status}: ${text.slice(0, 500)}`);
       }

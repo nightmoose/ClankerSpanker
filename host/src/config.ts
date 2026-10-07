@@ -345,6 +345,8 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
     notifyDesktop,
     apns,
     dataDir: raw.dataDir ?? DEFAULT_DATA_DIR,
+    repoDir: typeof raw.repoDir === "string" && raw.repoDir.trim() ? raw.repoDir.trim() : undefined,
+    autoUpdate: raw.autoUpdate === true,
     promptIdleTimeoutMs:
       typeof raw.promptIdleTimeoutMs === "number" ? raw.promptIdleTimeoutMs : undefined,
     promptMaxMs: typeof raw.promptMaxMs === "number" ? raw.promptMaxMs : undefined,
@@ -364,6 +366,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   if (process.env.GROK_DISPATCH_PROMPT_MAX_MS) {
     merged.promptMaxMs = Number(process.env.GROK_DISPATCH_PROMPT_MAX_MS);
   }
+  if (process.env.GROK_DISPATCH_REPO?.trim()) merged.repoDir = process.env.GROK_DISPATCH_REPO.trim();
+  if (process.env.GROK_DISPATCH_AUTO_UPDATE === "1") merged.autoUpdate = true;
+  if (process.env.GROK_DISPATCH_AUTO_UPDATE === "0") merged.autoUpdate = false;
 
   mkdirSync(merged.dataDir, { recursive: true });
   return merged;

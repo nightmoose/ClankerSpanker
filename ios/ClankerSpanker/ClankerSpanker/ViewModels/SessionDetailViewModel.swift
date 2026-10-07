@@ -606,6 +606,41 @@ final class SessionDetailViewModel: ObservableObject {
         }
     }
 
+    /// Run a shell command via POST /exec, then inject the output as a user prompt
+    /// so the agent sees the result and can continue (RFC-058).
+    func runAndInject(command: String, api: APIClient) async {
+        guard !isSending else { return }
+        isSending = true
+        defer { isSending = false }
+        do {
+            let result = try await api.exec(command: command, cwd: detail?.cwd, host: host)
+            let parts = [result.stdout, result.stderr].filter { !$0.isEmpty }
+            let output = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            var lines = ["```", "$ \(command)"]
+            if !output.isEmpty { lines.append(output) }
+            lines.append("```")
+            if result.exitCode != 0 { lines.append("Exit code: \(result.exitCode)") }
+            let text = lines.joined(separator: "\n")
+
+            if var d = detail {
+                d.transcript.append(TranscriptEntry(
+                    id: UUID().uuidString,
+                    role: "user",
+                    text: text,
+                    at: ISO8601DateFormatter().string(from: Date())
+                ))
+                detail = d
+            }
+            let updated = try await api.prompt(sessionId: sessionId, text: text, host: host)
+            detail = updated
+            streamingText = ""
+            errorMessage = nil
+            unlockIfWaitingOnUser()
+        } catch {
+            errorMessage = "Run failed: \(error.localizedDescription)"
+        }
+    }
+
     /// Ensure Approve / answer controls are interactive when the host needs the user.
     private func unlockIfWaitingOnUser() {
         if detail?.status == .awaitingApproval

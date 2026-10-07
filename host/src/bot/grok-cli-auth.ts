@@ -164,16 +164,26 @@ export async function refreshGrokCliCreds(
   };
 }
 
-/** Access token, refreshed if expired or within 5 minutes of expiry. */
+/**
+ * Access token, refreshed if expired or within 5 minutes of expiry.
+ * `force` refreshes even when the local expiry is still in the future —
+ * api.x.ai answers a server-side dead bearer with 403 bad-credentials,
+ * not 401, and often before `exp`.
+ * Returns null on a forced refresh that the token endpoint rejects.
+ */
 export async function getGrokCliAccessToken(
   paths?: string[],
   fetchImpl: typeof fetch = fetch,
+  opts?: { force?: boolean },
 ): Promise<string | null> {
   let creds = readGrokCliCreds(paths);
   if (!creds) return null;
   const exp = creds.expiresAtMs;
-  if (!exp || exp < Date.now() + REFRESH_SKEW_MS) {
-    creds = (await refreshGrokCliCreds(creds, fetchImpl)) ?? creds;
+  const due = !exp || exp < Date.now() + REFRESH_SKEW_MS;
+  if (opts?.force || due) {
+    const refreshed = await refreshGrokCliCreds(creds, fetchImpl);
+    if (refreshed) creds = refreshed;
+    else if (opts?.force) return null;
   }
   return creds.accessToken;
 }

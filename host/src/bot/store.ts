@@ -71,6 +71,14 @@ export class BotStore {
     return { ...merged };
   }
 
+  delete(id: string): boolean {
+    const next = this.bots.filter((b) => b.id !== id);
+    if (next.length === this.bots.length) return false;
+    this.bots = next;
+    this.persist();
+    return true;
+  }
+
   upsert(bot: Bot): Bot {
     const existing = this.bots.findIndex((b) => b.id === bot.id);
     const next = normalizeBot(bot);

@@ -28,6 +28,7 @@ import type {
   TransferProfileRequest,
 } from "./types.js";
 import { isAuthorized, tokensMatch, unauthorizedBody } from "./auth.js";
+import { hostIsBusy, startUpdateController } from "./self-update.js";
 import { TerminalHub } from "./terminal/session.js";
 import { SessionManager } from "./acp/session-manager.js";
 import type { BotRuntime } from "./bot/index.js";
@@ -59,6 +60,7 @@ import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
+import { runCommand } from "./exec.js";
 
 /** Single-use WebSocket tickets (RFC-029), shared by /ws and /ws/terminal. */
 const wsTickets = new WsTicketStore();
@@ -93,6 +95,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Host version. Bumped alongside host/package.json. Surfaced via /health and /host/self. */
 const HOST_VERSION = "0.3.2";
+let updateController: ReturnType<typeof startUpdateController> | null = null;
 /** Static browser UI (same origin as API). Works from dist/ or src via tsx. */
 const WEB_ROOT = (() => {
   const candidates = [
@@ -271,6 +274,14 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
       }
     }
   };
+  updateController?.stop();
+  updateController = startUpdateController({
+    repoDir: config.repoDir,
+    autoUpdate: config.autoUpdate,
+    dataDir: config.dataDir,
+    envRepo: process.env.GROK_DISPATCH_REPO,
+    busy: () => hostIsBusy(manager.list().map((s) => s.status)),
+  });
   syncListeners();
   const rebind = isAutoBind(config.bindHost) ? setInterval(syncListeners, 30_000) : undefined;
   rebind?.unref();
@@ -286,6 +297,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
   console.log(`[server] Clients connect to http://${lan}`);
 
   const shutdown = async () => {
+    updateController?.stop();
     clearInterval(heartbeat);
     if (rebind) clearInterval(rebind);
     terminals.shutdown();
@@ -430,6 +442,26 @@ async function handleHttp(
       version: HOST_VERSION,
       bindPort: config.bindPort,
     });
+    return;
+  }
+
+  // RFC-059: compare this machine's checkout to its upstream, and fast-forward when asked.
+  if (method === "GET" && path === "/host/update") {
+    if (!updateController) {
+      json(res, 503, { error: "Update checker is not running" });
+      return;
+    }
+    const status = await updateController.check({ fetch: url.searchParams.get("fetch") === "1" });
+    json(res, 200, status);
+    return;
+  }
+  if (method === "POST" && path === "/host/update") {
+    if (!updateController) {
+      json(res, 503, { error: "Update checker is not running" });
+      return;
+    }
+    const result = await updateController.apply();
+    json(res, result.ok ? 202 : 409, result);
     return;
   }
 
@@ -1432,6 +1464,34 @@ async function handleHttp(
     return;
   }
 
+  // POST /exec — run a shell command, return stdout/stderr/exitCode (RFC-058).
+  if (method === "POST" && path === "/exec") {
+    const body = (await readJson(req)) as { command?: unknown; cwd?: unknown; timeoutMs?: unknown };
+    if (!body.command || typeof body.command !== "string") {
+      json(res, 400, { error: "command is required" });
+      return;
+    }
+    if (body.cwd !== undefined) {
+      if (typeof body.cwd !== "string") {
+        json(res, 400, { error: "cwd must be a string" });
+        return;
+      }
+      try {
+        if (!statSync(body.cwd).isDirectory()) {
+          json(res, 400, { error: "cwd is not a directory" });
+          return;
+        }
+      } catch {
+        json(res, 400, { error: "cwd does not exist" });
+        return;
+      }
+    }
+    const timeoutMs = typeof body.timeoutMs === "number" ? body.timeoutMs : undefined;
+    const result = await runCommand({ command: body.command, cwd: body.cwd as string | undefined, timeoutMs });
+    json(res, 200, result);
+    return;
+  }
+
   // POST /dispatch
   if (method === "POST" && path === "/dispatch") {
     const body = (await readJson(req)) as DispatchRequest;
@@ -2230,7 +2290,8 @@ async function setupHtml(config: HostConfigFile, req: IncomingMessage): Promise<
     button, a.btn { display:block; width:100%; box-sizing:border-box; text-align:center;
       background:#73b8ff; color:#000; font-weight:700; border:0; border-radius:14px;
       padding:14px 16px; margin:10px 0; text-decoration:none; font-size:16px; cursor:pointer; }
-    a.btn.secondary { background:transparent; color:#fff; border:1px solid #3a3a4a; }
+    a.btn.secondary, button.secondary { background:transparent; color:#fff; border:1px solid #3a3a4a; }
+    button:disabled { opacity:0.45; cursor:default; }
     .ok { color:#5fd68a; }
     .steps { padding-left:18px; color:#d4d4d8; }
     .steps li { margin:8px 0; }
@@ -2249,6 +2310,15 @@ async function setupHtml(config: HostConfigFile, req: IncomingMessage): Promise<
   </div>
 
   <a class="btn" href="${escapeHtml(webApp)}?token=${encodeURIComponent(token)}">Open browser UI</a>
+
+  <div class="card">
+    <label>Update this host</label>
+    <p id="upd-summary">Checking the checkout…</p>
+    <p class="mono" id="upd-meta"></p>
+    <button type="button" id="upd-go" disabled onclick="applyUpdate()">Update from repo</button>
+    <button type="button" class="secondary" onclick="loadUpdate()">Check again</button>
+    <p>This page is served by the host, so it is here even when the ClankerSpanker app is not installed. It fast-forwards this machine’s git checkout, rebuilds, and restarts. Dirty or diverged branches are left alone.</p>
+  </div>
 
   <div class="card">
     <label>1 · Host URL</label>
@@ -2282,6 +2352,48 @@ async function setupHtml(config: HostConfigFile, req: IncomingMessage): Promise<
       const t = document.getElementById('token').innerText.trim();
       navigator.clipboard.writeText('Host URL: ' + u + '\\nHost token: ' + t).then(() => alert('Copied both'));
     }
+    function hostToken() {
+      return document.getElementById('token').innerText.trim();
+    }
+    async function loadUpdate() {
+      const summary = document.getElementById('upd-summary');
+      const meta = document.getElementById('upd-meta');
+      const btn = document.getElementById('upd-go');
+      summary.textContent = 'Checking the checkout…';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/host/update?fetch=1', {
+          headers: { Authorization: 'Bearer ' + hostToken() },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+        summary.textContent = body.summary || body.state || 'Checked';
+        meta.textContent = [body.repoDir, body.upstream].filter(Boolean).join(' · ');
+        btn.disabled = !body.canApply;
+      } catch (e) {
+        summary.textContent = (e && e.message) || String(e);
+        meta.textContent = '';
+      }
+    }
+    async function applyUpdate() {
+      const summary = document.getElementById('upd-summary');
+      const btn = document.getElementById('upd-go');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/host/update', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + hostToken(), 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || (body.status && body.status.summary) || ('HTTP ' + res.status));
+        summary.textContent = 'Update started. This page will drop offline for a moment, then come back.';
+      } catch (e) {
+        summary.textContent = (e && e.message) || String(e);
+        loadUpdate();
+      }
+    }
+    loadUpdate();
   </script>
 </body>
 </html>`;

@@ -92,6 +92,7 @@ body {
 }
 button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
 button.secondary { background: transparent; }
+button:disabled { opacity: 0.45; cursor: default; }
 button.danger { color: var(--danger); border-color: #5a2a2a; }
 .icon-btn { width: 40px; height: 40px; padding: 0; }
 

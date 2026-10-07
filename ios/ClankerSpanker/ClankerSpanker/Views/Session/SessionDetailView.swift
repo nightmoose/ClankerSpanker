@@ -808,6 +808,9 @@ struct SessionDetailView: View {
                 onSaveAsTodo: { entry in captureSheet = .saveAsTodo(entry) },
                 onScanForTodo: { entry in captureSheet = .scanForTodo(entry) },
                 onMakeNote: { entry in captureSheet = .makeNote(entry) },
+                onRunCode: { command in
+                    Task { await vm.runAndInject(command: command, api: appState.api) }
+                },
                 expandMessageId: expandMessageId
             )
         case .tools:

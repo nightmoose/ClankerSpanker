@@ -16,7 +16,13 @@ describe("botTurn (RFC-052)", () => {
     const { ctx } = fakeContext(session, { backend: "bot", toolAllowlist: ["read_file"] } as never);
     await botTurn(ctx, session, "hunt", false);
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ prompt: "hunt", isFollowUp: false, maxTurns: 20, toolsAllowlist: ["read_file"] });
+    expect(calls[0]).toMatchObject({
+      prompt: "hunt",
+      isFollowUp: false,
+      maxTurns: 20,
+      toolsAllowlist: ["read_file"],
+      dataDir: "/tmp/cs-fake-data",
+    });
     expect(ctx.botRuns.has(session.id)).toBe(false);
   });
 });

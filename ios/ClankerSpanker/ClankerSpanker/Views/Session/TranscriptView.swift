@@ -27,6 +27,8 @@ struct TranscriptView: View {
     var onSaveAsTodo: ((TranscriptEntry) -> Void)? = nil
     var onScanForTodo: ((TranscriptEntry) -> Void)? = nil
     var onMakeNote: ((TranscriptEntry) -> Void)? = nil
+    /// When set, a "Run" button appears on bash/sh/zsh/shell code blocks (RFC-058).
+    var onRunCode: ((String) -> Void)? = nil
     /// When set (e.g. arriving from a todo), expand that transcript entry.
     var expandMessageId: String? = nil
 
@@ -141,13 +143,13 @@ struct TranscriptView: View {
         // fullScreenCover is iOS-only; Mac uses a large sheet instead.
         #if os(iOS)
         .fullScreenCover(item: $expanded) { item in
-            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile, onRunCode: onRunCode) {
                 expanded = nil
             }
         }
         #else
         .sheet(item: $expanded) { item in
-            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile) {
+            ExpandedMessageView(item: item, onOpenLocalFile: onOpenLocalFile, onRunCode: onRunCode) {
                 expanded = nil
             }
             .frame(minWidth: 520, minHeight: 420)
@@ -361,6 +363,7 @@ struct ExpandedMessage: Identifiable, Hashable {
 struct ExpandedMessageView: View {
     let item: ExpandedMessage
     var onOpenLocalFile: ((String) -> Void)? = nil
+    var onRunCode: ((String) -> Void)? = nil
     var onDismiss: () -> Void
     #if os(iOS)
     private enum Mode: String, CaseIterable {
@@ -425,7 +428,7 @@ struct ExpandedMessageView: View {
 
     private var renderedScroll: some View {
         ScrollView {
-            MarkdownView(text: item.text, cwd: item.cwd, onOpenLocalFile: onOpenLocalFile)
+            MarkdownView(text: item.text, cwd: item.cwd, onOpenLocalFile: onOpenLocalFile, onRunCode: onRunCode)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
         }
@@ -481,6 +484,7 @@ struct MarkdownView: View {
     /// resolves to a local file. Callers route this through
     /// `AppState.openInViewer(_:)`.
     var onOpenLocalFile: ((String) -> Void)? = nil
+    var onRunCode: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -517,18 +521,35 @@ struct MarkdownView: View {
             Text(inline(content))
                 .font(.body)
                 .textSelection(.enabled)
-        case .code(let body):
+        case .code(let lang, let body):
+            let isShell = ["bash", "sh", "zsh", "shell"].contains(lang?.lowercased() ?? "")
             VStack(alignment: .trailing, spacing: 0) {
-                Button {
-                    DispatchClipboard.copy(body)
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    if isShell, let onRunCode {
+                        Button {
+                            onRunCode(body)
+                        } label: {
+                            Label("Run", systemImage: "play.fill")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(DispatchColors.accent)
+                        .accessibilityLabel("Run code block in terminal")
+                    }
+                    Button {
+                        DispatchClipboard.copy(body)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Copy code block")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy code block")
                 Text(body)
                     .font(.system(.callout, design: .monospaced))
                     .textSelection(.enabled)
@@ -633,7 +654,7 @@ enum MarkdownParser {
     enum Block {
         case heading(level: Int, content: String)
         case paragraph(String)
-        case code(String)
+        case code(lang: String?, body: String)
         case quote(String)
         case unorderedList([String])
         case orderedList([String])
@@ -659,6 +680,10 @@ enum MarkdownParser {
 
             if trimmed.hasPrefix("```") {
                 flushParagraph()
+                let fenceLang: String? = {
+                    let s = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    return s.isEmpty ? nil : s
+                }()
                 i += 1
                 var code: [String] = []
                 while i < lines.count && !lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
@@ -666,7 +691,7 @@ enum MarkdownParser {
                     i += 1
                 }
                 if i < lines.count { i += 1 } // skip closing fence
-                blocks.append(.code(code.joined(separator: "\n")))
+                blocks.append(.code(lang: fenceLang, body: code.joined(separator: "\n")))
                 continue
             }
 

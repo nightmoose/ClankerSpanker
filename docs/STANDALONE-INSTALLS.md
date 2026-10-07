@@ -92,7 +92,30 @@ Future work (not required for host install parity):
 
 ---
 
-## 4. Security
+## 4. Keeping a host updated (RFC-059)
+
+Each machine still needs one checkout (`~/Projects/GrokDispatch`, or
+`repoDir` in `~/.grok-dispatch/config.json`). After this build is installed
+once:
+
+- On that machine, open `http://localhost:8787/setup` and press
+  **Update from repo**. The same button is in the host’s browser UI
+  (header **Update**). No ClankerSpanker app required.
+- The Mac app and iPhone have the same button under Settings → Hosts,
+  when those apps are installed.
+- Or set `"autoUpdate": true` in that machine's `config.json`. The host
+  then fast-forwards itself when no session is running.
+
+It only fast-forwards the branch the checkout is already on. That branch
+needs an upstream, and `git fetch` has to work without a password prompt
+(a LaunchAgent has no terminal). Uncommitted files, a missing upstream, or
+a diverged branch are left alone. If the build fails, run it again; the
+log is `~/.grok-dispatch/self-update.log`.
+
+`scripts/update-mac-host.sh` is still the way to install this the first
+time on a Mac you can sit at.
+
+## 5. Security
 
 - Host token stays in `~/.grok-dispatch/config.json` (user-only permissions).  
 - Desktop apps may store a copy for API calls; host config remains source of truth.  

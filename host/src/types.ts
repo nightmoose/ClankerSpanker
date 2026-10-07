@@ -690,6 +690,18 @@ export interface HostConfigFile {
   apns?: ApnsConfig;
   dataDir: string;
   /**
+   * Git checkout the host fast-forwards when updating (RFC-059).
+   * Unset: GROK_DISPATCH_REPO, then ~/Projects/GrokDispatch, then the
+   * directory this process was launched from.
+   */
+  repoDir?: string;
+  /**
+   * When true, a clean fast-forward is applied on a timer if no session
+   * is running. Default false — a phone or the Host panel applies it.
+   * Never discards local edits and never switches branches.
+   */
+  autoUpdate?: boolean;
+  /**
    * Idle hang detection for open `session/prompt` turns (ms of no ACP activity).
    * Default 15 minutes. Frozen while awaiting phone approval/answers. `0` disables.
    */

@@ -42,6 +42,21 @@ final class AppState: ObservableObject {
     /// macOS command center: session selected in the middle list (inline detail).
     @Published var macSelectedSessionId: String?
 
+    /// Session id → host that just created it. The sessions list may not
+    /// contain the row yet, and `endpoint(forSessionId:)` would otherwise
+    /// guess `selectedHost` — the wrong machine when Run now fell through
+    /// from a host that doesn't have the project.
+    private var sessionHostHints: [String: UUID] = [:]
+
+    func noteSessionHost(sessionId: String, hostId: UUID) {
+        sessionHostHints[sessionId] = hostId
+    }
+
+    func hintedHost(forSessionId id: String) -> HostEndpoint? {
+        guard let hinted = sessionHostHints[id] else { return nil }
+        return hosts.first { $0.id == hinted }
+    }
+
     /// macOS right-side file viewer state. `showMacViewer` controls whether the
     /// pane is visible; `macViewerFilePath` triggers loading a specific file
     /// (set from anywhere: diff/tool call taps, drag-and-drop, etc.).
@@ -1125,6 +1140,9 @@ final class AppState: ObservableObject {
     /// Same as `endpoint(for:)` but resolves by session id when the caller
     /// only has an id in hand (Mac session list selection, deep links).
     func endpoint(forSessionId id: String) -> HostEndpoint? {
+        if let hinted = sessionHostHints[id], let match = hosts.first(where: { $0.id == hinted }) {
+            return match
+        }
         if let s = sessions.first(where: { $0.id == id }) ?? archivedSessions.first(where: { $0.id == id }) {
             return endpoint(for: s)
         }

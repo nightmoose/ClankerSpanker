@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var statusMessage: String?
     @State private var isWorking = false
     @State private var keepAwakeReminder = true
+    @State private var hostUpdates: [UUID: APIClient.HostUpdateStatus] = [:]
+    @State private var updatingHostId: UUID?
 
     var body: some View {
         NavigationStack {
@@ -100,6 +102,17 @@ struct SettingsView: View {
                                 Text(host.loadToken().isEmpty ? "No token" : "Token saved")
                                     .font(.caption2)
                                     .foregroundStyle(host.loadToken().isEmpty ? DispatchColors.danger : DispatchColors.success)
+                                if let update = hostUpdates[host.id] {
+                                    Text(update.summary)
+                                        .font(.caption2)
+                                        .foregroundStyle(update.canApply ? DispatchColors.success : .secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Button(updatingHostId == host.id ? "Updating…" : "Update from repo") {
+                                    Task { await updateHost(host) }
+                                }
+                                .font(.caption.weight(.semibold))
+                                .disabled(updatingHostId != nil || hostUpdates[host.id]?.canApply != true)
                             }
                             .listRowBackground(DispatchColors.card)
                             .swipeActions {
@@ -265,6 +278,7 @@ struct SettingsView: View {
             .onAppear {
                 keepAwakeReminder = UserDefaults.standard.object(forKey: "keepAwakeReminder") as? Bool ?? true
             }
+            .task { await refreshHostUpdates() }
             .onChange(of: keepAwakeReminder) { _, value in
                 UserDefaults.standard.set(value, forKey: "keepAwakeReminder")
             }
@@ -272,6 +286,42 @@ struct SettingsView: View {
                 guard appState.selectedTab == .settings else { return }
                 Task { await appState.refreshSessions() }
             }
+        }
+    }
+
+    private func refreshHostUpdates() async {
+        for host in appState.hosts {
+            do {
+                hostUpdates[host.id] = try await appState.api.hostUpdate(host: host)
+            } catch {
+                hostUpdates[host.id] = APIClient.HostUpdateStatus(
+                    state: "error",
+                    repoDir: nil,
+                    branch: nil,
+                    upstream: nil,
+                    behind: 0,
+                    ahead: 0,
+                    dirty: false,
+                    summary: error.localizedDescription,
+                    checkedAt: "",
+                    autoUpdate: false,
+                    canApply: false
+                )
+            }
+        }
+    }
+
+    private func updateHost(_ host: HostEndpoint) async {
+        updatingHostId = host.id
+        defer { updatingHostId = nil }
+        do {
+            let result = try await appState.api.applyHostUpdate(host: host)
+            statusMessage = result.ok
+                ? "\(host.name) is updating. It will drop offline for a moment, then come back."
+                : (result.error ?? result.status.summary)
+            hostUpdates[host.id] = result.status
+        } catch {
+            statusMessage = "\(host.name): \(error.localizedDescription)"
         }
     }
 

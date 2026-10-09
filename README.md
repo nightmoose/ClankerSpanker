@@ -14,9 +14,7 @@ Nothing leaves your machines except what the agents themselves send to their pro
 > endorsed by, or sponsored by xAI, Anthropic, Google, Apple, or Tailscale. "Grok", "Claude" and other
 > product names are trademarks of their respective owners and are used only to describe compatibility.
 
-<!-- TODO(hero): replace with a real screenshot or GIF (phone approving an edit while the Mac host runs).
-     Save it as docs/assets/hero.gif (or hero.png, keep under ~500 KB) and swap the placeholder below. -->
-> 🚧 **TODO: hero screenshot / GIF goes here** (`docs/assets/hero.gif`)
+![ClankerSpanker controlling an AI coding session from a desktop/mobile client](docs/images/hero.png)
 
 ```
 Mac native app  ──┐

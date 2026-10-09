@@ -84,7 +84,7 @@ describe("resolveApnsAuth + jwt", () => {
       ...config,
       apns: {
         keyId: "ABCD123456",
-        teamId: "XHS7K665C9",
+        teamId: "ABCDE12345",
         keyPath: "AuthKey.p8",
         bundleId: "com.nightmoose.clankerspanker",
       },
@@ -97,12 +97,12 @@ describe("resolveApnsAuth + jwt", () => {
     const header = JSON.parse(Buffer.from(h!, "base64url").toString("utf8")) as { kid: string; alg: string };
     expect(header).toMatchObject({ alg: "ES256", kid: "ABCD123456" });
     const claims = JSON.parse(Buffer.from(c!, "base64url").toString("utf8")) as { iss: string };
-    expect(claims.iss).toBe("XHS7K665C9");
+    expect(claims.iss).toBe("ABCDE12345");
   });
 
   it("rejects a short key id", () => {
     const config = cfg({
-      apns: { keyId: "short", teamId: "XHS7K665C9", keyP8: pem },
+      apns: { keyId: "short", teamId: "ABCDE12345", keyP8: pem },
     });
     expect(resolveApnsAuth(config)).toBeNull();
   });

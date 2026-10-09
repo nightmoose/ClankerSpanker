@@ -10,7 +10,7 @@
     "email": "91439862+nightmoose@users.noreply.github.com"
   },
   "desktopName": "clankerspanker.desktop",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",

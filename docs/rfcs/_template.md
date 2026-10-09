@@ -29,8 +29,7 @@ shape if it exists. Call sites.
 
 1. …
 2. `make check`
-3. Update `docs/STATUS.md` → Shipped
-4. Append `MAINTENANCE_LOG.md`
+3. Add the RFC to the index in `docs/rfcs/README.md`
 
 ## Follow-ups
 

@@ -5,12 +5,12 @@ ClankerSpanker is running. The **host** sends Apple Push so a killed
 phone still sees work. Outbound HTTPS to Apple; port 8787 stays LAN /
 Tailscale.
 
-RFC: [rfcs/011-apns.md](rfcs/011-apns.md). Daily driver: **your iPhone**.
+Install on a physical iPhone to test (push does not work in the simulator).
 
 ## Operator setup
 
 1. Apple Developer → Keys → Apple Push Notifications service (Key). One
-   key per team (`XHS7K665C9`) covers every Nightmoose bundle. Save the
+   key per team (`<TEAM_ID>`) covers every Nightmoose bundle. Save the
    `.p8` **out of git**.
 
 2. On the host machine:
@@ -26,7 +26,7 @@ RFC: [rfcs/011-apns.md](rfcs/011-apns.md). Daily driver: **your iPhone**.
    ```json
    "apns": {
      "keyId": "XXXXXXXXXX",
-     "teamId": "XHS7K665C9",
+     "teamId": "<TEAM_ID>",
      "keyPath": "apns/AuthKey_XXXXXXXXXX.p8",
      "bundleId": "com.nightmoose.clankerspanker",
      "environment": "auto"
@@ -41,7 +41,7 @@ RFC: [rfcs/011-apns.md](rfcs/011-apns.md). Daily driver: **your iPhone**.
    Support and do not load `com.nightmoose.clankerspanker-host`.
 
    ```bash
-   cd ~/Projects/GrokDispatch/host && npm run build
+   cd ~/Projects/ClankerSpanker/host && npm run build
    launchctl kickstart -k "gui/$(id -u)/com.nightmoose.grok-dispatch-host"
    ```
 
@@ -80,7 +80,7 @@ Attention count matches the Sessions tab: `awaiting_approval` +
 - **No banner, app killed:** `GET /push/status` — `configured` must be
   true and `deviceCount` ≥ 1. Open the phone app once after install.
 - **`InvalidProviderToken`:** key id / team id / PEM mismatch. Team is
-  `XHS7K665C9`. Key file must be the `.p8` for that Key ID.
+  `<TEAM_ID>`. Key file must be the `.p8` for that Key ID.
 - **`BadDeviceToken`:** Debug build vs production environment. `auto`
   retries the other side. Confirm the phone scheme is
   `ClankerSpankerPhone` (development entitlement).

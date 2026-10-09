@@ -1,6 +1,6 @@
 # Host modules without a sibling `*.test.ts`
 
-RFC-000 grandfathers these so the check can land without a test-writing push.
+The repo check grandfathers these so the check can land without a test-writing push.
 **Removing a line means you added tests** — that is the intended direction.
 Adding a line requires an RFC (new untested surface is the failure mode).
 

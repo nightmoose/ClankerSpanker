@@ -83,7 +83,7 @@ describe("connectPayload (RFC-026)", () => {
     const cfg = loadConfig(p);
     const payload = connectPayload(cfg, { headers: { host: "100.64.0.10:8787" } }) as Record<string, unknown>;
     expect(payload).not.toHaveProperty("projects");
-    expect(String(payload.deepLink)).toMatch(/^clankerspanker:\/\/configure\?url=http%3A%2F%2F100\.66\.33\.89%3A8787&token=[0-9a-f]+&name=.+/);
+    expect(String(payload.deepLink)).toMatch(/^clankerspanker:\/\/configure\?url=http%3A%2F%2F100\.64\.0\.10%3A8787&token=[0-9a-f]+&name=.+/);
   });
 });
 

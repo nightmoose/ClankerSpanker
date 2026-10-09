@@ -6,7 +6,7 @@ import type { ProjectInfo } from "./types.js";
 
 /**
  * "Import from disk" (RFC-036). Used to be a hardcoded list of one Mac's repos
- * (~/Projects/GrokDispatch, ~/mercenary, …), so every other host found
+ * (~/Projects/ClankerSpanker, ~/mercenary, …), so every other host found
  * nothing. Now: git repositories directly in $HOME, and up to two levels under
  * the usual code roots.
  */

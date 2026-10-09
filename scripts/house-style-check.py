@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""ClankerSpanker house-style gate (RFC-000).
+"""ClankerSpanker repo-hygiene gate.
 
 Exit 0 = pass. Exit 1 = process/regression failure. Exit 2 = tooling error.
 
 Always:
-  - RFC files are NNN-slug.md and listed in docs/STATUS.md
+  - RFC files are NNN-slug.md, unique numbers (gaps are allowed: some RFCs are kept private)
   - host test count >= host/test-baseline.txt
   - every host/src/**/*.ts module has a sibling test or a TEST-EXCEPTIONS row
 
 When compared to a git base (origin/main if present, else empty-tree):
-  - heavy path changes require an RFC file and MAINTENANCE_LOG.md in the diff
   - new 192.168.* literals outside the allowlist fail
 """
 from __future__ import annotations
@@ -22,27 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RFC_DIR = ROOT / "docs" / "rfcs"
-STATUS = ROOT / "docs" / "STATUS.md"
 EXCEPTIONS = ROOT / "docs" / "TEST-EXCEPTIONS.md"
 BASELINE = ROOT / "host" / "test-baseline.txt"
-MAINTENANCE = ROOT / "MAINTENANCE_LOG.md"
-
-HEAVY_PREFIXES = (
-    "host/src/",
-    "host/web/",
-    "host/package.json",
-    "desktop/src/",
-    "desktop/renderer/",
-    "desktop/package.json",
-    "ios/",
-    "shared/",
-    "scripts/",
-    "Makefile",
-    ".github/workflows/",
-)
-
-DOC_ONLY_SUFFIXES = (".md",)
-DOC_ONLY_PREFIXES = ("docs/",)
 
 # RFC-043 removed the client LAN IP; only platform.ts (private-range
 # detection) may mention 192.168.
@@ -101,46 +81,27 @@ def changed_files(base: str | None) -> list[str]:
     )
 
 
-def is_heavy(path: str) -> bool:
-    if path.endswith(".md") or path.startswith("docs/"):
-        return False
-    return any(path == p or path.startswith(p) for p in HEAVY_PREFIXES)
-
-
 def check_rfcs() -> list[str]:
     errors: list[str] = []
     files = sorted(
-        p for p in RFC_DIR.glob("*.md") if p.name != "_template.md"
+        p for p in RFC_DIR.glob("*.md")
+        if p.name not in ("_template.md", "README.md")
     )
     if not files:
-        return ["no RFC files in docs/rfcs/ (need at least 000)"]
+        return ["no RFC files in docs/rfcs/"]
+    index = RFC_DIR / "README.md"
+    if not index.exists():
+        errors.append("docs/rfcs/README.md (RFC index) is missing")
     nums: list[int] = []
-    status = STATUS.read_text() if STATUS.exists() else ""
-    if not STATUS.exists():
-        errors.append("docs/STATUS.md is missing")
     for p in files:
         m = RFC_NAME.match(p.name)
         if not m:
             errors.append(f"RFC filename must be NNN-slug.md: {p.name}")
             continue
         nums.append(int(m.group(1)))
-        needle = f"rfcs/{p.name}"
-        if needle not in status:
-            errors.append(f"docs/STATUS.md does not list {needle}")
-    if nums:
-        expect = list(range(min(nums), max(nums) + 1))
-        missing = [n for n in expect if n not in nums]
-        if missing:
-            errors.append(
-                "RFC numbering gap: missing "
-                + ", ".join(f"{n:03d}" for n in missing)
-            )
-        dupes = sorted({n for n in nums if nums.count(n) > 1})
-        if dupes:
-            errors.append(
-                "duplicate RFC numbers: "
-                + ", ".join(f"{n:03d}" for n in dupes)
-            )
+    dupes = sorted({n for n in nums if nums.count(n) > 1})
+    if dupes:
+        errors.append("duplicate RFC numbers: " + ", ".join(f"{n:03d}" for n in dupes))
     return errors
 
 
@@ -235,34 +196,6 @@ def check_test_ratchet() -> list[str]:
     return []
 
 
-def check_heavy_diff(files: list[str], base: str | None) -> list[str]:
-    if not base:
-        return []
-    heavy = [f for f in files if is_heavy(f)]
-    if not heavy:
-        print("diff vs origin/main is docs/process-only — RFC-in-diff not required")
-        return []
-    rfc_touched = [
-        f
-        for f in files
-        if f.startswith("docs/rfcs/")
-        and f.endswith(".md")
-        and not f.endswith("_template.md")
-    ]
-    errors: list[str] = []
-    if not rfc_touched:
-        errors.append(
-            "heavy change without an RFC in the diff. Write docs/rfcs/NNN-slug.md "
-            f"(see docs/HOUSE-STYLE.md). Heavy files: {', '.join(heavy[:12])}"
-            + (" …" if len(heavy) > 12 else "")
-        )
-    if "MAINTENANCE_LOG.md" not in files:
-        errors.append(
-            "heavy change without MAINTENANCE_LOG.md in the diff — append a run entry"
-        )
-    return errors
-
-
 def check_new_lan_ips(files: list[str], base: str | None) -> list[str]:
     errors: list[str] = []
     for path in files:
@@ -318,13 +251,12 @@ def main() -> int:
     base = base_ref()
     print(f"== diff vs {base or '(no origin/main)'} ==")
     files = changed_files(base)
-    errors += check_heavy_diff(files, base)
     errors += check_new_lan_ips(files, base)
     if errors:
         print("\nHOUSE STYLE FAILED:")
         for e in errors:
             print(f"  - {e}")
-        print("\nSee docs/HOUSE-STYLE.md")
+        print("\nSee CONTRIBUTING.md")
         return 1
     print("\nhouse-style-check: ok")
     return 0

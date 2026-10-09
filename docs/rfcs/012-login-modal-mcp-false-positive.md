@@ -70,7 +70,7 @@ connectors from `~/.grok`.
 ## Rollout
 
 1. Kick LaunchAgent so `host/dist` loads.
-2. Rebuild Mac (and Deez Nutz if the phone showed it).
+2. Rebuild Mac (and your iPhone if the phone showed it).
 3. `docs/STATUS.md` / `MAINTENANCE_LOG.md`
 
 ## Follow-ups

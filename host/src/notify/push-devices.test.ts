@@ -18,11 +18,11 @@ function dir(): string {
 describe("push-devices", () => {
   it("upserts by token and keeps clientHostId", () => {
     const dataDir = dir();
-    registerPushDevice(dataDir, { token: TOKEN, clientHostId: "host-1", name: "Deez Nutz" });
-    registerPushDevice(dataDir, { token: TOKEN.toUpperCase(), clientHostId: "host-1", name: "Deez Nutz" });
+    registerPushDevice(dataDir, { token: TOKEN, clientHostId: "host-1", name: "your iPhone" });
+    registerPushDevice(dataDir, { token: TOKEN.toUpperCase(), clientHostId: "host-1", name: "your iPhone" });
     const list = loadPushDevices(dataDir);
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ token: TOKEN, clientHostId: "host-1", name: "Deez Nutz" });
+    expect(list[0]).toMatchObject({ token: TOKEN, clientHostId: "host-1", name: "your iPhone" });
   });
 
   it("rejects a non-hex token", () => {

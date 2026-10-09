@@ -54,7 +54,7 @@ Consumer Gemini app chats (gemini.google.com) stay out of scope.
 ## Rollout
 
 1. `make check`
-2. Kickstart host + rebuild Mac / Nomad
+2. Kickstart host + rebuild Mac / your iPad
 3. `docs/STATUS.md` → Shipped on merge
 4. Append `MAINTENANCE_LOG.md`
 

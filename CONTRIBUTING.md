@@ -1,50 +1,41 @@
 # Contributing to ClankerSpanker
 
-Process is **ContractGate’s**, adapted to this repo. Full playbook:
-[`docs/HOUSE-STYLE.md`](docs/HOUSE-STYLE.md).
+Thanks for helping out! By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are licensed under the project's [MIT license](LICENSE).
 
 ## Ground rules
 
-- One issue per branch. Do not silently add extras.
-- Never break existing dispatch / approval / auth behavior.
-- `host/src/auth.ts` is the security boundary. Empty token ⇒ nobody.
-- One host gateway. Client ownership: [`docs/CLIENTS.md`](docs/CLIENTS.md).
+- One issue / topic per branch and PR.
+- Never break existing dispatch, approval or auth behavior.
+  `host/src/auth.ts` is the security boundary: an empty token means nobody gets in.
+- One host gateway; clients are thin. Client ownership: [`docs/CLIENTS.md`](docs/CLIENTS.md).
+- No tokens, `.env` files, keys or personal hostnames/IPs in commits.
+  Do not add new hardcoded LAN IPs (clients pair by QR over Tailscale).
 
-## RFC-first
-
-Non-trivial work starts with an RFC:
+## RFC-first for non-trivial work
 
 ```bash
-make rfc SLUG=short-kebab
-git checkout -b nightly-maintenance-$(date +%F)-rfcNNN-short-kebab
+make rfc SLUG=short-kebab      # allocates the next number from docs/rfcs/_template.md
 ```
 
-Template: [`docs/rfcs/_template.md`](docs/rfcs/_template.md).
-Ledger: [`docs/STATUS.md`](docs/STATUS.md).
+List the RFC in [`docs/rfcs/README.md`](docs/rfcs/README.md). Typos and obvious one-liners can skip an RFC.
 
-Typos and obvious one-liners can skip an RFC. If `make check` disagrees, write
-the RFC.
+## Before you open a PR
 
-## Before you open a PR (or push `main`)
-
-- [ ] `make check` is green
-- [ ] New host behavior has a vitest (or an RFC + `docs/TEST-EXCEPTIONS.md` row)
-- [ ] User-facing HTTP/CLI/config/UI: docs updated; OpenAPI if routes changed
-- [ ] `MAINTENANCE_LOG.md` appended
-- [ ] RFC + `docs/STATUS.md` updated
-- [ ] iOS client change: installed on **Deez Nutz** (not simulator-only)
+- [ ] `make check` is green (RFC filename/uniqueness check, untested-module check, test-count ratchet, typecheck, build)
+- [ ] New host behavior has a vitest (or a row in [`docs/TEST-EXCEPTIONS.md`](docs/TEST-EXCEPTIONS.md) with a reason)
+- [ ] User-facing HTTP/CLI/config/UI changes: docs updated, and `shared/openapi.yaml` if routes changed
+- [ ] iOS client changes: tested on a physical device where relevant (not simulator-only)
 
 ## Tests
 
 ```bash
-make check          # house style + host typecheck + build (includes npm test)
+make check          # repo checks + host typecheck + build (runs npm test)
 cd host && npm test
 ```
 
-Test count is ratcheted in `host/test-baseline.txt`. Do not delete tests to
-pass CI.
+The test count is ratcheted in `host/test-baseline.txt`; do not delete tests to go green.
 
 ## Security
 
-No tokens, `.env`, or `Secrets.plist` in git. Do not add new hardcoded LAN IPs.
-The existing `ConnectionDefaults.lanHostURL` is a known defect.
+Report vulnerabilities privately; see [`SECURITY.md`](SECURITY.md).

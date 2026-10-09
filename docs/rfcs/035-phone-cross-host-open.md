@@ -9,8 +9,8 @@
 
 ## Problem
 
-First two-host soak (Primary + Astrodata, 2026-09-25): with the phone
-focused on Astrodata, an approval on Primary pushed correctly, but opening
+First two-host soak (Primary + Secondary, 2026-09-25): with the phone
+focused on Secondary, an approval on Primary pushed correctly, but opening
 the session gave **404**.
 
 - `DashboardView` built every row's `SessionRoute` with
@@ -29,7 +29,7 @@ the session gave **404**.
 
 ## Testing
 
-- [x] Manual, Deez Nutz: focused on Astrodata, Primary approval → tap banner
+- [x] Manual, your iPhone: focused on Secondary, Primary approval → tap banner
       → session opens on Primary with the RFC-033 diff → Approve on phone →
       edit landed on Primary.
 - Swift has no test target yet (known gap).

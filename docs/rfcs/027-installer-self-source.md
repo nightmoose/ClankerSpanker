@@ -45,7 +45,7 @@
 ## Testing
 
 - [x] Manual: with `localHostPackagePath` pointing at the install root, press
-      **Install / update host** → it installs from `~/Projects/GrokDispatch/host`,
+      **Install / update host** → it installs from `~/Projects/ClankerSpanker/host`,
       the host restarts healthy, and the saved path is the checkout.
 - [ ] Manual: change a string in `host/src`, press Install / update → the
       running host has the change (rebuild happened).

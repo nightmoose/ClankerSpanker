@@ -79,7 +79,7 @@ Two-step, gated by hypothesis validation:
 - Log entries at `flushAssistant` with `[turn <turnId>] persist entry
   {id, chars}` so a live soak shows exactly how many entries a single
   Grok turn produces.
-- Pull `~/.grok-dispatch/sessions/<sid>.json` for one of Alex's
+- Pull `~/.grok-dispatch/sessions/<sid>.json` for one of the maintainer's
   affected sessions and eyeball the transcript array.
 
 ### Step 2 — Fix by hypothesis

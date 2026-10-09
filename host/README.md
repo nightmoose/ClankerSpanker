@@ -17,7 +17,7 @@ First run writes `~/.grok-dispatch/config.json` (mode `0600`) including a **host
 | URL | Purpose |
 |-----|---------|
 | `http://<host>:8787/app/` | Browser control plane |
-| `http://localhost:8787/setup` | Pairing: QR code + token. **Only answers on the host machine itself** (RFC-026) |
+| `http://localhost:8787/setup` | Pairing: QR code + token. **Only answers on the host machine itself** |
 | `http://<host>:8787/health` | Liveness |
 
 ### Run as a background service
@@ -35,7 +35,7 @@ Or OS-specific:
 
 `GET /`, `GET /setup` and `GET /connect.json` reveal the token, so they only
 answer a browser or app **on the host machine**, addressed by one of its own
-names, with no cross-site `Origin` (RFC-026). They never send CORS headers.
+names, with no cross-site `Origin`. They never send CORS headers.
 Everyone else pairs by scanning the `/setup` QR code.
 
 ### Where the host listens
@@ -46,7 +46,7 @@ Everyone else pairs by scanning the `/setup` QR code.
 |---|---|
 | `"auto"` (default for new installs) | `127.0.0.1`, `::1`, and this machine's Tailscale addresses (re-checked every 30 s) |
 | `"0.0.0.0"` | Every network, including public Wi-Fi (logs a warning) |
-| `"127.0.0.1,100.66.33.89"` | Exactly the listed addresses |
+| `"127.0.0.1,100.64.0.10"` | Exactly the listed addresses |
 
 Phones and other laptops should connect over Tailscale.
 
@@ -66,15 +66,11 @@ Add your own with `"discoverRoots": ["~/work"]` in `config.json`.
 
 ### Updating a Mac host
 
-From the checkout on that Mac:
-
-```bash
-./scripts/update-mac-host.sh --bind-auto --rotate-token
-```
-
-Pulls, builds, deploys to the LaunchAgent install, switches to
-loopback + Tailscale, mints a new token and restarts. Re-pair clients
-from `/setup` afterwards. Drop the flags for a plain code update.
+From the checkout on that Mac: `git pull`, `cd host && npm ci && npm run build`,
+then restart the service (`launchctl kickstart -k gui/$(id -u)/com.nightmoose.grok-dispatch-host`
+for the LaunchAgent install, or `systemctl --user restart clankerspanker-host` on Linux).
+To bind to loopback + Tailscale set `bindHost` accordingly (see the table above), and to
+mint a new token see "Rotating the token" below. Re-pair clients from `/setup` afterwards.
 
 ### Rotating the token
 
@@ -115,7 +111,7 @@ Authorization: Bearer <hostToken>
 | POST | `/bots/:id/run` | Manual fire (allowed even when disabled). Body `{ note }` is a one-shot extra instruction. |
 | GET | `/bots/:id/outbox` | Markdown drafts under the bot project's `.bot-outbox/` |
 | POST | `/sessions/:id/cancel` | Cancel |
-| POST | `/ws/ticket` | Single-use 30 s WebSocket ticket (RFC-029) |
+| POST | `/ws/ticket` | Single-use 30 s WebSocket ticket |
 | WS | `/ws` | Live event stream. Auth: `Authorization: Bearer` header, or `?ticket=` from `/ws/ticket`. `?token=` is accepted only from the host machine itself. |
 
 ## Config

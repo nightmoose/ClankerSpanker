@@ -15,7 +15,7 @@ complete assistant answer, `stopReason: "end_turn"` written, ACP worker
 already exited — `isLive: false`). The Mac status pill reads "Running"
 and the "Still working…" pulse never clears.
 
-Confirmed on Alex's mac at 2026-09-11 15:19Z for session
+Confirmed on the maintainer's mac at 2026-09-11 15:19Z for session
 `a53072c3-ccae-4622-93e5-22d3107bd272` — REST `GET /sessions/:id`
 returned:
 
@@ -60,7 +60,7 @@ Two problems compound:
    becomes phantom immediately: persisted state is clean, in-memory
    map still gates the end-of-turn block.
 
-Related surface: the "missing question" bug Alex flagged earlier is
+Related surface: the "missing question" bug the maintainer flagged earlier is
 the mirror image — a soft-parked question fires
 `this.emitEvent(live.session, "question.needed", …)` but the client
 never surfaces it. If the tool call subsequently completes,
@@ -70,7 +70,7 @@ forever with the client showing "Still working…".
 
 Impact: every session that hits this path is functionally dead — the
 user can't tell whether Grok is thinking, waiting, or hung. The only
-recovery is to close as done and start over, which is what Alex has
+recovery is to close as done and start over, which is what the maintainer has
 been doing.
 
 ## Non-goals
@@ -110,7 +110,7 @@ Two small edits in `host/src/acp/session-manager.ts`, plus tests:
       covering the four scenarios above. `test-baseline.txt` bumps
       to match.
 - [ ] `make check` green.
-- [ ] Manual soak on Alex's mac:
+- [ ] Manual soak on the maintainer's mac:
   - Kick the LaunchAgent so the fixed host loads
     (`launchctl kickstart -k gui/$(id -u)/com.nightmoose.grok-dispatch-host`).
   - Session `a53072c3-…` — send any follow-up message; the end-of-turn

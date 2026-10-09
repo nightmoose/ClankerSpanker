@@ -17,7 +17,7 @@ Each run:
 1. Search (web_search) then open pages (web_fetch). Pain to look for: poison events, producer-consumer disagreement, schema evolution breakage, "a schema is not a contract", shift-left data quality in streaming, Schema Registry as a false sense of safety.
 2. If search is thin, still web_fetch known public writing — Confluent Schema Registry posts, Conduktor "a schema is not a contract", Adam Bellemare on streaming data products/contracts, Chad Sanderson on data contracts, Kai Wähner on Kafka + data quality. Do not stop at the search snippet.
 3. Write a dated brief (today's UTC date) under .bot-outbox/ naming people, what they wrote, and why they might care. Empty search ≠ empty market.
-4. For the strongest 1–3 leads, call propose_outbound with a short, peer-to-peer draft in Alex's voice. Reference one specific thing they wrote. No hype. Private 1:1. Offer a 15-minute screen-share or a private look at the gate. Single clear ask.
+4. For the strongest 1–3 leads, call propose_outbound with a short, peer-to-peer draft in the owner's voice. Reference one specific thing they wrote. No hype. Private 1:1. Offer a 15-minute screen-share or a private look at the gate. Single clear ask.
 5. Do not mention competitors as dumpster fires. Do not claim we emailed or posted anything. You cannot send.
 
 Never use shell. File writes stay in .bot-outbox/. Do not conclude there is no market because a search tool returned nothing.`;

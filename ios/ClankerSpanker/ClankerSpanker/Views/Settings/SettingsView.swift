@@ -20,7 +20,7 @@ struct SettingsView: View {
                 DispatchBackground()
                 Form {
                     Section {
-                        Text("Each host is a machine running the ClankerSpanker gateway (your Mac Mini, a client laptop, …). Profiles from every host appear as colored chips on Sessions.")
+                        Text("Each host is a machine running the ClankerSpanker gateway (your Mac, a client laptop, …). Profiles from every host appear as colored chips on Sessions.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

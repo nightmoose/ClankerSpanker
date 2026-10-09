@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-09-18
 **Branch:** nightly-maintenance-2026-09-18-rfc022-usage-reset-times
-**Severity:** P3 — Alex asked for it while RFC-021 was warm; small,
+**Severity:** P3 — the maintainer asked for it while RFC-021 was warm; small,
 client-only, no host restart.
 
 ---
@@ -74,7 +74,7 @@ out of scope for this RFC.
 
 1. `make check`
 2. Rebuild `ClankerSpanker` Mac + install
-3. Rebuild `ClankerSpankerPhone` + install on Deez Nutz
+3. Rebuild `ClankerSpankerPhone` + install on your iPhone
 4. `docs/STATUS.md` → Shipped on merge
 5. Append `MAINTENANCE_LOG.md`
 

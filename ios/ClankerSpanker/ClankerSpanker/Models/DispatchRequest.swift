@@ -43,7 +43,7 @@ struct HostConfig: Codable, Equatable, Sendable {
     /// Optional xAI key stored on device (not required if Mac already authenticated).
     var hasXAIKey: Bool
 
-    static let `default` = HostConfig(hostURL: "http://mac-mini.tailnet:8787", hasXAIKey: false)
+    static let `default` = HostConfig(hostURL: "http://my-host.tailnet:8787", hasXAIKey: false)
 }
 
 enum AppTab: Hashable {

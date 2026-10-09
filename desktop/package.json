@@ -7,10 +7,10 @@
   "homepage": "https://github.com/nightmoose/ClankerSpanker",
   "author": {
     "name": "nightmoose",
-    "email": "alex.suarez@nightmoose.com"
+    "email": "91439862+nightmoose@users.noreply.github.com"
   },
   "desktopName": "clankerspanker.desktop",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -66,7 +66,7 @@
       "icon": "resources/icons",
       "synopsis": "Control plane for Grok Build and Claude Code",
       "description": "Desktop shell for ClankerSpanker: connect to a local or remote host gateway, manage agent sessions, and get OS notifications for approvals.",
-      "maintainer": "nightmoose <alex.suarez@nightmoose.com>",
+      "maintainer": "nightmoose <91439862+nightmoose@users.noreply.github.com>",
       "syncDesktopName": true,
       "desktop": {
         "entry": {

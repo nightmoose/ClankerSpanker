@@ -114,7 +114,7 @@ struct MacHostPanel: View {
                         Task { await runInstall(loadAgent: true, takeover: true) }
                     }
                 } message: {
-                    Text("com.nightmoose.grok-dispatch-host is loaded and serving the port from ~/Projects/GrokDispatch/host. Installing will boot that agent out and hand the port to the Application Support copy managed by this app.")
+                    Text("com.nightmoose.grok-dispatch-host is loaded and serving the port from ~/Projects/ClankerSpanker/host. Installing will boot that agent out and hand the port to the Application Support copy managed by this app.")
                 }
 
                 Text("Copies a built `host/` into \(HostInstaller.installRoot.path), runs `npm install --omit=dev`, and registers a per-user LaunchAgent that survives reboots.")

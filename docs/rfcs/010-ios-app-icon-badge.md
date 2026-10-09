@@ -68,7 +68,7 @@ backgrounded) client. That matches today’s local-notification model.
 
 - [x] `make check` (host ratchet unchanged; Swift has no tests)
 - [x] `xcodebuild` ClankerSpankerPhone (generic iOS Simulator)
-- [x] Installed + launched on **Deez Nutz** (2026-09-02)
+- [x] Installed + launched on **your iPhone** (2026-09-02)
 - [ ] iPhone: session hits approval → home-screen icon shows `1` (or N)
 - [ ] Approve or answer in-app → badge drops; `0` removes it
 - [ ] Approve from the notification action → badge drops after refresh

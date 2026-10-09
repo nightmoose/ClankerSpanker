@@ -9,19 +9,19 @@ function req(url: string, remoteAddress: string, headers: Record<string, string>
 
 describe("wsUpgradeAuthorized (RFC-029)", () => {
   it("accepts the bearer header from anywhere", () => {
-    const r = req("/ws", "100.101.1.2", { authorization: `Bearer ${cfg.hostToken}` });
+    const r = req("/ws", "100.64.0.40", { authorization: `Bearer ${cfg.hostToken}` });
     expect(wsUpgradeAuthorized(r, cfg, new WsTicketStore())).toBe(true);
   });
 
   it("accepts a fresh ticket once, from anywhere", () => {
     const t = new WsTicketStore();
     const { ticket } = t.issue();
-    expect(wsUpgradeAuthorized(req(`/ws?ticket=${ticket}`, "100.101.1.2"), cfg, t)).toBe(true);
-    expect(wsUpgradeAuthorized(req(`/ws?ticket=${ticket}`, "100.101.1.2"), cfg, t)).toBe(false);
+    expect(wsUpgradeAuthorized(req(`/ws?ticket=${ticket}`, "100.64.0.40"), cfg, t)).toBe(true);
+    expect(wsUpgradeAuthorized(req(`/ws?ticket=${ticket}`, "100.64.0.40"), cfg, t)).toBe(false);
   });
 
   it("refuses the legacy ?token= from the network", () => {
-    const r = req(`/ws?token=${cfg.hostToken}`, "100.101.1.2");
+    const r = req(`/ws?token=${cfg.hostToken}`, "100.64.0.40");
     expect(wsUpgradeAuthorized(r, cfg, new WsTicketStore())).toBe(false);
   });
 

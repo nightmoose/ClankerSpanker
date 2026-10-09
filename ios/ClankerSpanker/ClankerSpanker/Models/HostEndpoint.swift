@@ -1,12 +1,12 @@
 import Foundation
 import SwiftUI
 
-/// A ClankerSpanker host machine (Mac Mini, client laptop, …).
+/// A ClankerSpanker host machine (Mac, client laptop, …).
 struct HostEndpoint: Identifiable, Codable, Equatable, Hashable, Sendable {
     var id: UUID
-    /// Friendly label, e.g. "Mac Mini", "FullScore MBP"
+    /// Friendly label, e.g. "Mac", "FullScore MBP"
     var name: String
-    /// e.g. http://100.66.33.89:8787 (Tailscale) or http://127.0.0.1:8787
+    /// e.g. http://100.64.0.10:8787 (Tailscale) or http://127.0.0.1:8787
     var baseURL: String
 
     init(id: UUID = UUID(), name: String, baseURL: String) {

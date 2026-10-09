@@ -170,7 +170,7 @@ enum HostInstaller {
         if standaloneLoaded {
             if !takeoverStandalone {
                 throw InstallError.message(
-                    "\(standalone) is already loaded (repo host at ~/Projects/GrokDispatch/host). Confirm from the Host panel to replace it, or leave it as your gateway."
+                    "\(standalone) is already loaded (repo host at ~/Projects/ClankerSpanker/host). Confirm from the Host panel to replace it, or leave it as your gateway."
                 )
             }
             log("Booting out repo agent \(standalone) so the app-managed one can take the port…")

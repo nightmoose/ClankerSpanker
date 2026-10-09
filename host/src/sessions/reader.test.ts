@@ -22,7 +22,7 @@ describe("isGrokHelperCwd / isGrokHelperSession", () => {
       ),
     ).toBe(true);
     expect(isGrokHelperCwd("/Users/me/Projects/GrokDispatch")).toBe(false);
-    expect(isGrokHelperCwd("/Users/me/.grok/worktrees/alexsuarez-nightmoosedirtwork")).toBe(
+    expect(isGrokHelperCwd("/Users/me/.grok/worktrees/me-worktree")).toBe(
       false,
     );
   });

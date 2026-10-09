@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { corsAllowedFor, isTrustedLocalPageRequest, stripPort } from "./trusted-local.js";
 
-const NAMES = new Set(["localhost", "127.0.0.1", "::1", "mac-mini", "mac-mini.local", "100.66.33.89"]);
+const NAMES = new Set(["localhost", "127.0.0.1", "::1", "my-host", "my-host.local", "100.64.0.10"]);
 
 function req(remoteAddress: string, headers: Record<string, string>) {
   return { socket: { remoteAddress }, headers };
@@ -22,7 +22,7 @@ describe("isTrustedLocalPageRequest", () => {
   });
 
   it("refuses a peer on the network (phone, other laptop)", () => {
-    expect(isTrustedLocalPageRequest(req("10.0.0.50", { host: "100.66.33.89:8787" }), NAMES)).toBe(false);
+    expect(isTrustedLocalPageRequest(req("10.0.0.50", { host: "100.64.0.10:8787" }), NAMES)).toBe(false);
   });
 
   it("refuses DNS rebinding (loopback peer, foreign Host header)", () => {
@@ -47,9 +47,9 @@ describe("isTrustedLocalPageRequest", () => {
 describe("stripPort", () => {
   it("handles names, IPv4 and bracketed IPv6", () => {
     expect(stripPort("localhost:8787")).toBe("localhost");
-    expect(stripPort("100.66.33.89:8787")).toBe("100.66.33.89");
+    expect(stripPort("100.64.0.10:8787")).toBe("100.64.0.10");
     expect(stripPort("[::1]:8787")).toBe("::1");
-    expect(stripPort("mac-mini.local")).toBe("mac-mini.local");
+    expect(stripPort("my-host.local")).toBe("my-host.local");
   });
 });
 

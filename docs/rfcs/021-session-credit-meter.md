@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-09-17
 **Branch:** nightly-maintenance-2026-09-17-rfc021-session-credit-meter
-**Severity:** P2 — no functional break, but Alex hit 40% of the weekly
+**Severity:** P2 — no functional break, but the maintainer hit 40% of the weekly
 Grok plan in <24h on 2026-09-17 because two NightMoose sessions ran
 26–30h each; no in-app signal told him the individual chats had
 gotten expensive.
@@ -131,7 +131,7 @@ Snapshot it per session and the meter falls out.
 1. Draft on this branch, cut `nightly-maintenance-2026-09-17-rfc021-session-credit-meter` when ready to build.
 2. `make check`
 3. Kick LaunchAgent so `host/dist` loads
-4. Rebuild ClankerSpanker Mac + install on Deez Nutz (RFC-020 style)
+4. Rebuild ClankerSpanker Mac + install on your iPhone (RFC-020 style)
 5. `docs/STATUS.md` → Shipped on merge
 6. Append `MAINTENANCE_LOG.md`
 

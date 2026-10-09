@@ -222,7 +222,7 @@ struct DashboardView: View {
                     emptyListPane(
                         icon: "desktopcomputer",
                         title: "No hosts / profiles",
-                        body: "Add a host in Settings (Mac Mini or client laptop), then profiles appear here."
+                        body: "Add a host in Settings (Mac or client laptop), then profiles appear here."
                     )
                     .listRowBackground(Color.clear)
                 }

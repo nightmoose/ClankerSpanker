@@ -140,7 +140,7 @@ the fix is client-side plumbing, not schema.
 
 - `make check` — desktop has no host tests, so `make check` covers
   host/openapi only. The test-count ratchet is not affected.
-- Manual soak (deferred to Alex):
+- Manual soak (deferred to the maintainer):
   1. Launch Electron with two hosts configured.
   2. Both hosts' sessions appear in the merged list, each row tagged
      with its host chip.
@@ -155,8 +155,8 @@ the fix is client-side plumbing, not schema.
 
 1. `make check`.
 2. No host redeploy required — RFC-025 is desktop-side only.
-3. Alex launches the updated Electron shell (`npm start` in
-   `desktop/`) on Nomad and soak-tests.
+3. the maintainer launches the updated Electron shell (`npm start` in
+   `desktop/`) on your iPad and soak-tests.
 4. `docs/STATUS.md` → Shipped on merge.
 5. Append `MAINTENANCE_LOG.md`.
 
@@ -164,7 +164,7 @@ the fix is client-side plumbing, not schema.
 
 - **Bonjour / discovery** for onboarding a second host without typing an IP.
 - **Per-host process control**: today `HostProcessManager` only
-  manages the one local host. If Alex ever runs two Nodes on the same
+  manages the one local host. If the maintainer ever runs two Nodes on the same
   machine (different ports), that's a follow-up.
 - **Renderer view routing overhaul**: `state.detail` is still
   session-id keyed globally; a proper router keyed on `(hostId, id)`

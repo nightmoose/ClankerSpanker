@@ -84,7 +84,7 @@ written.
 
 1. `make check`
 2. Kick LaunchAgent — host has real code changes this time.
-3. Rebuild `ClankerSpankerPhone` and install to Deez Nutz + Nomad.
+3. Rebuild `ClankerSpankerPhone` and install to your iPhone + your iPad.
 4. `docs/STATUS.md` → Shipped on merge.
 5. Append `MAINTENANCE_LOG.md`.
 

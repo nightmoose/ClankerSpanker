@@ -81,15 +81,15 @@ describe("connectPayload (RFC-026)", () => {
   it("omits projects and names the host in the deep link", () => {
     const p = join(tmp(), "config.json");
     const cfg = loadConfig(p);
-    const payload = connectPayload(cfg, { headers: { host: "100.66.33.89:8787" } }) as Record<string, unknown>;
+    const payload = connectPayload(cfg, { headers: { host: "100.64.0.10:8787" } }) as Record<string, unknown>;
     expect(payload).not.toHaveProperty("projects");
-    expect(String(payload.deepLink)).toMatch(/^clankerspanker:\/\/configure\?url=http%3A%2F%2F100\.66\.33\.89%3A8787&token=[0-9a-f]+&name=.+/);
+    expect(String(payload.deepLink)).toMatch(/^clankerspanker:\/\/configure\?url=http%3A%2F%2F100\.64\.0\.10%3A8787&token=[0-9a-f]+&name=.+/);
   });
 });
 
 describe("isTailscaleAddr", () => {
   it("matches only 100.64.0.0/10", () => {
-    expect(isTailscaleAddr("100.66.33.89")).toBe(true);
+    expect(isTailscaleAddr("100.64.0.10")).toBe(true);
     expect(isTailscaleAddr("100.127.0.1")).toBe(true);
     expect(isTailscaleAddr("100.63.0.1")).toBe(false);
     expect(isTailscaleAddr("100.128.0.1")).toBe(false);

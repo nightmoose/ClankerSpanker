@@ -1,0 +1,38 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Never paste your host token, API keys or `config.json` contents.**
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Host gateway, Browser UI, macOS app, iOS app, Linux desktop (Electron), Docs, Other]
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you saw.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node version, backend (Grok / Claude / Antigravity), client
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

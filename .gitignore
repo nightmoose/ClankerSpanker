@@ -65,3 +65,8 @@ Screenshot*.png
 .vscode/
 *.swp
 *~
+
+# Python / tooling noise
+__pycache__/
+*.pyc
+.mcp.json

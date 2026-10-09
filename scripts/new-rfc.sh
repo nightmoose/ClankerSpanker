@@ -13,7 +13,7 @@ if [[ ! "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
   exit 2
 fi
 
-next=0
+next=58   # 000-057 are allocated (some kept in a private repo)
 for f in "$RFC_DIR"/[0-9][0-9][0-9]-*.md; do
   [[ -e "$f" ]] || continue
   n=$((10#$(basename "$f" | cut -c1-3)))
@@ -26,7 +26,7 @@ if [[ -e "$dest" ]]; then
   exit 1
 fi
 today="$(date +%F)"
-branch="nightly-maintenance-${today}-rfc${nnn}-${slug}"
+branch="rfc-${nnn}-${slug}"
 awk -v nnn="$nnn" -v slug="$slug" -v today="$today" -v branch="$branch" '
   NR==1 { print "# RFC-" nnn " — Title"; next }
   /^\*\*Status:\*\*/ { print "**Status:** Draft"; next }
@@ -37,5 +37,5 @@ awk -v nnn="$nnn" -v slug="$slug" -v today="$today" -v branch="$branch" '
 
 echo "Wrote $dest"
 echo "Branch: $branch"
-echo "Add a row to docs/STATUS.md, then:"
+echo "Add a row to docs/rfcs/README.md, then:"
 echo "  git checkout -b $branch"

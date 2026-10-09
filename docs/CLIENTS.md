@@ -15,7 +15,7 @@ There is **one host gateway** (`host/`). Everything else is a **client** (and op
 menu-bar-only Swift app in `ios/ClankerSpanker/HostTray`, scheme
 `ClankerSpankerHostTray`. Shows host status, kickstarts the LaunchAgent,
 opens `/app/` and `/setup` in the browser. Ship on Mac laptops that host
-a gateway but do not run `ClankerSpanker.app`. RFC-016.
+a gateway but do not run `ClankerSpanker.app`.
 
 **Do not** dual-maintain full session UIs on Mac in both Electron and Swift.  
 **Mac = native. Linux = Electron.** Electron may *run* on macOS for debugging; shipping Mac UX is the native app.
@@ -54,7 +54,7 @@ Client shells **must not** invent parallel config roots or alternate ports witho
 | App icon / Dock badge | Yes — awaiting approval/question (iPhone SpringBoard + Mac Dock; same count as the Sessions tab) | No | n/a |
 | Multi-folder project picker | Yes (Mac panel) | Host config JSON / UI | Host config only |
 
-iPhone uses the same `ios/` sources as Mac. RFC-003 adds a **Bots** tab on the phone (create + Run now). RFC-010 badges the iPhone icon (and Mac Dock) with the number of sessions awaiting approval or a question. RFC-011 sends those badges/banners via **APNs** when the app is killed (host outbound to Apple). Setup: [APNS.md](APNS.md). Browser `/app/` still has no hunters UI.
+iPhone uses the same `ios/` sources as Mac. RFC-003 adds a **Bots** tab on the phone (create + Run now). RFC-010 badges the iPhone icon (and Mac Dock) with the number of sessions awaiting approval or a question. A later change sends those badges/banners via **APNs** when the app is killed (host outbound to Apple). Setup: [APNS.md](APNS.md). Browser `/app/` still has no hunters UI.
 
 Gaps are product work on the **owning** client for that platform, not a reason to fork the host.
 
@@ -122,7 +122,7 @@ Last known ids (re-check if install fails): UDID
 Launch fails if SpringBoard is locked — install still counts; open the app
 on the device.
 
-iPad daily driver (when the work is iPad-only) is **your iPad**, not your iPhone.
+iPad daily driver (when the work is iPad-only) is your iPad, not your iPhone.
 
 ## Naming (“desktop app”)
 

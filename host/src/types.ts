@@ -644,7 +644,7 @@ export interface AttachAgyRequest {
 export interface ApnsConfig {
   /** 10-char Key ID from Apple Developer → Keys. */
   keyId?: string;
-  /** 10-char Team ID (Nightmoose: XHS7K665C9). */
+  /** 10-char Team ID (from your Apple Developer account). */
   teamId?: string;
   /** PEM contents. Prefer `keyPath` so the secret is not in config.json. */
   keyP8?: string;

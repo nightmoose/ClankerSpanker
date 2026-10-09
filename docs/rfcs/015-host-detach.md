@@ -55,7 +55,7 @@ APNs delivery.
   app-managed one so the port hand-off is atomic.
 - `MacHostPanel`: guard the Install button with an `.alert` confirm
   when the repo agent is loaded ("This will replace your repo-standalone
-  host at ~/Projects/GrokDispatch/host with the Application Support
+  host at ~/Projects/ClankerSpanker/host with the Application Support
   copy"). Remove the dead "Stop (app-owned)" button; simplify the Start
   button so it always kickstarts whichever agent is loaded. Update the
   logs card title to point at the launchd log paths.

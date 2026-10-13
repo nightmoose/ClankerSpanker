@@ -41,6 +41,21 @@ export interface ProjectAttachment {
   note?: string;
 }
 
+/**
+ * RFC-058 — Connection metadata for a project's database. The password
+ * does **not** live here; `connectionRef` points at a slot in
+ * `HostConfigFile.projectSecrets[projectId]` which is never serialized to
+ * clients. `hostHint` is a display-only breadcrumb so the UI can show
+ * "db.abc.supabase.co" without reconstructing it from the secret.
+ */
+export interface ProjectDatabase {
+  provider: "supabase";
+  connectionRef: string;
+  hostHint?: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -62,6 +77,8 @@ export interface ProjectInfo {
   attachments?: ProjectAttachment[];
   /** Suggested default profile for new sessions in this project — not enforced. */
   defaultProfileId?: string;
+  /** RFC-058 database binding; secret lives server-side in projectSecrets. */
+  database?: ProjectDatabase;
   archived?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -678,6 +695,12 @@ export interface HostConfigFile {
   serveBindPort?: number;
   grokBinary: string;
   projects: ProjectInfo[];
+  /**
+   * RFC-058 per-project secret slots (connection strings, API keys later).
+   * Keyed `[projectId][slot]`. Never serialized to clients; writes go
+   * through `setProjectSecret` so `saveConfig` persists them under 0600.
+   */
+  projectSecrets?: Record<string, Record<string, string>>;
   allowCustomPaths: boolean;
   /** Concurrent agent accounts — each is a colored nav segment on clients. */
   profiles: AgentProfile[];

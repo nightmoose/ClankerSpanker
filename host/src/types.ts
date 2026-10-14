@@ -505,6 +505,30 @@ export interface PendingQuestion {
   canRespondViaAcp?: boolean;
 }
 
+/**
+ * RFC-058 — Sealed secret input. Parallel side-channel to approvals and
+ * questions: the host pauses whatever triggered it (today: a failed
+ * `sql_execute` precondition) and prompts the user for a value through a
+ * dedicated modal. The raw value is written to `projectSecrets` and never
+ * flows back to the agent — the trigger just resolves to "ok, retry".
+ */
+export interface PendingSecretRequest {
+  id: string;
+  sessionId: string;
+  projectId: string;
+  slot: string;
+  purpose: string;
+  hint?: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface SubmitSecretRequest {
+  requestId: string;
+  value?: string;
+  cancel?: boolean;
+}
+
 export interface AnswerQuestionsRequest {
   questionId?: string;
   /** One answer string per question (for multiSelect, join labels with ", "). */
@@ -529,6 +553,8 @@ export type SessionEventType =
   | "approval.resolved"
   | "question.needed"
   | "question.answered"
+  | "secret.needed"
+  | "secret.resolved"
   | "task.created"
   | "task.updated"
   | "task.deleted"

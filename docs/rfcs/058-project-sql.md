@@ -66,29 +66,32 @@ scrubbed on `publicProject()` the way `profile.env` is on
 interface ProjectSecrets { [slot: string]: string }   // never echoed on read
 ```
 
-### Sealed-input primitive (`host/src/approvals/secret-request.ts`)
+### Sealed-input primitive (`host/src/sealed-input.ts`)
 
-New tool kind `"secret_request"`:
+Parallel side-channel to approvals and questions. Design note: `resolveApproval`
+in `session-manager.ts` is 150-line, 5-branch (live Grok, Claude hook, bot
+loop, orphaned, exit-plan). Bolting a new "approval" kind onto it to carry a
+secret body is fragile. Instead the primitive is its own manager, mirroring
+the `PendingQuestion` shape:
 
-```ts
-rawInput: {
-  slot: string;              // e.g. "project.database_connection"
-  purpose: string;           // agent's stated reason, shown in the modal
-  hint?: string;             // optional placeholder (e.g. "postgres://…")
-}
-```
+- `PendingSecretRequest { id, sessionId, projectId, slot, purpose, hint, createdAt, expiresAt? }`
+- Events `secret.needed` / `secret.resolved` (new `SessionEventType`
+  members). Payloads **never** carry the value — only slot metadata.
+- `SealedInputManager.request()` returns a promise the caller awaits; the
+  host code that triggers the modal (today: `sql_execute` precondition
+  check) blocks on this promise before continuing.
+- `SealedInputManager.submit(id, value)` writes the value to the project
+  secret store via an injected `writeSecret` callback, then resolves the
+  promise with `{ ok: true, slot }`. The caller retries whatever it was
+  doing.
+- `SealedInputManager.cancel(id)` resolves with `{ ok: false }`. Same for
+  TTL expiry.
+- Route: `POST /sessions/:id/secret` with `{ requestId, value?, cancel? }`.
+  Request-log scrubbing covers this path specifically.
 
-Handler:
-
-1. Register as a `PendingApproval` with a new `kind: "secret_request"`.
-2. Push the usual `approval.needed` event. Clients render the sealed-input
-   modal (SecureField) instead of the Approve/Reject bar.
-3. On save, host POST `/sessions/:id/secret` with `{ approvalId, value }`.
-4. Host writes `value` to `projectSecrets[slot]` (project JSON, 0600
-   perms via existing `config-perms`), updates `project.database.connectionRef`
-   if the slot matches, resolves the tool with `{ ok: true, slot }`.
-5. The raw value is **not** returned to the agent, logged, or echoed in
-   events. Request-log scrubbing covers `kind: "secret_request"` payloads.
+Agent-callable version (so Grok/Claude can request a secret directly) is
+left for the API-key fast-follow — the manager is already generic over
+`slot`, so wiring an ACP tool later is a drop-in.
 
 ### `sql_execute` tool (`host/src/tools/sql.ts`)
 
@@ -98,8 +101,11 @@ rawInput: { query: string }
 
 - Session's project resolved via existing `inferProjectId(session.cwd)`.
 - Connection string loaded from `projectSecrets[project.database.connectionRef]`.
-- Missing config → tool resolves with `{ error: "no_database_configured" }`;
-  the agent naturally follows up with `secret_request`.
+- Missing config → host calls `sealedInput.request({ slot:
+  "project.database_connection", … })`, awaits submit, then retries the
+  query in the same tool-call turn. If the user cancels, the tool resolves
+  with `{ error: "no_database_configured" }` so the agent can give up
+  gracefully.
 - Executes via `pg` (`Pool` with 1 connection, 30s statement timeout).
 - Result shape: `{ rowCount, columns, rows }` with 50-row / 32 KB preview
   cap for `tool_call_update.outputPreview`; full result returned to agent.
@@ -128,8 +134,10 @@ project opened on two hosts has to be configured on each — same model as
 
 ## Testing
 
-- [ ] `secret-request.test.ts` — handler writes to secrets, does not
-      echo value in resolve payload, scrubbed from request log.
+- [ ] `sealed-input.test.ts` — request/submit/cancel/expire paths, no
+      value in event payloads, cancelForSession on session close.
+- [ ] `project-secrets.test.ts` — set/get/remove, isolation across
+      projects, project shape never serializes the value.
 - [ ] `sql-execute.test.ts` — missing config path, happy path (mock pg),
       row cap, DDL flag in title.
 - [ ] `project-secret-scrub.test.ts` — `publicProject()` never returns

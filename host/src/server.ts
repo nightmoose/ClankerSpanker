@@ -71,6 +71,7 @@ import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./
 import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
 import { runCommand } from "./exec.js";
+import * as projectSecrets from "./project-secrets.js";
 
 /** Single-use WebSocket tickets (RFC-029), shared by /ws and /ws/terminal. */
 const wsTickets = new WsTicketStore();
@@ -643,6 +644,7 @@ async function handleHttp(
           try { unlinkSync(join(attachDir, att.filename)); } catch { /* ignore */ }
         }
       } catch { /* ignore */ }
+      projectSecrets.removeAllForProject(config, id);
       config.projects = projects.filter((x) => x.id !== id);
     } else {
       projects[idx] = normalizeProject({
@@ -654,6 +656,94 @@ async function handleHttp(
     }
     saveConfig(config);
     json(res, 200, { ok: true, hard });
+    return;
+  }
+
+  // POST /projects/:id/database — bind a Supabase/Postgres connection to the
+  // project. Body: { connectionString, hostHint? }. The connection string
+  // goes into HostConfigFile.projectSecrets[id][DATABASE_CONNECTION_SLOT] and
+  // is never echoed back (not here, not on GET /projects). Only the
+  // non-sensitive ProjectDatabase block (connectionRef + hostHint + timestamps)
+  // lands on the project. RFC-058.
+  const projectDatabaseMatch = /^\/projects\/([^/]+)\/database$/.exec(path);
+  if (method === "POST" && projectDatabaseMatch) {
+    const id = decodeURIComponent(projectDatabaseMatch[1]!);
+    const projects = config.projects ?? [];
+    const idx = projects.findIndex((x) => x.id === id);
+    if (idx < 0) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    try {
+      const body = (await readJson(req)) as {
+        connectionString?: unknown;
+        hostHint?: unknown;
+      };
+      const connectionString =
+        typeof body.connectionString === "string" ? body.connectionString.trim() : "";
+      if (!connectionString) {
+        json(res, 400, { error: "connectionString required" });
+        return;
+      }
+      if (!/^postgres(ql)?:\/\//i.test(connectionString)) {
+        // Message never carries the value.
+        json(res, 400, { error: "connectionString must start with postgres:// or postgresql://" });
+        return;
+      }
+      const hostHint =
+        typeof body.hostHint === "string" && body.hostHint.trim().length > 0
+          ? body.hostHint.trim()
+          : undefined;
+
+      projectSecrets.set(
+        config,
+        id,
+        projectSecrets.DATABASE_CONNECTION_SLOT,
+        connectionString,
+      );
+      const nowIso = new Date().toISOString();
+      const existing = projects[idx]!;
+      projects[idx] = normalizeProject({
+        ...existing,
+        database: {
+          provider: "supabase",
+          connectionRef: projectSecrets.DATABASE_CONNECTION_SLOT,
+          hostHint,
+          addedAt: existing.database?.addedAt ?? nowIso,
+          updatedAt: nowIso,
+        },
+        updatedAt: nowIso,
+      });
+      config.projects = projects;
+      saveConfig(config);
+      json(res, 200, { project: projects[idx] });
+    } catch (err) {
+      json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /projects/:id/database — detach the connection and clear the slot.
+  if (method === "DELETE" && projectDatabaseMatch) {
+    const id = decodeURIComponent(projectDatabaseMatch[1]!);
+    const projects = config.projects ?? [];
+    const idx = projects.findIndex((x) => x.id === id);
+    if (idx < 0) {
+      json(res, 404, { error: "Project not found" });
+      return;
+    }
+    projectSecrets.remove(config, id, projectSecrets.DATABASE_CONNECTION_SLOT);
+    const existing = projects[idx]!;
+    if (existing.database) {
+      const { database: _dropped, ...rest } = existing;
+      projects[idx] = normalizeProject({
+        ...rest,
+        updatedAt: new Date().toISOString(),
+      });
+      config.projects = projects;
+    }
+    saveConfig(config);
+    json(res, 200, { ok: true });
     return;
   }
 

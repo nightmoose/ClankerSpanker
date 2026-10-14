@@ -146,11 +146,35 @@ Linux follow Mac.
 
 ## Rollout
 
-1. `make check`.
-2. `npm run build`; kill port-8787 PID so LaunchAgent reloads.
-3. Smoke the two new routes with curl.
-4. Update `docs/rfcs/README.md` row to **Shipped** once routes are in
-   use (today or when RFC-059 lands against them).
+- [x] `make check` — 423/423 tests, typecheck + build clean (2026-10-13).
+- [x] `npm run build` — fresh `host/dist/` on branch.
+- [x] Copy `host/dist/*` into `~/Library/Application Support/ClankerSpanker/host/dist/`.
+      Needed because the Mac app spawns its own host out of Application
+      Support and the LaunchAgent plist (`~/Library/LaunchAgents/com.nightmoose.grok-dispatch-host.plist`,
+      which points at the repo dist) is **not loaded** on this machine
+      (`launchctl print gui/501/com.nightmoose.grok-dispatch-host` →
+      not found). Fallback copy worked; the Mac app installer flow we
+      first tried did not actually re-copy anything.
+- [ ] Bounce the running host so it picks up the fresh dist. Last-seen
+      PID 59377, path
+      `/Users/alexsuarez/Library/Application Support/ClankerSpanker/host/dist/index.js`
+      — PID will have changed by the time this is resumed, so re-find
+      it with `/usr/sbin/lsof -i :8787 -sTCP:LISTEN -P -t`.
+- [ ] Smoke the two new routes with curl against a live project id (see
+      `/projects` for the current list). Confirm `POST
+      /projects/:id/database` succeeds, `GET /projects/:id` does **not**
+      echo the connection string, `DELETE /projects/:id/database`
+      clears both the database block and the secret slot. Reject body
+      must not include the supplied value.
+- [ ] Branch not pushed yet — do that only after a successful smoke.
+- [ ] Figure out why `launchctl` lost the service on this host and
+      whether the Mac app installer is supposed to re-copy on each
+      launch. If not, document the "install host" button in the Mac app
+      as the official deploy path (RFC-027 adjunct).
+- [ ] Flip `docs/rfcs/README.md` row for 058 to **Shipped** once the
+      routes are proven in use. Leaving it at **Draft** until that
+      checkpoint — RFC-059 can land against the same primitive without
+      waiting.
 
 ## Follow-ups
 

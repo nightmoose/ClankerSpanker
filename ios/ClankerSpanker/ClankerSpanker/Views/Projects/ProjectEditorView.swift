@@ -26,8 +26,9 @@ struct ProjectEditorView: View {
     @State private var defaultProfileId: String = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
-    @State private var showDatabaseSheet = false
     @State private var currentProject: ProjectInfo?
+    @State private var connectionStringDraft: String = ""
+    @State private var isConnecting = false
 
     private var isEditing: Bool {
         if case .edit = mode { return true } else { return false }
@@ -123,8 +124,7 @@ struct ProjectEditorView: View {
                         if let db = proj.database {
                             VStack(alignment: .leading, spacing: 4) {
                                 Label(db.hostHint ?? db.provider.capitalized, systemImage: "cylinder.fill")
-                                    .font(.body)
-                                Text("Connected · sql_execute available")
+                                Text("sql_execute available")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -135,29 +135,34 @@ struct ProjectEditorView: View {
                                     .foregroundStyle(DispatchColors.danger)
                             }
                         } else {
+                            TextField(
+                                "Connection string",
+                                text: $connectionStringDraft,
+                                prompt: Text("postgresql://user:pass@host/db"),
+                                axis: .vertical
+                            )
+                            .font(.system(.footnote, design: .monospaced))
+                            .autocorrectionDisabled(true)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .lineLimit(2...4)
                             Button {
-                                showDatabaseSheet = true
+                                Task { await connectDatabase(project: proj) }
                             } label: {
-                                Label("Connect database", systemImage: "plus.circle")
+                                if isConnecting {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Label("Connect", systemImage: "plus.circle")
+                                }
                             }
+                            .disabled(isConnecting || !connectionStringDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("postgres"))
                         }
                     } header: {
                         Text("Database")
                     } footer: {
-                        Text("When connected, the agent gains a sql_execute tool to query your database (read-only). The connection string is stored on the host and never sent to clients.")
+                        Text("Connection string stored on the host — never sent to clients. Gives the agent a read-only sql_execute tool.")
                             .font(.caption2)
-                    }
-                    .sheet(isPresented: $showDatabaseSheet) {
-                        ProjectDatabaseSheet(
-                            projectId: proj.id,
-                            host: host,
-                            onConnected: { updated in
-                                currentProject = updated
-                                showDatabaseSheet = false
-                            },
-                            onCancel: { showDatabaseSheet = false }
-                        )
-                        .environmentObject(appState)
                     }
                 }
 
@@ -207,6 +212,24 @@ struct ProjectEditorView: View {
     }
 
     // MARK: - Database
+
+    private func connectDatabase(project: ProjectInfo) async {
+        let cs = connectionStringDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cs.isEmpty else { return }
+        isConnecting = true
+        defer { isConnecting = false }
+        do {
+            let updated = try await appState.api.connectDatabase(
+                projectId: project.id,
+                connectionString: cs,
+                host: host
+            )
+            currentProject = updated
+            connectionStringDraft = ""
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 
     private func disconnectDatabase(project: ProjectInfo) async {
         do {

@@ -1,15 +1,26 @@
 // Extracted from session-manager.ts (RFC-052). Behavior unchanged.
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DispatchSession, PromptImage, ToolCallRecord, TranscriptEntry } from "../../types.js";
 import { isAuthFailureMessage } from "../../login.js";
 import { mcpEnvFor, writeProfileMcpJson } from "../../mcp.js";
+import * as projectSecrets from "../../project-secrets.js";
 import { refreshAllMcpOAuth } from "../../mcp-oauth.js";
 import { ClaudeRunner } from "../../claude/runner.js";
 import { lastUserTextIs, now } from "../session-helpers.js";
 import { ensureAttachmentDirs, materializeImagesInCwd, savePromptImagesForSession } from "../session-support.js";
 import type { TurnContext } from "./context.js";
 import { outputTail } from "../../tool-output.js";
+
+// dist/acp/runners/claude-turn.js → dist/mcp/sql-execute.js
+const SQL_MCP_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "mcp",
+  "sql-execute.js",
+);
 
 /** One Claude Code turn: stream-json + optional phone tool approvals. */
 export async function claudeTurn(
@@ -78,7 +89,16 @@ export async function claudeTurn(
     extraDirs,
     toolAllowlist: profile?.toolAllowlist,
     mcpConfigPath: profile
-      ? writeProfileMcpJson(ctx.config.dataDir, profile, mcpEnvFor(profile))
+      ? writeProfileMcpJson(ctx.config.dataDir, profile, mcpEnvFor(profile), (() => {
+          if (!session.projectId) return undefined;
+          const connStr = projectSecrets.get(
+            ctx.config,
+            session.projectId,
+            projectSecrets.DATABASE_CONNECTION_SLOT,
+          );
+          if (!connStr) return undefined;
+          return [{ name: "sql", command: process.execPath, args: [SQL_MCP_PATH], env: { DATABASE_URL: connStr }, transport: "stdio" as const }];
+        })())
       : undefined,
   });
   ctx.cliRunners.set(sessionId, runner);

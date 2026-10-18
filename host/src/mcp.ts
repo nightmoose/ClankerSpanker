@@ -206,11 +206,15 @@ export function writeProfileMcpJson(
   dataDir: string,
   profile: AgentProfile,
   env: Record<string, string | undefined>,
+  extraServers?: ProfileMcpServer[],
 ): string | undefined {
-  const enabled = enabledMcpServers(profile.mcpServers);
+  const allServers = extraServers?.length
+    ? [...(profile.mcpServers ?? []), ...extraServers]
+    : profile.mcpServers;
+  const enabled = enabledMcpServers(allServers);
   if (!enabled.length) return undefined;
   const body = toMcpJson(
-    profile.mcpServers,
+    allServers,
     env,
     oauthHeaderMap(dataDir, profile.id, profile.mcpServers),
   );

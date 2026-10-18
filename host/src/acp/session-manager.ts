@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HostConfigFile } from "../types.js";
 import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AnswerQuestionsRequest, AttachAgyRequest, AttachClaudeRequest, AttachRequest, Bot, DispatchRequest, DispatchSession, PendingApproval, PendingQuestion, PromptImage, PublicToolCallDetail, SessionEvent, SessionNote, SessionTask, ToolCallRecord, TranscriptEntry, ReviewWorkRequest, TransferProfileRequest } from "../types.js";
@@ -16,6 +17,7 @@ import { approvalPreview } from "../approval-preview.js";
 import { knownGrokHomes, listGrokHomeSessions } from "../grok-home.js";
 import { TombstoneFile } from "./tombstones.js";
 import { mcpEnvFor, toAcpMcpServers } from "../mcp.js";
+import * as projectSecrets from "../project-secrets.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
 import {
@@ -49,6 +51,9 @@ import { antigravityTurn as antigravityTurnImpl } from "./runners/antigravity-tu
 import { botTurn as botTurnImpl } from "./runners/bot-turn.js";
 import type { TurnContext } from "./runners/context.js";
 import { flushAssistant as flushAssistantImpl, handleGrokAgentMessage } from "./runners/grok-events.js";
+
+// dist/acp/session-manager.js → dist/mcp/sql-execute.js
+const SQL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "mcp", "sql-execute.js");
 
 export class SessionManager extends EventEmitter {
   private live = new Map<string, LiveSession>();
@@ -2592,11 +2597,28 @@ export class SessionManager extends EventEmitter {
     const profile = this.profileFor(session);
     if (!profile) return [];
     await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
-    return toAcpMcpServers(
+    const servers = toAcpMcpServers(
       profile.mcpServers,
       mcpEnvFor(profile),
       oauthHeaderMap(this.config.dataDir, profile.id, profile.mcpServers),
     );
+    // RFC-058: inject sql_execute MCP server when the project has a database configured.
+    if (session.projectId) {
+      const connStr = projectSecrets.get(
+        this.config,
+        session.projectId,
+        projectSecrets.DATABASE_CONNECTION_SLOT,
+      );
+      if (connStr) {
+        servers.push({
+          name: "sql",
+          command: process.execPath,
+          args: [SQL_MCP_PATH],
+          env: [{ name: "DATABASE_URL", value: connStr }],
+        });
+      }
+    }
+    return servers;
   }
 
   private newAcpClient(session: DispatchSession): AcpClient {

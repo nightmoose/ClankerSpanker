@@ -26,6 +26,8 @@ struct ProjectEditorView: View {
     @State private var defaultProfileId: String = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showDatabaseSheet = false
+    @State private var currentProject: ProjectInfo?
 
     private var isEditing: Bool {
         if case .edit = mode { return true } else { return false }
@@ -114,6 +116,51 @@ struct ProjectEditorView: View {
                         .font(.caption2)
                 }
 
+                // Database — only for existing projects.
+                if case .edit(let editing) = mode {
+                    let proj = currentProject ?? editing
+                    Section {
+                        if let db = proj.database {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(db.hostHint ?? db.provider.capitalized, systemImage: "cylinder.fill")
+                                    .font(.body)
+                                Text("Connected · sql_execute available")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button(role: .destructive) {
+                                Task { await disconnectDatabase(project: proj) }
+                            } label: {
+                                Label("Disconnect", systemImage: "minus.circle")
+                                    .foregroundStyle(DispatchColors.danger)
+                            }
+                        } else {
+                            Button {
+                                showDatabaseSheet = true
+                            } label: {
+                                Label("Connect database", systemImage: "plus.circle")
+                            }
+                        }
+                    } header: {
+                        Text("Database")
+                    } footer: {
+                        Text("When connected, the agent gains a sql_execute tool to query your database (read-only). The connection string is stored on the host and never sent to clients.")
+                            .font(.caption2)
+                    }
+                    .sheet(isPresented: $showDatabaseSheet) {
+                        ProjectDatabaseSheet(
+                            projectId: proj.id,
+                            host: host,
+                            onConnected: { updated in
+                                currentProject = updated
+                                showDatabaseSheet = false
+                            },
+                            onCancel: { showDatabaseSheet = false }
+                        )
+                        .environmentObject(appState)
+                    }
+                }
+
                 // Attachments — only meaningful for an existing project.
                 if case .edit(let editing) = mode {
                     ProjectAttachmentsSection(project: editing, host: host)
@@ -157,6 +204,19 @@ struct ProjectEditorView: View {
             }
         }
         .onAppear(perform: prime)
+    }
+
+    // MARK: - Database
+
+    private func disconnectDatabase(project: ProjectInfo) async {
+        do {
+            try await appState.api.disconnectDatabase(projectId: project.id, host: host)
+            var updated = project
+            updated.database = nil
+            currentProject = updated
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Prime from mode
@@ -207,6 +267,7 @@ struct ProjectEditorView: View {
                     host: host
                 )
             }
+            currentProject = saved
             onSaved(saved)
         } catch {
             errorMessage = error.localizedDescription

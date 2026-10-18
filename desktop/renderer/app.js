@@ -2676,17 +2676,49 @@ async function editProject(existing) {
     return;
   }
   const color = prompt("Color (hex, optional)", existing?.color || "#73B8FF") || undefined;
+  let saved;
   try {
     if (existing) {
-      await Api.updateProject(existing.id, { name, paths, color });
+      saved = (await Api.updateProject(existing.id, { name, paths, color })).project;
     } else {
-      await Api.createProject({ name, paths, color });
+      saved = (await Api.createProject({ name, paths, color })).project;
     }
-    await refreshSessions();
-    renderProjects();
   } catch (e) {
     banner(e.message, true);
+    return;
   }
+  // RFC-058: database management for existing projects
+  if (saved?.id) {
+    if (saved.database) {
+      const hint = saved.database.hostHint || saved.database.provider || "connected";
+      const disconnect = confirm(`Database connected (${hint}).\nDisconnect it?`);
+      if (disconnect) {
+        try {
+          await Api.disconnectDatabase(saved.id);
+          banner("Database disconnected");
+        } catch (e) {
+          banner(e.message, true);
+        }
+      }
+    } else {
+      const wantDb = confirm("Add a database connection? (Postgres/Supabase connection string)");
+      if (wantDb) {
+        const cs = prompt("Connection string (postgresql://user:pass@host/db)");
+        if (cs && (cs.startsWith("postgres://") || cs.startsWith("postgresql://"))) {
+          try {
+            await Api.connectDatabase(saved.id, cs);
+            banner("Database connected — sql_execute tool is now available");
+          } catch (e) {
+            banner(e.message, true);
+          }
+        } else if (cs) {
+          banner("Connection string must start with postgres:// or postgresql://", true);
+        }
+      }
+    }
+  }
+  await refreshSessions();
+  renderProjects();
 }
 
 async function renderTasks() {

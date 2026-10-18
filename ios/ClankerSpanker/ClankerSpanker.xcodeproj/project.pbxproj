@@ -13,6 +13,7 @@
 		029F9C20ECD329F3C2272723 /* PlatformImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7C07CBC6EE1BE1E802F6A1 /* PlatformImage.swift */; };
 		068DC919CDA4F8DB1C77CC77 /* TerminalWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4CC00D66C3B6662B61E197 /* TerminalWebView.swift */; };
 		0CDEE06A3C349320AE953453 /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA83EA82DD39B4C73445D4D /* ProjectEditorView.swift */; };
+		20AFEA9B70934B7A92C2201D /* ProjectDatabaseSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9A6671CC4A46E6AB986683 /* ProjectDatabaseSheet.swift */; };
 		0DB6E72B2B758F2201C848F3 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84380393A420A3A9CFD22B8 /* AppState.swift */; };
 		115387AE0FD106105DE3F9D0 /* ProfileSegmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B3AC9E8B6CAE2C94A36DA1 /* ProfileSegmentBar.swift */; };
 		14A4C3049B4E4CE2B21F79D3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0084C66F82620EB22AB05099 /* Assets.xcassets */; };
@@ -105,6 +106,7 @@
 		C1FF156D0E392A4993E8BD74 /* MacCommandCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAF4B26A07D5DD2BFC342C1 /* MacCommandCenter.swift */; };
 		C2A5617661EEA4FE41FAF747 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E8C3655C8B8E419D05F6D7 /* TranscriptView.swift */; };
 		C577BDC0C71F4E2257F9E379 /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA83EA82DD39B4C73445D4D /* ProjectEditorView.swift */; };
+		9E392399D1854EC8BB497E25 /* ProjectDatabaseSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9A6671CC4A46E6AB986683 /* ProjectDatabaseSheet.swift */; };
 		C59CB5292A6EC0916E125938 /* HostTrayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01931171F271297250746AB7 /* HostTrayStore.swift */; };
 		C9ADEBAA14B18A475674902A /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FC37F750863A53F383AA1 /* APIClient.swift */; };
 		CA5888DCF48611295EF2910A /* HostEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7EA4B612C915BD1677C43B /* HostEndpoint.swift */; };
@@ -195,6 +197,7 @@
 		815D5C698B817C450FBE3910 /* SessionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEvent.swift; sourceTree = "<group>"; };
 		88B5E8EAB8AEDCB3B42E8E51 /* ClankerSpankerMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClankerSpankerMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8ADA3DC86E49F8922F0BF12F /* ClankerSpankerHostTray.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClankerSpankerHostTray.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C9A6671CC4A46E6AB986683 /* ProjectDatabaseSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDatabaseSheet.swift; sourceTree = "<group>"; };
 		8EAF54AF1A5DCB057A18079B /* ProjectAttachmentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectAttachmentsSection.swift; sourceTree = "<group>"; };
 		9235BD5AC6316DB5FCC9A65D /* SessionFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileViewer.swift; sourceTree = "<group>"; };
 		936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStatusTests.swift; sourceTree = "<group>"; };
@@ -337,6 +340,7 @@
 			isa = PBXGroup;
 			children = (
 				8EAF54AF1A5DCB057A18079B /* ProjectAttachmentsSection.swift */,
+				5C9A6671CC4A46E6AB986683 /* ProjectDatabaseSheet.swift */,
 				9BA83EA82DD39B4C73445D4D /* ProjectEditorView.swift */,
 				A847B6CFB9A54935C90A8634 /* ProjectsView.swift */,
 			);
@@ -671,6 +675,7 @@
 				029F9C20ECD329F3C2272723 /* PlatformImage.swift in Sources */,
 				115387AE0FD106105DE3F9D0 /* ProfileSegmentBar.swift in Sources */,
 				DCFB8A248F9649726EFBA501 /* ProjectAttachmentsSection.swift in Sources */,
+				9E392399D1854EC8BB497E25 /* ProjectDatabaseSheet.swift in Sources */,
 				C577BDC0C71F4E2257F9E379 /* ProjectEditorView.swift in Sources */,
 				76275C087AF0DA32773A4748 /* ProjectsView.swift in Sources */,
 				8D75D6426BE7015FC49ACBD7 /* QuestionBarView.swift in Sources */,
@@ -748,6 +753,7 @@
 				51285D697045E681D158AF67 /* PlatformImage.swift in Sources */,
 				DCB23D21911486D14B6D4E87 /* ProfileSegmentBar.swift in Sources */,
 				7D1A57D8451128EC9A53E767 /* ProjectAttachmentsSection.swift in Sources */,
+				20AFEA9B70934B7A92C2201D /* ProjectDatabaseSheet.swift in Sources */,
 				0CDEE06A3C349320AE953453 /* ProjectEditorView.swift in Sources */,
 				3374A4368AD57C6A8C746EBA /* ProjectsView.swift in Sources */,
 				65967090F1A8FD3FF6641BC1 /* QuestionBarView.swift in Sources */,

@@ -18,6 +18,10 @@ Contributions are licensed under the project's [MIT license](LICENSE).
 make rfc SLUG=short-kebab      # allocates the next number from docs/rfcs/_template.md
 ```
 
+RFC numbers are global across every branch. Run `git fetch --prune origin` first; `make rfc`
+scans all branches, and CI rejects a number another branch already uses. Agents: read
+[`AGENTS.md`](AGENTS.md).
+
 List the RFC in [`docs/rfcs/README.md`](docs/rfcs/README.md). Typos and obvious one-liners can skip an RFC.
 
 ## Before you open a PR

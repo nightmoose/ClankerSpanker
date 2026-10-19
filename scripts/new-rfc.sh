@@ -13,12 +13,22 @@ if [[ ! "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
   exit 2
 fi
 
-next=58   # 000-057 are allocated (some kept in a private repo)
-for f in "$RFC_DIR"/[0-9][0-9][0-9]-*.md; do
-  [[ -e "$f" ]] || continue
-  n=$((10#$(basename "$f" | cut -c1-3)))
+# Numbers are global across every branch, not just this checkout.
+# Fetch first so a number claimed on someone else's branch is seen.
+git -C "$ROOT" fetch --quiet --prune origin 2>/dev/null \
+  || echo "warning: git fetch origin failed; numbers on unfetched branches are not seen" >&2
+
+next=63   # 000-062 are allocated (some kept in a private repo; 062 is reserved by RFC-061)
+while read -r name; do
+  [[ "$name" =~ ^[0-9]{3}- ]] || continue
+  n=$((10#${name:0:3}))
   if (( n >= next )); then next=$((n + 1)); fi
-done
+done < <(
+  ls "$RFC_DIR"
+  git -C "$ROOT" for-each-ref --format='%(refname)' refs/heads refs/remotes/origin \
+    | while read -r ref; do git -C "$ROOT" ls-tree --name-only "$ref" docs/rfcs/ 2>/dev/null; done \
+    | xargs -n1 basename 2>/dev/null
+)
 nnn="$(printf '%03d' "$next")"
 dest="$RFC_DIR/${nnn}-${slug}.md"
 if [[ -e "$dest" ]]; then

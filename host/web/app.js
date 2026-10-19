@@ -7,6 +7,7 @@ import {
   LOOPBACK_SETUP,
   defaultGatewayURL,
   explainFetchFailure,
+  gatewayTerminalURL,
   loopbackFetchInit,
   openWebSocket,
   productSiteKind,
@@ -1387,6 +1388,7 @@ function renderSettings() {
     state.token = $("#s-token").value.trim();
     localStorage.setItem(STORAGE_URL, state.baseURL);
     localStorage.setItem(STORAGE_TOKEN, state.token);
+    syncTerminalLink();
     try {
       await api("/auth/validate", { method: "POST", body: "{}" });
       banner("Connected");
@@ -1643,6 +1645,22 @@ function showProductChrome() {
     }
   }
   if (productSiteKind(location.hostname)) $("#site-nav")?.classList.add("on");
+  syncTerminalLink();
+}
+
+function syncTerminalLink() {
+  const link = $("#btn-terminal");
+  if (!link) return;
+  // On the gateway, ./terminal.html is this origin and its relative
+  // /ws/ticket stays on the gateway. On the public site that relative
+  // page is not published; the icon opens the gateway's own terminal.
+  if (productSiteKind(location.hostname)) {
+    link.href = gatewayTerminalURL(state.baseURL);
+    link.title = "Host terminal on the gateway";
+  } else {
+    link.href = "./terminal.html";
+    link.title = "Host terminal";
+  }
 }
 
 boot();

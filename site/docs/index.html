@@ -42,7 +42,7 @@
 
     <h3>Token</h3>
     <p>The gateway requires <code>Authorization: Bearer</code> with the host token. An empty token authorizes nobody. The token is shown at <code>http://127.0.0.1:8787/setup</code> on the host machine only. This site cannot read that page. You paste the token. It is stored in <code>localStorage</code> on <code>https://clankerspanker.tech</code>.</p>
-    <p>Live updates trade that token for a single-use ticket (<code>POST /ws/ticket</code>) and open the socket with <code>?ticket=</code>. The long-lived token is not put in the WebSocket URL.</p>
+    <p>Live updates trade that token for a single-use ticket (<code>POST /ws/ticket</code>) and open the socket with <code>?ticket=</code>. The long-lived token is not put in the WebSocket URL. The host terminal is not served from this origin. Its link opens the gateway's own terminal page on this computer, and the token is posted there, not here.</p>
     <p>Clear the token from Settings on a browser you no longer trust. Rotating it is done on the host machine, from the setup page, and then each client is updated.</p>
 
     <h3>What never gets uploaded</h3>

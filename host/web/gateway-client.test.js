@@ -5,6 +5,7 @@ import {
   LOOPBACK_GATEWAY,
   defaultGatewayURL,
   explainFetchFailure,
+  gatewayTerminalURL,
   isChromeUserAgent,
   isLoopbackHost,
   loopbackFetchInit,
@@ -166,6 +167,8 @@ describe("default gateway URL", () => {
     expect(defaultGatewayURL({ hostname: "clankerspanker.tech", stored: "" })).toBe(LOOPBACK_GATEWAY);
     expect(defaultGatewayURL({ hostname: "www.clankerspanker.tech", stored: "" })).toBe(LOOPBACK_GATEWAY);
     expect(defaultGatewayURL({ hostname: "127.0.0.1", stored: "" })).toBe("");
+    expect(gatewayTerminalURL("http://127.0.0.1:8787")).toBe("http://127.0.0.1:8787/app/terminal.html");
+    expect(gatewayTerminalURL("http://127.0.0.1:9999/")).toBe("http://127.0.0.1:9999/app/terminal.html");
     expect(productSiteKind("clankerspanker.tech.evil.example")).toBeNull();
   });
 });

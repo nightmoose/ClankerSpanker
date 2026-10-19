@@ -3,6 +3,16 @@
  * Token is stored in localStorage only (this browser).
  */
 
+import {
+  LOOPBACK_SETUP,
+  defaultGatewayURL,
+  explainFetchFailure,
+  loopbackFetchInit,
+  productSiteKind,
+  publicPageNotice,
+  websocketOptions,
+} from "./gateway-client.js";
+
 const STORAGE_TOKEN = "clankerspanker.token";
 const STORAGE_URL = "clankerspanker.hostURL";
 
@@ -18,8 +28,9 @@ const state = {
   profileId: null,
   detail: null,
   token: localStorage.getItem(STORAGE_TOKEN) || "",
-  // When served from /app/, same origin is the host
-  baseURL: localStorage.getItem(STORAGE_URL) || window.location.origin,
+  // On the gateway, same origin is the host. On the public site, the gateway
+  // is loopback on this computer until the operator saves another URL.
+  baseURL: defaultGatewayURL({ hostname: location.hostname, stored: localStorage.getItem(STORAGE_URL) || "" }) || window.location.origin,
   ws: null,
   connected: false,
   // Profiles admin (Profiles tab). Populated by GET /profiles?admin=1
@@ -56,12 +67,24 @@ function authHeaders() {
  */
 let tokenRefresh = null; // single-flight: parallel 401s share one fetch
 
+function fetchFailure(err) {
+  return new Error(
+    explainFetchFailure({
+      hostname: location.hostname,
+      userAgent: navigator.userAgent,
+      brave: Boolean(navigator.brave),
+      baseURL: state.baseURL,
+      errorMessage: err instanceof Error ? err.message : String(err || ""),
+    }),
+  );
+}
+
 async function refreshTokenFromHost(usedToken) {
   if (state.baseURL.replace(/\/$/, "") !== window.location.origin) return false;
   if (!tokenRefresh) {
     tokenRefresh = (async () => {
       try {
-        const r = await fetch("/connect.json", { cache: "no-store" });
+        const r = await fetch("/connect.json", { cache: "no-store", ...loopbackFetchInit(state.baseURL) });
         if (!r.ok) return null;
         const c = await r.json();
         if (c?.hostToken && c.hostToken !== state.token) {
@@ -84,10 +107,16 @@ async function refreshTokenFromHost(usedToken) {
 async function api(path, opts = {}, retried = false) {
   const url = new URL(path, state.baseURL.replace(/\/$/, "") + "/");
   const usedToken = state.token;
-  const res = await fetch(url, {
-    ...opts,
-    headers: { ...authHeaders(), ...(opts.headers || {}) },
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...opts,
+      ...loopbackFetchInit(url),
+      headers: { ...authHeaders(), ...(opts.headers || {}) },
+    });
+  } catch (err) {
+    throw fetchFailure(err);
+  }
   if (res.status === 401 && !retried) {
     // A concurrent request may already have fetched the new token.
     if (state.token !== usedToken || (await refreshTokenFromHost(usedToken))) return api(path, opts, true);
@@ -1327,13 +1356,24 @@ function envFromText(text) {
   return out;
 }
 
+function connectionHint() {
+  if (productSiteKind(location.hostname)) {
+    return `This page talks to a gateway on this computer. Host URL stays <code>${escapeHtml(state.baseURL)}</code> unless yours listens elsewhere. Paste the host token from <code>${escapeHtml(LOOPBACK_SETUP)}</code> on that machine. The token is not fetched from this website.`;
+  }
+  return "When this UI is served by the host, Host URL can stay as this origin. Paste the host token from <code>/setup</code>.";
+}
+
 function renderSettings() {
   showView("settings");
   const root = $("#view-settings");
+  const siteLinks = productSiteKind(location.hostname)
+    ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
+    : "";
   root.innerHTML = `
     <div class="card">
       <h3>Connection</h3>
-      <p class="preview">When this UI is served by the host, Host URL can stay as this origin. Paste the host token from <code>/setup</code>.</p>
+      ${siteLinks}
+      <p class="preview">${connectionHint()}</p>
       <label class="field">Host URL</label>
       <input id="s-url" value="${escapeAttr(state.baseURL)}" />
       <label class="field">Host token</label>
@@ -1431,7 +1471,9 @@ async function connectWs() {
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     u.pathname = "/ws";
     u.search = `ticket=${encodeURIComponent(ticket)}`;
-    const ws = new WebSocket(u.toString());
+    const wsUrl = u.toString();
+    const wsOpts = websocketOptions(state.baseURL);
+    const ws = wsOpts ? openLoopbackSocket(wsUrl, wsOpts) : new WebSocket(wsUrl);
     state.ws = ws;
     ws.onopen = () => setConn(true);
     ws.onclose = () => setConn(false);
@@ -1439,8 +1481,22 @@ async function connectWs() {
       // Lightweight: refresh list/detail on any event
       refresh();
     };
+  } catch (err) {
+    const notice = publicPageNotice({
+      hostname: location.hostname,
+      userAgent: navigator.userAgent,
+      brave: Boolean(navigator.brave),
+    });
+    if (notice) banner(notice, true);
+    else if (productSiteKind(location.hostname)) banner(fetchFailure(err).message, true);
+  }
+}
+
+function openLoopbackSocket(url, options) {
+  try {
+    return new WebSocket(url, options);
   } catch {
-    /* optional */
+    return new WebSocket(url);
   }
 }
 
@@ -1554,12 +1610,15 @@ function boot() {
     }
   };
 
-  if (state.token) {
+  showProductChrome();
+
+  if (state.token || productSiteKind(location.hostname)) {
     start();
     return;
   }
   // Same-origin /app/ (tray "Open web UI") — /connect.json already
   // exposes the token on this host, same as /setup.
+  // The public site never reads it.
   fetch("/connect.json")
     .then((r) => (r.ok ? r.json() : null))
     .then((c) => {
@@ -1572,6 +1631,24 @@ function boot() {
     })
     .catch(() => {})
     .finally(start);
+}
+
+function showProductChrome() {
+  const notice = publicPageNotice({
+    hostname: location.hostname,
+    userAgent: navigator.userAgent,
+    brave: Boolean(navigator.brave),
+  });
+  const limit = $("#browser-limit");
+  if (limit) {
+    if (notice) {
+      limit.textContent = notice;
+      limit.classList.remove("hidden");
+    } else {
+      limit.classList.add("hidden");
+    }
+  }
+  if (productSiteKind(location.hostname)) $("#site-nav")?.classList.add("on");
 }
 
 boot();

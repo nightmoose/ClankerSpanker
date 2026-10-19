@@ -55,7 +55,7 @@ import {
 import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
 import { isLocalMachineAddr } from "./local-machine.js";
-import { corsAllowedFor, isTrustedLocalPageRequest } from "./trusted-local.js";
+import { corsHeadersFor, isTrustedLocalPageRequest } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
@@ -298,6 +298,11 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
   return { listeners, wss, shutdown };
 }
 
+function firstHeaderValue(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -309,12 +314,12 @@ async function handleHttp(
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = (req.method ?? "GET").toUpperCase();
 
-  // CORS for clients that run off-origin (Electron renderer is file://).
-  // RFC-026: never on token-less routes — a cross-origin page could read them.
-  if (corsAllowedFor(path)) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-ClankerSpanker-Token, X-Grok-Dispatch-Token");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  // CORS: the hosted product origin is reflected and opts in to Private
+  // Network Access. Clients with no website origin (Electron file://) keep
+  // `*`. Token-less routes never get these headers (RFC-026).
+  const cors = corsHeadersFor(path, firstHeaderValue(req.headers.origin));
+  if (cors) {
+    for (const [name, value] of Object.entries(cors)) res.setHeader(name, value);
   }
   if (method === "OPTIONS") {
     res.writeHead(204);

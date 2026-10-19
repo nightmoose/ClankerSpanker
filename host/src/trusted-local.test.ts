@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { corsAllowedFor, isTrustedLocalPageRequest, stripPort } from "./trusted-local.js";
+import {
+  HOSTED_PRODUCT_ORIGIN,
+  corsAllowedFor,
+  corsHeadersFor,
+  isTrustedLocalPageRequest,
+  stripPort,
+} from "./trusted-local.js";
 
 const NAMES = new Set(["localhost", "127.0.0.1", "::1", "my-host", "my-host.local", "100.64.0.10"]);
 
@@ -62,5 +68,53 @@ describe("corsAllowedFor", () => {
   it("keeps CORS on token-authenticated API routes", () => {
     expect(corsAllowedFor("/sessions")).toBe(true);
     expect(corsAllowedFor("/host/self")).toBe(true);
+  });
+});
+
+describe("corsHeadersFor", () => {
+  it("reflects the hosted product origin and opts in to private network access", () => {
+    const headers = corsHeadersFor("/sessions", HOSTED_PRODUCT_ORIGIN);
+    expect(headers).toMatchObject({
+      "Access-Control-Allow-Origin": HOSTED_PRODUCT_ORIGIN,
+      "Access-Control-Allow-Private-Network": "true",
+      Vary: "Origin",
+    });
+    expect(headers?.["Access-Control-Allow-Headers"]).toContain("Authorization");
+    expect(headers?.["Access-Control-Allow-Methods"]).toContain("OPTIONS");
+  });
+
+  it("accepts the hosted origin in any case", () => {
+    expect(corsHeadersFor("/ws/ticket", "HTTPS://ClankerSpanker.tech")).toMatchObject({
+      "Access-Control-Allow-Origin": HOSTED_PRODUCT_ORIGIN,
+      "Access-Control-Allow-Private-Network": "true",
+    });
+  });
+
+  it("keeps the wildcard for clients that have no website origin", () => {
+    for (const origin of [undefined, "", "null"]) {
+      const headers = corsHeadersFor("/health", origin);
+      expect(headers?.["Access-Control-Allow-Origin"]).toBe("*");
+      expect(headers?.["Access-Control-Allow-Private-Network"]).toBeUndefined();
+    }
+  });
+
+  it("refuses every other website origin, including previews and www", () => {
+    for (const origin of [
+      "https://www.clankerspanker.tech",
+      "https://clankerspanker.tech.evil.example",
+      "http://clankerspanker.tech",
+      "https://preview.vercel.app",
+      "https://evil.example",
+      "http://127.0.0.1:8787",
+    ]) {
+      expect(corsHeadersFor("/sessions", origin)).toBeNull();
+    }
+  });
+
+  it("never attaches CORS or private-network headers to token-less routes", () => {
+    for (const path of ["/", "/setup", "/connect.json", "/mcp/oauth/callback"]) {
+      expect(corsHeadersFor(path, HOSTED_PRODUCT_ORIGIN)).toBeNull();
+      expect(corsHeadersFor(path, undefined)).toBeNull();
+    }
   });
 });

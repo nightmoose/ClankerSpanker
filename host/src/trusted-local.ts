@@ -68,11 +68,63 @@ function firstHeader(v: string | string[] | undefined): string | undefined {
 /**
  * Routes that answer without the host token. They must never carry
  * `Access-Control-Allow-Origin` — a cross-origin page could otherwise read
- * them. Token-authenticated routes keep `*` (browsers never attach the
- * bearer token on their own, and the Electron renderer runs from file://).
+ * them.
  */
 const NO_CORS_PATHS = new Set(["/", "/setup", "/connect.json", "/mcp/oauth/callback"]);
 
 export function corsAllowedFor(path: string): boolean {
   return !NO_CORS_PATHS.has(path);
+}
+
+/**
+ * The only website origin allowed to read the gateway.
+ * Keep this in sync with `host/web/gateway-client.js`.
+ */
+export const HOSTED_PRODUCT_ORIGIN = "https://clankerspanker.tech";
+
+const CORS_ALLOW_HEADERS =
+  "Authorization, Content-Type, X-ClankerSpanker-Token, X-Grok-Dispatch-Token";
+const CORS_ALLOW_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
+
+export type CorsHeaderMap = Record<string, string>;
+
+/**
+ * CORS for token routes (phase 1 of the hosted product site).
+ *
+ * `https://clankerspanker.tech` is the only website origin that may read the
+ * gateway. Responses to that origin reflect it (not `*`) and opt in to
+ * Private Network Access, so Chrome can finish the loopback preflight from
+ * the public page (`Access-Control-Request-Private-Network: true` →
+ * `Access-Control-Allow-Private-Network: true`).
+ *
+ * A request with no website origin — the Electron renderer sends `Origin:
+ * null` from `file://`, and native clients send nothing — still gets
+ * `Access-Control-Allow-Origin: *`. That wildcard is not a private-network
+ * opt-in. Any other website origin, including preview deploys, gets no CORS
+ * headers, so the browser cannot read the response.
+ */
+export function corsHeadersFor(path: string, origin: string | undefined): CorsHeaderMap | null {
+  if (!corsAllowedFor(path)) return null;
+  if (normalizeOrigin(origin) === HOSTED_PRODUCT_ORIGIN) {
+    return {
+      "Access-Control-Allow-Origin": HOSTED_PRODUCT_ORIGIN,
+      Vary: "Origin",
+      "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
+      "Access-Control-Allow-Methods": CORS_ALLOW_METHODS,
+      "Access-Control-Allow-Private-Network": "true",
+    };
+  }
+  if (origin === undefined || origin === "" || origin === "null") {
+    return {
+      "Access-Control-Allow-Origin": "*",
+      Vary: "Origin",
+      "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
+      "Access-Control-Allow-Methods": CORS_ALLOW_METHODS,
+    };
+  }
+  return null;
+}
+
+function normalizeOrigin(origin: string | undefined): string {
+  return (origin ?? "").trim().toLowerCase();
 }

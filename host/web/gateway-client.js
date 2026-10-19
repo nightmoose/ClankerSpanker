@@ -68,6 +68,55 @@ export function websocketOptions(url) {
 }
 
 /**
+ * Whether this page's browser accepts `{ targetAddressSpace }` as the
+ * WebSocket constructor's second argument.
+ *
+ * `unknown` until the first loopback socket. `no` after Chrome rejects the
+ * bag. `yes` after a browser accepts it. Remembered so a rejected bag is
+ * not passed again.
+ */
+let websocketOptionsBag = "unknown";
+
+export function resetWebSocketOptionsProbe() {
+  websocketOptionsBag = "unknown";
+}
+
+/**
+ * Chrome 154.0.8037.92 throws
+ * `Failed to construct 'WebSocket': The subprotocol '[object Object]' is invalid`
+ * because it still reads the second argument as a subprotocol list, not as
+ * the options bag from the Chrome 154 release notes. The throw is caught.
+ * Later calls on this page skip the bag, so the constructor is not invoked
+ * with an object again and the console is not filled with that error.
+ * A browser that accepts the bag keeps receiving it.
+ */
+function optionsBagRejected(err) {
+  const msg = String((err && err.message) || err || "");
+  return /subprotocol/i.test(msg) || msg.includes("[object Object]");
+}
+
+export function openWebSocket(url, options, Factory) {
+  const WS = Factory || globalThis.WebSocket;
+  const tryBag = Boolean(options) && websocketOptionsBag !== "no";
+  if (!tryBag) return new WS(url);
+  try {
+    const ws = new WS(url, options);
+    websocketOptionsBag = "yes";
+    return ws;
+  } catch (err) {
+    if (!optionsBagRejected(err)) throw err;
+    websocketOptionsBag = "no";
+    return new WS(url);
+  }
+}
+
+/** Gateway-served terminal. The static site does not host this page. */
+export function gatewayTerminalURL(baseURL) {
+  const base = String(baseURL || LOOPBACK_GATEWAY).replace(/\/$/, "");
+  return `${base}/app/terminal.html`;
+}
+
+/**
  * Stored host URL wins. On the public site, with nothing stored, the gateway
  * is loopback on this computer rather than the page's own origin.
  */

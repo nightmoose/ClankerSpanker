@@ -8,8 +8,10 @@ import {
   isChromeUserAgent,
   isLoopbackHost,
   loopbackFetchInit,
+  openWebSocket,
   productSiteKind,
   publicPageNotice,
+  resetWebSocketOptionsProbe,
   websocketOptions,
 } from "./gateway-client.js";
 
@@ -100,6 +102,59 @@ describe("which browser can use the public page", () => {
       errorMessage: "The host rejected this browser's token",
     });
     expect(rejected).toContain("rejected");
+  });
+});
+
+describe("WebSocket options bag", () => {
+  const SUBPROTOCOL = "Failed to construct 'WebSocket': The subprotocol '[object Object]' is invalid";
+
+  function rejectingSocket(calls) {
+    return function WS(url, protocols) {
+      calls.push(protocols);
+      if (protocols && typeof protocols === "object") {
+        throw new Error(SUBPROTOCOL);
+      }
+      this.url = url;
+    };
+  }
+
+  function acceptingSocket(calls) {
+    return function WS(url, protocols) {
+      calls.push(protocols);
+      this.url = url;
+      this.protocols = protocols;
+    };
+  }
+
+  it("catches the Chrome 154 subprotocol throw once and then skips the bag", () => {
+    resetWebSocketOptionsProbe();
+    const calls = [];
+    const WS = rejectingSocket(calls);
+    const bag = { targetAddressSpace: "loopback" };
+    const first = openWebSocket("ws://127.0.0.1:8787/ws", bag, WS);
+    const second = openWebSocket("ws://127.0.0.1:8787/ws", bag, WS);
+    expect(first.url).toBe("ws://127.0.0.1:8787/ws");
+    expect(second.url).toBe("ws://127.0.0.1:8787/ws");
+    // First open: bag throws, then a plain socket. Second open skips the bag.
+    expect(calls).toEqual([bag, undefined, undefined]);
+  });
+
+  it("keeps passing the bag when the constructor accepts it", () => {
+    resetWebSocketOptionsProbe();
+    const calls = [];
+    const WS = acceptingSocket(calls);
+    const bag = { targetAddressSpace: "loopback" };
+    openWebSocket("ws://127.0.0.1:8787/ws", bag, WS);
+    openWebSocket("ws://127.0.0.1:8787/ws", bag, WS);
+    expect(calls).toEqual([bag, bag]);
+  });
+
+  it("does not pass a bag for a non-loopback socket", () => {
+    resetWebSocketOptionsProbe();
+    const calls = [];
+    const WS = acceptingSocket(calls);
+    openWebSocket("wss://node.tailnet.ts.net/ws", null, WS);
+    expect(calls).toEqual([undefined]);
   });
 });
 

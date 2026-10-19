@@ -8,6 +8,7 @@ import {
   defaultGatewayURL,
   explainFetchFailure,
   loopbackFetchInit,
+  openWebSocket,
   productSiteKind,
   publicPageNotice,
   websocketOptions,
@@ -1472,8 +1473,9 @@ async function connectWs() {
     u.pathname = "/ws";
     u.search = `ticket=${encodeURIComponent(ticket)}`;
     const wsUrl = u.toString();
-    const wsOpts = websocketOptions(state.baseURL);
-    const ws = wsOpts ? openLoopbackSocket(wsUrl, wsOpts) : new WebSocket(wsUrl);
+    // Loopback passes the options bag. Chrome 154.0 rejects it as a
+    // subprotocol; openWebSocket catches that once and reconnects without it.
+    const ws = openWebSocket(wsUrl, websocketOptions(state.baseURL));
     state.ws = ws;
     ws.onopen = () => setConn(true);
     ws.onclose = () => setConn(false);
@@ -1489,14 +1491,6 @@ async function connectWs() {
     });
     if (notice) banner(notice, true);
     else if (productSiteKind(location.hostname)) banner(fetchFailure(err).message, true);
-  }
-}
-
-function openLoopbackSocket(url, options) {
-  try {
-    return new WebSocket(url, options);
-  } catch {
-    return new WebSocket(url);
   }
 }
 

@@ -237,10 +237,7 @@ struct MacHostPanel: View {
                     TextField("…/GrokDispatch/host", text: $host.hostPackagePath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse…") { pickPackageFolder() }
-                    Button("Save") {
-                        host.savePackagePath(host.hostPackagePath)
-                        statusNote = "Saved source path"
-                    }
+                    Button("Save") { saveSourcePath(host.hostPackagePath) }
                 }
             }
             .padding(4)
@@ -287,8 +284,18 @@ struct MacHostPanel: View {
         panel.allowsMultipleSelection = false
         panel.message = "Select host *source* (repo host/ with package.json)"
         if panel.runModal() == .OK, let url = panel.url {
-            host.savePackagePath(url.path)
+            saveSourcePath(url.path)
+        }
+    }
+
+    /// RFC-063: the install root is never a valid source.
+    private func saveSourcePath(_ path: String) {
+        if host.savePackagePath(path) {
+            host.lastError = nil
             statusNote = "Source path set"
+        } else {
+            statusNote = nil
+            host.lastError = "\(path) is where the host gets installed, not a source. Pick your ClankerSpanker checkout's host/ folder."
         }
     }
 
@@ -298,7 +305,10 @@ struct MacHostPanel: View {
         installLog = []
         defer { installBusy = false }
         do {
-            let source = host.hostPackagePath.isEmpty ? nil : URL(fileURLWithPath: host.hostPackagePath)
+            host.lastError = nil
+            // RFC-063: an install-root path here is ignored; resolveSource clears it.
+            let path = host.hostPackagePath
+            let source = path.isEmpty || HostInstaller.isInstallRootPath(path) ? nil : URL(fileURLWithPath: path)
             try HostInstaller.install(
                 fromSource: source,
                 loadLaunchAgent: loadAgent,

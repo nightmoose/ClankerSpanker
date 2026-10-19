@@ -42,8 +42,10 @@ enum HostInstaller {
         log: (String) -> Void = { _ in }
     ) throws {
         let fm = FileManager.default
-        let src = try resolveSource(source)
+        let src = try resolveSource(source, log: log)
         log("Source: \(src.path)")
+        // RFC-063: checked again here, before the build or anything is deleted.
+        try refuseSelfSource(src, installRoot: installRoot)
 
         let distIndex = src.appendingPathComponent("dist/index.js")
         // RFC-027: a checkout always rebuilds, so a stale dist/ is never installed.
@@ -57,33 +59,17 @@ enum HostInstaller {
             throw InstallError.message("Build failed — no dist/index.js in \(src.path)")
         }
 
-        try fm.createDirectory(at: installRoot, withIntermediateDirectories: true)
-        // Fresh package tree. `web/` is the /app/ UI (not emitted by tsc).
-        for name in ["dist", "web", "package.json", "package-lock.json", "node_modules"] {
-            let dest = installRoot.appendingPathComponent(name)
-            if fm.fileExists(atPath: dest.path) {
-                try? fm.removeItem(at: dest)
-            }
+        // RFC-063: stage the new package next to the install root, run npm in
+        // the staging dir, then swap it in. A failure anywhere before the swap
+        // leaves the running install untouched.
+        try deploy(from: src, to: installRoot, log: log) { staged in
+            log("npm install --omit=dev in staging dir…")
+            try run(
+                cmd: "/bin/bash",
+                args: ["-lc", "cd \(shellQuote(staged.path)) && npm install --omit=dev"],
+                log: log
+            )
         }
-
-        log("Copying dist + web + package manifests…")
-        try copyItem(src.appendingPathComponent("dist"), to: installRoot.appendingPathComponent("dist"))
-        let web = src.appendingPathComponent("web")
-        if fm.fileExists(atPath: web.path) {
-            try copyItem(web, to: installRoot.appendingPathComponent("web"))
-        }
-        try copyItem(src.appendingPathComponent("package.json"), to: installRoot.appendingPathComponent("package.json"))
-        let lock = src.appendingPathComponent("package-lock.json")
-        if fm.fileExists(atPath: lock.path) {
-            try copyItem(lock, to: installRoot.appendingPathComponent("package-lock.json"))
-        }
-
-        log("npm install --omit=dev in install root…")
-        try run(
-            cmd: "/bin/bash",
-            args: ["-lc", "cd \(shellQuote(installRoot.path)) && npm install --omit=dev"],
-            log: log
-        )
 
         // Ensure config exists
         _ = LocalHostConfigFile.readToken()
@@ -203,30 +189,133 @@ enum HostInstaller {
 
     // MARK: - helpers
 
-    private static func resolveSource(_ source: URL?) throws -> URL {
-        let installed = (installRoot.path as NSString).standardizingPath
+    /// Files the installer owns inside the install root. Anything else there
+    /// is left alone.
+    nonisolated static let packageItems = ["dist", "web", "package.json", "package-lock.json", "node_modules"]
+
+    /// True when `path` is `root` or anywhere inside it, after expanding `~`,
+    /// standardizing, and resolving symlinks on both sides.
+    nonisolated static func isInside(_ path: String, root: URL) -> Bool {
+        func canonical(_ p: String) -> [String] {
+            let expanded = (p as NSString).expandingTildeInPath
+            return URL(fileURLWithPath: expanded).standardizedFileURL
+                .resolvingSymlinksInPath().pathComponents
+        }
+        let r = canonical(root.path)
+        let c = canonical(path)
+        return c.count >= r.count && Array(c.prefix(r.count)) == r
+    }
+
+    /// True when `path` must never be used as the install source.
+    nonisolated static func isInstallRootPath(_ path: String) -> Bool {
+        !path.isEmpty && isInside(path, root: LocalHostConfigFile.installedHostRoot)
+    }
+
+    /// RFC-027 / RFC-063: never install from the install root (or anything in it).
+    nonisolated static func refuseSelfSource(_ src: URL, installRoot: URL) throws {
+        if isInside(src.path, root: installRoot) {
+            throw InstallError.message(
+                "Source \(src.path) is the install location itself, so there is nothing to install from. Set Source package to your ClankerSpanker checkout's host/ folder (for example ~/Projects/ClankerSpanker/host). The installed host was not touched."
+            )
+        }
+    }
+
+    /// RFC-063: copy the package from `src` into a staging dir beside
+    /// `installRoot`, let `prepare` finish it (npm install), then swap each
+    /// package item into place. Until the swap, `installRoot` is not modified;
+    /// if the swap itself fails, the previous items are moved back.
+    nonisolated static func deploy(
+        from src: URL,
+        to installRoot: URL,
+        log: (String) -> Void = { _ in },
+        prepare: (URL) throws -> Void = { _ in }
+    ) throws {
+        let fm = FileManager.default
+        try refuseSelfSource(src, installRoot: installRoot)
+        let parent = installRoot.deletingLastPathComponent()
+        try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+        let tag = UUID().uuidString.prefix(8)
+        let staging = parent.appendingPathComponent(".\(installRoot.lastPathComponent).staging-\(tag)")
+        let backup = parent.appendingPathComponent(".\(installRoot.lastPathComponent).previous-\(tag)")
+        defer {
+            try? fm.removeItem(at: staging)
+            try? fm.removeItem(at: backup)
+        }
+
+        log("Staging dist + web + package manifests in \(staging.path)…")
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        try fm.copyItem(at: src.appendingPathComponent("dist"), to: staging.appendingPathComponent("dist"))
+        try fm.copyItem(at: src.appendingPathComponent("package.json"), to: staging.appendingPathComponent("package.json"))
+        // `web/` is the /app/ UI (not emitted by tsc).
+        for optional in ["web", "package-lock.json"] {
+            let from = src.appendingPathComponent(optional)
+            if fm.fileExists(atPath: from.path) {
+                try fm.copyItem(at: from, to: staging.appendingPathComponent(optional))
+            }
+        }
+        try prepare(staging)
+        guard fm.fileExists(atPath: staging.appendingPathComponent("dist/index.js").path) else {
+            throw InstallError.message("Staged package has no dist/index.js; the installed host was not touched.")
+        }
+
+        log("Swapping staged package into \(installRoot.path)…")
+        try fm.createDirectory(at: installRoot, withIntermediateDirectories: true)
+        try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+        var movedOut: [String] = []
+        var movedIn: [String] = []
+        do {
+            for name in packageItems {
+                let live = installRoot.appendingPathComponent(name)
+                if fm.fileExists(atPath: live.path) {
+                    try fm.moveItem(at: live, to: backup.appendingPathComponent(name))
+                    movedOut.append(name)
+                }
+            }
+            for name in packageItems {
+                let staged = staging.appendingPathComponent(name)
+                if fm.fileExists(atPath: staged.path) {
+                    try fm.moveItem(at: staged, to: installRoot.appendingPathComponent(name))
+                    movedIn.append(name)
+                }
+            }
+        } catch {
+            for name in movedIn {
+                try? fm.removeItem(at: installRoot.appendingPathComponent(name))
+            }
+            for name in movedOut {
+                try? fm.moveItem(at: backup.appendingPathComponent(name), to: installRoot.appendingPathComponent(name))
+            }
+            throw error
+        }
+    }
+
+    private static func resolveSource(_ source: URL?, log: (String) -> Void = { _ in }) throws -> URL {
+        let saved = LocalHostController.shared.hostPackagePath
+        // RFC-063: a saved path inside the install root is the RFC-027 bug's
+        // leftover. Clearing it (savePackagePath refuses it and falls back to
+        // a detected checkout) gets the user out of that state.
+        if isInstallRootPath(saved) {
+            log("Saved source \(saved) is the install location; ignoring it and looking for a checkout.")
+            LocalHostController.shared.savePackagePath(saved)
+        }
         let candidates = [
             source?.path ?? "",
-            LocalHostController.shared.hostPackagePath,
+            saved,
             LocalHostConfigFile.homeDirectory.appendingPathComponent("Projects/GrokDispatch/host").path,
             LocalHostConfigFile.homeDirectory.appendingPathComponent("Projects/ClankerSpanker/host").path,
         ]
         .filter { !$0.isEmpty }
         // RFC-027: never install the install root onto itself.
-        .filter { ($0 as NSString).standardizingPath != installed }
+        .filter { !isInside($0, root: installRoot) }
         for c in candidates {
-            let url = URL(fileURLWithPath: c)
+            let url = URL(fileURLWithPath: (c as NSString).expandingTildeInPath)
             if FileManager.default.fileExists(atPath: url.appendingPathComponent("package.json").path) {
                 return url
             }
         }
         throw InstallError.message(
-            "No host source found. Point Host package path at your ClankerSpanker checkout's host/ folder."
+            "No host source found. Set Source package to your ClankerSpanker checkout's host/ folder (not \(installRoot.path)). The installed host was not touched."
         )
-    }
-
-    private static func copyItem(_ from: URL, to: URL) throws {
-        try FileManager.default.copyItem(at: from, to: to)
     }
 
     private static func findNode() -> String {

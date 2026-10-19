@@ -40,8 +40,10 @@ struct SettingsView: View {
                             .textFieldStyle(.roundedBorder)
                         HStack {
                             Button("Save path") {
-                                localHost.savePackagePath(localHost.hostPackagePath)
-                                statusMessage = "Saved host package path"
+                                // RFC-063: the install root is refused as a source.
+                                statusMessage = localHost.savePackagePath(localHost.hostPackagePath)
+                                    ? "Saved host package path"
+                                    : "That is the install location, not a source. Pick your checkout's host/ folder."
                             }
                             Button("Kickstart") { localHost.start() }
                                 .disabled(localHost.apiReachable)

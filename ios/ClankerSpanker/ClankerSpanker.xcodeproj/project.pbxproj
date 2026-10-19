@@ -115,6 +115,7 @@
 		D755354D2BF1CA6708881E34 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84380393A420A3A9CFD22B8 /* AppState.swift */; };
 		D7C494FA4D677551309A12CE /* SessionSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811F1075EDB8D0D779872391 /* SessionSearch.swift */; };
 		D8B38324857BB87ABF61FDB5 /* HostEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9444ED3E123672241DA974A3 /* HostEndpointTests.swift */; };
+		E3BB7DC1CFA9681145A2AB38 /* HostInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16DDB461EB5EC16483754E22 /* HostInstallerTests.swift */; };
 		D9BC9C535FF3AB505663C1C8 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018C76B530B090C59ED61AB9 /* DashboardViewModel.swift */; };
 		DBF7A5215CF4137762E3862E /* SessionFileViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9235BD5AC6316DB5FCC9A65D /* SessionFileViewer.swift */; };
 		DCB23D21911486D14B6D4E87 /* ProfileSegmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B3AC9E8B6CAE2C94A36DA1 /* ProfileSegmentBar.swift */; };
@@ -198,6 +199,7 @@
 		9235BD5AC6316DB5FCC9A65D /* SessionFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileViewer.swift; sourceTree = "<group>"; };
 		936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStatusTests.swift; sourceTree = "<group>"; };
 		9444ED3E123672241DA974A3 /* HostEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEndpointTests.swift; sourceTree = "<group>"; };
+		16DDB461EB5EC16483754E22 /* HostInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostInstallerTests.swift; sourceTree = "<group>"; };
 		988D1C466B0B24C2681722D7 /* MacComposePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComposePane.swift; sourceTree = "<group>"; };
 		9ADA6956AA792E7E591FDC1C /* DiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffView.swift; sourceTree = "<group>"; };
 		9B5442B54BC6B09415D96ABC /* GrokDispatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokDispatchApp.swift; sourceTree = "<group>"; };
@@ -293,6 +295,7 @@
 			children = (
 				48D9D349B0D6C19DC83D1828 /* DecodingTests.swift */,
 				9444ED3E123672241DA974A3 /* HostEndpointTests.swift */,
+				16DDB461EB5EC16483754E22 /* HostInstallerTests.swift */,
 				936411ED70FE74D9DEAF206F /* LiveStatusTests.swift */,
 			);
 			path = Tests;
@@ -696,6 +699,7 @@
 			files = (
 				6A3FE45381383FE210BC420A /* DecodingTests.swift in Sources */,
 				D8B38324857BB87ABF61FDB5 /* HostEndpointTests.swift in Sources */,
+				E3BB7DC1CFA9681145A2AB38 /* HostInstallerTests.swift in Sources */,
 				AAFD62022FABF74A0291024C /* LiveStatusTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

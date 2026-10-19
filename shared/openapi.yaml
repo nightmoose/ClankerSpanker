@@ -116,7 +116,7 @@ paths:
       security: [{ bearerAuth: [] }]
   /exec:
     post:
-      summary: Run a shell command on the host; returns stdout/stderr/exitCode/durationMs (RFC-058).
+      summary: Run a shell command on the host; returns stdout/stderr/exitCode/durationMs (RFC-060).
       security: [{ bearerAuth: [] }]
   /dispatch:
     post:

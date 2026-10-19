@@ -607,7 +607,7 @@ final class SessionDetailViewModel: ObservableObject {
     }
 
     /// Run a shell command via POST /exec, then inject the output as a user prompt
-    /// so the agent sees the result and can continue (RFC-058).
+    /// so the agent sees the result and can continue (RFC-060).
     func runAndInject(command: String, api: APIClient) async {
         guard !isSending else { return }
         isSending = true

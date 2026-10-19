@@ -1510,7 +1510,7 @@ async function handleHttp(
     return;
   }
 
-  // POST /exec — run a shell command, return stdout/stderr/exitCode (RFC-058).
+  // POST /exec — run a shell command, return stdout/stderr/exitCode (RFC-060).
   if (method === "POST" && path === "/exec") {
     const body = (await readJson(req)) as { command?: unknown; cwd?: unknown; timeoutMs?: unknown };
     if (!body.command || typeof body.command !== "string") {

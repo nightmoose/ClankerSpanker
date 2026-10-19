@@ -27,7 +27,7 @@ struct TranscriptView: View {
     var onSaveAsTodo: ((TranscriptEntry) -> Void)? = nil
     var onScanForTodo: ((TranscriptEntry) -> Void)? = nil
     var onMakeNote: ((TranscriptEntry) -> Void)? = nil
-    /// When set, a "Run" button appears on bash/sh/zsh/shell code blocks (RFC-058).
+    /// When set, a "Run" button appears on bash/sh/zsh/shell code blocks (RFC-060).
     var onRunCode: ((String) -> Void)? = nil
     /// When set (e.g. arriving from a todo), expand that transcript entry.
     var expandMessageId: String? = nil

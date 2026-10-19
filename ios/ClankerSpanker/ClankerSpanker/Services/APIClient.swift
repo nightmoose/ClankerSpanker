@@ -615,7 +615,7 @@ actor APIClient {
         )
     }
 
-    // MARK: - Inline exec (RFC-058)
+    // MARK: - Inline exec (RFC-060)
 
     struct ExecResult: Decodable {
         var stdout: String

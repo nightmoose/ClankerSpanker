@@ -1,9 +1,10 @@
-# RFC-058 — Inline shell execution from chat code blocks
+# RFC-060 — Inline shell execution from chat code blocks
 
 **Status:** Accepted
 **Date:** 2026-10-02
 **Branch:** nightly-maintenance-2026-10-02-rfc058-inline-exec
 **Severity:** P2
+**Renumbered:** 2026-10-19, from RFC-058. Number 058 went to the hosted product site on `main`; the branch name keeps the old number.
 
 ---
 

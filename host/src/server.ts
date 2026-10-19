@@ -601,10 +601,14 @@ async function handleHttp(
         return;
       }
       const current = projects[idx]!;
+      // RFC-061: `database` is owned by /projects/:id/database. A client
+      // echoing back a stale copy must not resurrect or fake a binding.
+      const { database: _ignored, ...patch } = body;
       const merged = normalizeProject({
         ...current,
-        ...body,
+        ...patch,
         id: current.id, // never let id be renamed here
+        database: current.database,
         paths: Array.isArray(body.paths)
           ? body.paths
           : (typeof body.path === "string" ? [body.path] : (current.paths ?? [])),
@@ -690,10 +694,12 @@ async function handleHttp(
         json(res, 400, { error: "connectionString must start with postgres:// or postgresql://" });
         return;
       }
+      // Display-only. Clients that send none get the URL's hostname, which
+      // carries no credential.
       const hostHint =
         typeof body.hostHint === "string" && body.hostHint.trim().length > 0
-          ? body.hostHint.trim()
-          : undefined;
+          ? body.hostHint.trim().slice(0, 253)
+          : hostnameOf(connectionString);
 
       projectSecrets.set(
         config,
@@ -2557,6 +2563,14 @@ function escapeHtml(s: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function hostnameOf(connectionString: string): string | undefined {
+  try {
+    return new URL(connectionString).hostname || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {

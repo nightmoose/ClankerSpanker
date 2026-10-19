@@ -1,10 +1,9 @@
 // Extracted from session-manager.ts (RFC-052). Behavior unchanged.
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { DispatchSession, PromptImage, ToolCallRecord, TranscriptEntry } from "../../types.js";
 import { isAuthFailureMessage } from "../../login.js";
-import { mcpEnvFor, writeProfileMcpJson } from "../../mcp.js";
+import { mcpEnvFor, projectSqlMcpServer, removeSessionMcpJson, writeProfileMcpJson } from "../../mcp.js";
 import * as projectSecrets from "../../project-secrets.js";
 import { refreshAllMcpOAuth } from "../../mcp-oauth.js";
 import { ClaudeRunner } from "../../claude/runner.js";
@@ -12,15 +11,6 @@ import { lastUserTextIs, now } from "../session-helpers.js";
 import { ensureAttachmentDirs, materializeImagesInCwd, savePromptImagesForSession } from "../session-support.js";
 import type { TurnContext } from "./context.js";
 import { outputTail } from "../../tool-output.js";
-
-// dist/acp/runners/claude-turn.js → dist/mcp/sql-execute.js
-const SQL_MCP_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "mcp",
-  "sql-execute.js",
-);
 
 /** One Claude Code turn: stream-json + optional phone tool approvals. */
 export async function claudeTurn(
@@ -88,17 +78,18 @@ export async function claudeTurn(
     appendSystemPrompt: profile?.systemPrompt,
     extraDirs,
     toolAllowlist: profile?.toolAllowlist,
+    // RFC-061: a bound project database adds the built-in `sql` server. The
+    // config file is per session (never shared across projects) and is
+    // removed when the turn ends, so the secret sits on disk only while
+    // Claude is running.
     mcpConfigPath: profile
-      ? writeProfileMcpJson(ctx.config.dataDir, profile, mcpEnvFor(profile), (() => {
-          if (!session.projectId) return undefined;
-          const connStr = projectSecrets.get(
-            ctx.config,
-            session.projectId,
-            projectSecrets.DATABASE_CONNECTION_SLOT,
-          );
-          if (!connStr) return undefined;
-          return [{ name: "sql", command: process.execPath, args: [SQL_MCP_PATH], env: { DATABASE_URL: connStr }, transport: "stdio" as const }];
-        })())
+      ? writeProfileMcpJson(
+          ctx.config.dataDir,
+          profile,
+          mcpEnvFor(profile),
+          projectSqlServersFor(ctx, session),
+          session.id,
+        )
       : undefined,
   });
   ctx.cliRunners.set(sessionId, runner);
@@ -226,5 +217,12 @@ export async function claudeTurn(
     throw new Error(session.error);
   } finally {
     ctx.cliRunners.delete(sessionId);
+    if (profile) removeSessionMcpJson(ctx.config.dataDir, profile.id, session.id);
   }
+}
+
+function projectSqlServersFor(ctx: TurnContext, session: DispatchSession) {
+  if (!session.projectId) return undefined;
+  const connStr = projectSecrets.get(ctx.config, session.projectId, projectSecrets.DATABASE_CONNECTION_SLOT);
+  return connStr ? [projectSqlMcpServer(connStr)] : undefined;
 }

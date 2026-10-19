@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HostConfigFile } from "../types.js";
 import { existsSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AnswerQuestionsRequest, AttachAgyRequest, AttachClaudeRequest, AttachRequest, Bot, DispatchRequest, DispatchSession, PendingApproval, PendingQuestion, PromptImage, PublicToolCallDetail, SessionEvent, SessionNote, SessionTask, ToolCallRecord, TranscriptEntry, ReviewWorkRequest, TransferProfileRequest } from "../types.js";
@@ -16,7 +15,7 @@ import { allowlistAllowsTool, defaultModelForBackend, grokAgentModelArgs, isGrok
 import { approvalPreview } from "../approval-preview.js";
 import { knownGrokHomes, listGrokHomeSessions } from "../grok-home.js";
 import { TombstoneFile } from "./tombstones.js";
-import { mcpEnvFor, toAcpMcpServers } from "../mcp.js";
+import { mcpEnvFor, projectSqlMcpServer, removeSessionMcpJson, toAcpMcpServers } from "../mcp.js";
 import * as projectSecrets from "../project-secrets.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
@@ -51,9 +50,6 @@ import { antigravityTurn as antigravityTurnImpl } from "./runners/antigravity-tu
 import { botTurn as botTurnImpl } from "./runners/bot-turn.js";
 import type { TurnContext } from "./runners/context.js";
 import { flushAssistant as flushAssistantImpl, handleGrokAgentMessage } from "./runners/grok-events.js";
-
-// dist/acp/session-manager.js → dist/mcp/sql-execute.js
-const SQL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "mcp", "sql-execute.js");
 
 export class SessionManager extends EventEmitter {
   private live = new Map<string, LiveSession>();
@@ -1299,6 +1295,11 @@ export class SessionManager extends EventEmitter {
     try {
       const file = join(this.config.dataDir, "sessions", `${sessionId}.json`);
       rmSync(file, { force: true });
+    } catch { /* ignore */ }
+    // RFC-061: a per-session MCP config may hold the project's database URL.
+    try {
+      const profile = this.profileFor(s);
+      if (profile) removeSessionMcpJson(this.config.dataDir, profile.id, sessionId);
     } catch { /* ignore */ }
     // Tombstone the underlying Grok session so /sessions doesn't re-import it
     // from ~/.grok/sessions on the next list refresh.
@@ -2610,12 +2611,18 @@ export class SessionManager extends EventEmitter {
         projectSecrets.DATABASE_CONNECTION_SLOT,
       );
       if (connStr) {
-        servers.push({
-          name: "sql",
-          command: process.execPath,
-          args: [SQL_MCP_PATH],
+        const sql = projectSqlMcpServer(connStr);
+        // A profile server named "sql" would shadow the project's; ours wins.
+        const kept = servers.filter((s) => s.name !== sql.name);
+        // Not via toAcpMcpServers: it expands ${VAR} in env values, which
+        // would rewrite a password containing "${…}".
+        kept.push({
+          name: sql.name,
+          command: sql.command!,
+          args: sql.args ?? [],
           env: [{ name: "DATABASE_URL", value: connStr }],
         });
+        return kept;
       }
     }
     return servers;

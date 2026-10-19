@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,10 @@ import {
   claudeMcpConfigArgs,
   enabledMcpServers,
   normalizeMcpServers,
+  projectSqlMcpServer,
   publicMcpServers,
+  removeSessionMcpJson,
+  SQL_MCP_PATH,
   toAcpMcpServers,
   toMcpJson,
   writeProfileMcpJson,
@@ -229,5 +232,61 @@ describe("publicMcpServers", () => {
     ).toEqual([
       { name: "gmail", enabled: undefined, command: undefined, url: "https://mcp.example.com/mcp", transport: undefined },
     ]);
+  });
+});
+
+describe("project sql server in the Claude mcp json (RFC-061)", () => {
+  const DB = "postgresql://u:pa${HOME}ss@db.example.supabase.co:5432/postgres";
+  const profile: AgentProfile = {
+    id: "nightmoose",
+    name: "NightMoose",
+    backend: "claude",
+    color: "#73B8FF",
+    mcpServers: [{ name: "sql", command: "user-sql" }, { name: "dbx", command: "npx" }],
+  };
+
+  it("points at the built server next to mcp.js and is not a profile field", () => {
+    const s = projectSqlMcpServer(DB);
+    expect(s).toMatchObject({ name: "sql", command: process.execPath, args: [SQL_MCP_PATH], env: { DATABASE_URL: DB } });
+    expect(SQL_MCP_PATH.endsWith(join("mcp", "sql-execute.js"))).toBe(true);
+    expect(JSON.stringify(publicMcpServers(profile.mcpServers))).not.toContain("supabase");
+  });
+
+  it("writes a per-session 0600 file, literal value, shadowing a profile 'sql'", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-mcp-"));
+    const path = writeProfileMcpJson(dir, profile, { HOME: "/home/x" }, [projectSqlMcpServer(DB)], "sess-a")!;
+    expect(path).toBe(join(dir, "mcp", "nightmoose.sess-a.mcp.json"));
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    const body = JSON.parse(readFileSync(path, "utf8")) as {
+      mcpServers: Record<string, { command: string; env?: Record<string, string> }>;
+    };
+    // No ${VAR} expansion over the secret.
+    expect(body.mcpServers.sql!.env!.DATABASE_URL).toBe(DB);
+    expect(body.mcpServers.sql!.command).toBe(process.execPath);
+    expect(body.mcpServers.dbx!.command).toBe("npx");
+    // The shared per-profile file is never written with the secret.
+    expect(existsSync(join(dir, "mcp", "nightmoose.mcp.json"))).toBe(false);
+  });
+
+  it("keeps two sessions in different projects apart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-mcp-"));
+    const a = writeProfileMcpJson(dir, profile, {}, [projectSqlMcpServer("postgres://a:1@a/a")], "sess-a")!;
+    const b = writeProfileMcpJson(dir, profile, {}, [projectSqlMcpServer("postgres://b:2@b/b")], "sess-b")!;
+    expect(a).not.toBe(b);
+    expect(readFileSync(a, "utf8")).toContain("postgres://a:1@a/a");
+    expect(readFileSync(a, "utf8")).not.toContain("postgres://b:2@b/b");
+  });
+
+  it("removes a session's stale file once its project has no database, and on demand", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cs-mcp-"));
+    const a = writeProfileMcpJson(dir, profile, {}, [projectSqlMcpServer(DB)], "sess-a")!;
+    const after = writeProfileMcpJson(dir, profile, {}, undefined, "sess-a");
+    expect(existsSync(a)).toBe(false);
+    expect(after).toBe(join(dir, "mcp", "nightmoose.mcp.json"));
+    expect(readFileSync(after!, "utf8")).not.toContain("supabase");
+
+    const b = writeProfileMcpJson(dir, profile, {}, [projectSqlMcpServer(DB)], "sess-b")!;
+    removeSessionMcpJson(dir, profile.id, "sess-b");
+    expect(existsSync(b)).toBe(false);
   });
 });

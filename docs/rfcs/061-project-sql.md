@@ -1,51 +1,44 @@
-# RFC-061 — Project database binding + sealed-input primitive
+# RFC-061 — Project database binding, sealed-input secrets, and `sql_execute`
 
 **Status:** Draft
-**Date:** 2026-10-13
+**Date:** 2026-10-13 (revised 2026-10-19)
 **Branch:** nightly-maintenance-2026-10-13-rfc058-project-sql
 **Severity:** P2
-**Renumbered:** 2026-10-19, from RFC-058 (and its follow-on from RFC-059 to RFC-062). 058 is the hosted product site on `main`; 059 is host self-update. The branch name keeps the old number.
+**Renumbered:** 2026-10-19, from RFC-058. 058 is the hosted product site on `main`; 059 is host
+self-update. The branch name keeps the old number.
+**RFC-062:** the follow-on that was going to carry `sql_execute` is delivered by this RFC and
+this PR (see [Agent tool](#agent-tool-sql_execute)). No `062-*.md` file was ever written and
+nothing else points at the number.
 
 ---
 
 ## Problem
 
-Every project in ClankerSpanker has its own Supabase database and Alex
-needs to run SQL against them from inside a session — but the agent
-cannot be handed a service-role connection string in a chat message
-(transcript, context window, token logs forever). The host needs:
+Every project in ClankerSpanker has its own Supabase database, and the user
+needs to run SQL against it from inside a session. The agent must not be
+handed a service-role connection string in a chat message: it would sit in
+the transcript, the context window and the token logs forever. The host
+needs:
 
-1. A place to persist a project's database connection string that is
-   **not** `ProjectInfo` on the wire.
-2. A primitive for prompting the user to supply a secret the agent must
-   never see.
-3. (Eventually) an agent-callable `sql_execute` tool that uses both.
-
-(3) is deferred. Making the agent emit a `sql_execute` tool call
-requires wiring a built-in MCP server into every profile's `mcpServers`
-list, which collides with the "backend parity before MCP" decision
-(2026-08-28). RFC-062 picks that up once the parity pass is further
-along.
-
-RFC-061 ships the two pieces (1) and (2) need in isolation. Scoping it
-this way means (a) the project edit sheet can save a connection string
-today, (b) the sealed-input primitive is unit-tested and ready for
-RFC-062 to consume without redesign.
+1. A place to persist a project's connection string that is **not**
+   `ProjectInfo` on the wire.
+2. A primitive for asking the user for a secret the agent must never see.
+3. An agent-callable `sql_execute` tool that uses (1) without the agent ever
+   receiving the value.
 
 ## Non-goals
 
-- The `sql_execute` tool itself — deferred to RFC-062.
-- Any agent-callable version of the sealed-input primitive. Today the
-  only caller is the host-side project edit sheet route, which doesn't
-  involve the agent. RFC-062 will add the agent-triggered path.
-- Keychain / libsecret encryption-at-rest. The secret lands next to
-  `profile.env` API keys in the config JSON (0600). Encrypted storage is
-  a fast-follow.
-- Non-Supabase providers; multiple databases per project; read-only
-  roles. One slot per project; UI calls it "Supabase" even though it's
-  really any Postgres URL.
-- iOS / Linux client UI. Mac first; the two others fast-follow once the
-  schema is proven in use.
+- Keychain / libsecret encryption at rest. The secret lands next to
+  `profile.env` API keys in the config JSON (0600).
+- Non-Supabase providers or several databases per project. One slot per
+  project; the UI says "Supabase" but any Postgres URL works.
+- Protecting the secret from an agent that sets out to steal it. The agent
+  runs as the same OS user as the host and can read `config.json` with its
+  shell tool. This RFC keeps the value out of everything the agent is
+  *given* (prompt, transcript, tool output, profile, `/projects`), not out of
+  reach of a hostile process. Use a read-only database role for real limits.
+- Agent-triggered sealed input (the agent asking the host to prompt for a
+  secret). The primitive exists; no agent path calls it yet.
 
 ## Fix
 
@@ -56,135 +49,135 @@ export interface ProjectDatabase {
   provider: "supabase";
   /** Pointer into HostConfigFile.projectSecrets; opaque to the client. */
   connectionRef: string;
-  /** Display-only hint, e.g. "db.abc.supabase.co" — never the password. */
+  /** Display-only, e.g. "db.abc.supabase.co"; never the password. */
   hostHint?: string;
   addedAt: string;
   updatedAt: string;
 }
 
-export interface ProjectInfo {
-  // …existing fields
-  database?: ProjectDatabase;
-}
-
-export interface HostConfigFile {
-  // …existing fields
-  projectSecrets?: Record<string, Record<string, string>>;
-}
+export interface ProjectInfo   { /* … */ database?: ProjectDatabase }
+export interface HostConfigFile { /* … */ projectSecrets?: Record<string, Record<string, string>> }
 ```
 
-`projectSecrets` sits at the top of the config file alongside
-`projects`. No route serializes it. `ProjectInfo.database` carries only
-non-sensitive metadata and ships normally.
+No route serializes `projectSecrets`. `ProjectInfo.database` carries only
+metadata.
 
 ### Secret store (`host/src/project-secrets.ts`)
 
-One module owns every write and read:
+`get` / `set` / `remove` / `removeAllForProject`, slot
+`DATABASE_CONNECTION_SLOT = "project.database_connection"`. One file owns
+every read and write so later audit or encryption work touches one place.
 
-```ts
-get(config, projectId, slot) : string | undefined
-set(config, projectId, slot, value) : void
-remove(config, projectId, slot) : boolean
-removeAllForProject(config, projectId) : void
-DATABASE_CONNECTION_SLOT = "project.database_connection"
-```
+### Routes (`host/src/server.ts`)
 
-Keeps the surface area for future audit/encryption work to one file.
+- `POST /projects/:id/database`, body `{ connectionString, hostHint? }`.
+  Stores the value through `project-secrets.set` and attaches the
+  `database` block. When the client sends no `hostHint` the host uses the
+  URL's hostname. The response is the public `ProjectInfo`.
+- `DELETE /projects/:id/database` clears the slot and the block. Idempotent.
+- Validation: non-empty, `postgres://` or `postgresql://`. Errors never
+  include the supplied value.
+- `DELETE /projects/:id?hard=1` calls `removeAllForProject`.
+- `PATCH /projects/:id` ignores a `database` field in the body. Only the two
+  routes above change the binding, so a client echoing a stale project
+  cannot fake or resurrect one.
 
-### Project database routes (`host/src/server.ts`)
-
-- `POST /projects/:id/database` — body `{ connectionString, hostHint? }`.
-  Writes the connection string via `project-secrets.set`, attaches a
-  `database` block to the project with `addedAt`/`updatedAt`, saves the
-  config. Response is the public `ProjectInfo` (secret never echoed).
-- `DELETE /projects/:id/database` — removes the slot and the `database`
-  block. Response: `{ ok: true }`.
-- Validation: `connectionString` must be non-empty and start with
-  `postgres://` or `postgresql://`. Error messages do **not** include
-  the supplied value.
-- The existing project DELETE route gains a `removeAllForProject` call
-  so secrets don't outlive the project they belong to.
+**Who may call them.** Both routes need the host token and nothing more,
+like every other project edit. That covers a phone over Tailscale, a
+`tailscale serve` caller (RFC-058 phase 2, which also needs the
+`Tailscale-User-Login` header on that listener), and the hosted UI at
+`https://clankerspanker.tech` (CORS reflects that origin for `POST` and
+`DELETE`). They are write-only, so a remote caller can replace or clear the
+binding but never read it back. Profile admin stays local-only because it
+returns secrets; these routes do not.
 
 ### Sealed-input primitive (`host/src/sealed-input.ts`)
 
-Parallel side-channel to approvals and questions. `resolveApproval` is
-150 lines across five branches (live Grok, Claude hook, bot loop,
-orphaned, exit-plan); grafting a secret-carrying body onto it is the
-kind of blast radius this RFC exists to avoid. Instead the primitive is
-a standalone manager that mirrors `PendingQuestion`:
+A standalone manager parallel to `PendingQuestion`, so the 150-line
+`resolveApproval` does not grow a secret-carrying branch:
 
-- `PendingSecretRequest { id, sessionId, projectId, slot, purpose, hint,
-  createdAt, expiresAt? }`
-- New `SessionEventType`s `secret.needed` / `secret.resolved`. Payloads
-  carry slot metadata only — never the value.
-- `SealedInputManager.request()` returns a promise the caller awaits.
-- `submit(id, value)` writes via an injected `writeSecret` callback
-  (bound to `project-secrets.set`), resolves the promise with `{ ok:
-  true, slot }`.
-- `cancel(id)` and TTL expiry resolve with `{ ok: false }`.
-- Unused in production until RFC-062's `sql_execute` imports it. Still
-  worth shipping now: it has nine passing vitest cases, no live caller
-  cost, and the API-key fast-follow is already lined up to consume it.
+- `PendingSecretRequest { id, sessionId, projectId, slot, purpose, hint, createdAt, expiresAt? }`.
+- Events `secret.needed` / `secret.resolved` carry slot metadata, never the value.
+- `request()` returns a promise; `submit(id, value)` writes through an
+  injected `writeSecret` and resolves `{ ok: true, slot }`; `cancel` and
+  TTL expiry resolve `{ ok: false }`.
+- No production caller yet (see Non-goals).
 
-### Mac client (deferred)
+### Agent tool: `sql_execute`
 
-Wiring the "Database" section into the project edit sheet is a fast-follow
-on this branch once the routes are proven in a REST client. iOS +
-Linux follow Mac.
+`host/src/mcp/sql-execute.ts` is a stdio MCP server with one tool,
+`sql_execute { query: string, params?: unknown[] }`.
+
+**Injection.** When a session's project has a bound database, the host adds
+a server named `sql` (`projectSqlMcpServer` in `host/src/mcp.ts`) for that
+session only. It is never written to a profile, so `/profiles` cannot show
+it, and a profile server also named `sql` is replaced for that session.
+
+- Grok (ACP): appended to `session/new` / `session/load` `mcpServers`, with
+  `DATABASE_URL` in the server's env. The value is not passed through
+  `${VAR}` expansion.
+- Claude: written into the `--mcp-config` file. With a database the file is
+  `mcp/<profile>.<session>.mcp.json` (0600), not the shared per-profile
+  file, so two sessions on one profile in different projects cannot read
+  each other's database. The file is deleted when the turn ends and when
+  the session is deleted.
+
+**Execution.**
+
+1. The query must start with `SELECT`, `EXPLAIN`, `SHOW` or `WITH`.
+2. It runs inside `BEGIN TRANSACTION READ ONLY` … `ROLLBACK`, so
+   data-modifying CTEs and `EXPLAIN ANALYZE DELETE …` fail.
+3. It runs with the extended query protocol, which accepts one statement,
+   so `select 1; commit; drop table t` cannot leave the transaction.
+4. `statement_timeout` 10 s, one pooled connection, at most 200 rows
+   returned (with `truncated: true` and a note). Postgres still sends the
+   whole result to the MCP process before the cap applies.
+
+**Secret handling.** The URL comes only from the env the host set. Every
+error sent back (tool errors and JSON-RPC errors) goes through
+`redactSecret`, which removes the URL, its password (raw and decoded) and
+any other credentialed `postgres://` URL.
+
+Read-only mode is a guard, not a permission boundary: functions with side
+effects (`pg_terminate_backend`, `dblink`, …) still run. Bind a role with
+read-only grants.
+
+### Clients
+
+- Mac / iOS (`ProjectEditorView`): inline "connect database" field;
+  disconnect button; shows `hostHint`.
+- Linux Electron (`desktop/renderer/app.js`): prompt-based connect /
+  disconnect after editing a project.
+- Browser UI: none yet.
 
 ## Testing
 
-- [x] `project-secrets.test.ts` — set/get/remove, project-level isolation,
-      bucket cleanup, project shape never serializes the value (9/9).
-- [x] `sealed-input.test.ts` — request/submit/cancel/expire paths, no
-      value in event payloads, cancelForSession, listForSession (8/8).
-- [ ] `project-database-route.test.ts` — POST/DELETE routes, bad input
-      rejection without body echo, PROJECT delete removes secrets too.
-- [ ] Manual soak: `curl POST /projects/clankerspanker/database` with a
-      conn string; confirm config.json has the value, GET /projects
-      doesn't echo it, DELETE clears both the project.database block and
-      the secret slot.
-
-## Rollout
-
-- [x] `make check` — 423/423 tests, typecheck + build clean (2026-10-13).
-- [x] `npm run build` — fresh `host/dist/` on branch.
-- [x] Copy `host/dist/*` into `~/Library/Application Support/ClankerSpanker/host/dist/`.
-      Needed because the Mac app spawns its own host out of Application
-      Support and the LaunchAgent plist (`~/Library/LaunchAgents/com.nightmoose.grok-dispatch-host.plist`,
-      which points at the repo dist) is **not loaded** on this machine
-      (`launchctl print gui/501/com.nightmoose.grok-dispatch-host` →
-      not found). Fallback copy worked; the Mac app installer flow we
-      first tried did not actually re-copy anything.
-- [ ] Bounce the running host so it picks up the fresh dist. Last-seen
-      PID 59377, path
-      `/Users/alexsuarez/Library/Application Support/ClankerSpanker/host/dist/index.js`
-      — PID will have changed by the time this is resumed, so re-find
-      it with `/usr/sbin/lsof -i :8787 -sTCP:LISTEN -P -t`.
-- [ ] Smoke the two new routes with curl against a live project id (see
-      `/projects` for the current list). Confirm `POST
-      /projects/:id/database` succeeds, `GET /projects/:id` does **not**
-      echo the connection string, `DELETE /projects/:id/database`
-      clears both the database block and the secret slot. Reject body
-      must not include the supplied value.
-- [ ] Branch not pushed yet — do that only after a successful smoke.
-- [ ] Figure out why `launchctl` lost the service on this host and
-      whether the Mac app installer is supposed to re-copy on each
-      launch. If not, document the "install host" button in the Mac app
-      as the official deploy path (RFC-027 adjunct).
-- [ ] Flip `docs/rfcs/README.md` row for 058 to **Shipped** once the
-      routes are proven in use. Leaving it at **Draft** until that
-      checkpoint — RFC-062 can land against the same primitive without
-      waiting.
+- [x] `project-secrets.test.ts`: set/get/remove, per-project isolation,
+      bucket cleanup, project shape never serializes the value.
+- [x] `sealed-input.test.ts`: request/submit/cancel/expire, no value in
+      event payloads, `cancelForSession`, `listForSession`.
+- [x] `mcp/sql-execute.test.ts`: tool listing, JSON-RPC errors, argument
+      validation before any connection, READ ONLY + extended protocol +
+      rollback and release on error, 200-row cap, redaction of database and
+      connection errors, and the real stdio entry point (no `DATABASE_URL`
+      → exit 1; a refused loopback connection comes back redacted). The
+      Postgres pool is faked; no database is used.
+- [x] `mcp.test.ts`: per-session Claude config, 0600, literal value, two
+      sessions kept apart, stale file removed.
+- [x] `project-database.test.ts`: routes through the real gateway on the
+      main and `tailscale serve` listeners, hosted-origin CORS, no secret on
+      `/projects`, `/projects/:id`, `/profiles`, `/sessions` or in logs,
+      `PATCH` cannot change the binding, hard delete clears the slot, and
+      ACP injection only for the bound project's sessions.
+- [ ] By hand: a real Supabase project, a Grok session and a Claude session
+      each calling `sql_execute`, then `DELETE` and confirm the tool is gone
+      on the next turn.
 
 ## Follow-ups
 
-- **RFC-062** (next, after backend parity progresses): `sql_execute` as
-  a stdio MCP server auto-wired per profile; agent-callable sealed-input
-  tool kind; approval card SQL preview; iOS + Linux parity.
-- Mac project-edit-sheet "Database" section (lightweight once routes
-  exist).
-- Keychain / libsecret-backed slots.
-- API-key slots using the same primitive.
-- SSH tunnel / bastion support for private databases.
-- Multi-host secret sync.
+- Keychain / libsecret-backed slots; API-key slots on the same primitive.
+- Agent-triggered sealed input (agent asks, user types into a host modal).
+- Stream rows with a cursor instead of capping after the fetch.
+- Browser UI for connect / disconnect.
+- Sessions with no resolvable profile get no `sql` server today.
+- SSH tunnel / bastion for private databases.

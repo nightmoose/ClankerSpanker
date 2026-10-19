@@ -1,6 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import { hostname as osHostname } from "node:os";
 import { isLocalMachineAddr, localMachineAddresses } from "./local-machine.js";
+import { hasTailscaleUserHeader } from "./tailscale-serve.js";
 
 /**
  * Token-less pages that reveal the host token (`/setup`, `/connect.json`)
@@ -10,13 +11,16 @@ import { isLocalMachineAddr, localMachineAddresses } from "./local-machine.js";
  * in the local browser also connects from loopback. So we also require:
  *  - the Host header to name this machine (defeats DNS rebinding, where
  *    `evil.example` is re-pointed at 127.0.0.1 and becomes "same-origin");
- *  - no cross-site fetch metadata, and no foreign Origin.
+ *  - no cross-site fetch metadata, and no foreign Origin;
+ *  - no `Tailscale-User-Login`: that header means a tailnet caller came in
+ *    through `tailscale serve`, whose TCP peer is loopback (RFC-058 phase 2).
  */
 export function isTrustedLocalPageRequest(
   req: Pick<IncomingMessage, "headers"> & { socket: { remoteAddress?: string | null } },
   names: Set<string> = localHostNames(),
 ): boolean {
   if (!isLocalMachineAddr(req.socket.remoteAddress)) return false;
+  if (hasTailscaleUserHeader(req.headers)) return false;
 
   const hostHeader = firstHeader(req.headers.host);
   if (!hostHeader) return false;

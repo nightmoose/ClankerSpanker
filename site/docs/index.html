@@ -35,10 +35,17 @@
 
     <h3>Loopback</h3>
     <p>In Chrome, this site calls <code>http://127.0.0.1:8787</code> on the computer where you opened the page. Chrome asks before it allows that. The gateway then sees a connection from this machine, the same as its own page at <code>http://127.0.0.1:8787/app/</code>. Profile administration that the gateway limits to the local machine still means this machine, because the TCP peer is this machine.</p>
-    <p>Deny the permission, or use a browser other than Chrome, and the page cannot read the gateway. Firefox and Safari should use the gateway's own page. That address is one you open. This site does not send you there. See <a href="/download/">Download</a>.</p>
+    <p>Deny the permission, or use a browser other than Chrome, and the page cannot read the gateway over loopback. Firefox and Safari use the tailnet address below, or the gateway's own page. That address is one you open. This site does not send you there. See <a href="/download/">Download</a>.</p>
 
     <h3>Tailscale</h3>
     <p>By default the gateway listens on loopback and this machine's Tailscale addresses. A phone or another laptop on your tailnet connects to the gateway directly. This website does not join your tailnet, does not tunnel traffic, and does not relay API calls. Do not expose port 8787 to the public internet.</p>
+    <p>For this site in any browser, the gateway can also answer at <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> through <code>tailscale serve</code> (<a href="/download/#tailnet">setup steps</a>). Tailscale terminates TLS on your machine and passes the request to a separate gateway port, <code>serveBindPort</code>, which listens on <code>127.0.0.1</code> only. Because every request on that port arrives from loopback, the gateway does not use the address to decide who is calling:</p>
+    <ul>
+      <li>A request without the <code>Tailscale-User-Login</code> header that Serve adds for a signed-in tailnet user is refused, on every path. Funnel traffic and tagged devices carry no such header, so they are refused.</li>
+      <li>A request with that header is never treated as "this machine", on any port. It gets sessions and agents with the host token, and never profile secrets, MCP sign-in, profile changes, the setup page, or the token.</li>
+      <li>The host token is still required. Being on the tailnet is not enough to run an agent.</li>
+    </ul>
+    <p>Turning on HTTPS publishes the machine name in public Certificate Transparency logs. Pick a name you don't mind being public first. Keep Funnel off.</p>
 
     <h3>Token</h3>
     <p>The gateway requires <code>Authorization: Bearer</code> with the host token. An empty token authorizes nobody. The token is shown at <code>http://127.0.0.1:8787/setup</code> on the host machine only. This site cannot read that page. You paste the token. It is stored in <code>localStorage</code> on <code>https://clankerspanker.tech</code>.</p>

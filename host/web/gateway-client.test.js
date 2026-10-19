@@ -8,7 +8,9 @@ import {
   gatewayTerminalURL,
   isChromeUserAgent,
   isLoopbackHost,
+  isTailnetServeURL,
   loopbackFetchInit,
+  normalizeHostURL,
   openWebSocket,
   productSiteKind,
   publicPageNotice,
@@ -170,5 +172,68 @@ describe("default gateway URL", () => {
     expect(gatewayTerminalURL("http://127.0.0.1:8787")).toBe("http://127.0.0.1:8787/app/terminal.html");
     expect(gatewayTerminalURL("http://127.0.0.1:9999/")).toBe("http://127.0.0.1:9999/app/terminal.html");
     expect(productSiteKind("clankerspanker.tech.evil.example")).toBeNull();
+  });
+});
+
+describe("tailnet serve URL (RFC-058 phase 2)", () => {
+  const TS = "https://node.tailnet.ts.net";
+
+  it("recognizes https://<node>.<tailnet>.ts.net only", () => {
+    expect(isTailnetServeURL(TS)).toBe(true);
+    expect(isTailnetServeURL(`${TS}/`)).toBe(true);
+    expect(isTailnetServeURL("https://NODE.Tailnet.TS.NET")).toBe(true);
+    expect(isTailnetServeURL("http://node.tailnet.ts.net")).toBe(false);
+    expect(isTailnetServeURL("https://tailnet.ts.net")).toBe(false);
+    expect(isTailnetServeURL("https://node.tailnet.ts.net.evil.example")).toBe(false);
+    expect(isTailnetServeURL("https://ts.net.evil.example")).toBe(false);
+    expect(isTailnetServeURL(LOOPBACK_GATEWAY)).toBe(false);
+    expect(isTailnetServeURL("not a url")).toBe(false);
+  });
+
+  it("normalizes what the Host URL field accepts", () => {
+    expect(normalizeHostURL(" https://node.tailnet.ts.net/ ")).toBe(TS);
+    expect(normalizeHostURL("node.tailnet.ts.net")).toBe(TS);
+    expect(normalizeHostURL("http://127.0.0.1:8787/")).toBe(LOOPBACK_GATEWAY);
+    expect(normalizeHostURL("http://node.tailnet.ts.net")).toBe("http://node.tailnet.ts.net");
+    expect(normalizeHostURL("")).toBe("");
+  });
+
+  it("declares no target address space for a ts.net gateway", () => {
+    expect(loopbackFetchInit(`${TS}/sessions`)).toEqual({});
+    expect(websocketOptions(TS)).toBeNull();
+    expect(JSON.stringify(loopbackFetchInit(`${TS}/sessions`))).not.toContain("targetAddressSpace");
+  });
+
+  it("drops the Chrome-only notice for Safari and Firefox on a ts.net gateway", () => {
+    for (const ua of [SAFARI, FIREFOX]) {
+      expect(publicPageNotice({ hostname: "clankerspanker.tech", userAgent: ua, baseURL: TS })).toBe("");
+      const loop = publicPageNotice({ hostname: "clankerspanker.tech", userAgent: ua, baseURL: LOOPBACK_GATEWAY });
+      expect(loop).toContain("tailscale serve");
+      expect(loop).toContain("ts.net");
+      expect(loop).toContain(LOOPBACK_APP);
+    }
+    const preview = publicPageNotice({ hostname: "x.vercel.app", userAgent: SAFARI, baseURL: TS });
+    expect(preview).toContain("Do not paste a host token");
+  });
+
+  it("explains a failed tailnet fetch in tailnet terms, in any browser", () => {
+    for (const ua of [SAFARI, FIREFOX, CHROME]) {
+      const msg = explainFetchFailure({
+        hostname: "clankerspanker.tech",
+        userAgent: ua,
+        baseURL: TS,
+        errorMessage: "Load failed",
+      });
+      expect(msg).toContain(TS);
+      expect(msg).toContain("tailscale serve");
+      expect(msg).not.toContain("loopback");
+    }
+    const rejected = explainFetchFailure({
+      hostname: "clankerspanker.tech",
+      userAgent: SAFARI,
+      baseURL: TS,
+      errorMessage: "The host rejected this browser's token",
+    });
+    expect(rejected).toContain("rejected");
   });
 });

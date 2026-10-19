@@ -54,7 +54,7 @@ Chrome's exception is Local Network Access, documented in the [Chrome developer 
 - a `.local` name, or
 - `fetch(..., { targetAddressSpace: "loopback" | "local" })`.
 
-The [Local Network Access spec](https://wicg.github.io/local-network-access/) classifies `100.64.0.0/10` (carrier-grade NAT, which is Tailscale's IPv4 range) as **local**, and `127.0.0.0/8` as **loopback**. So a public page calling a `*.ts.net` name that resolves to `100.64/10` still raises Chrome's local-network prompt even when both sides are HTTPS. MDN's [local network access](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Local_network_access) page is the cross-browser statement: the permission exists in browsers that implement the spec. Firefox and Safari are not claimed here. Phase 1's supported browser is Chrome. The gateway's own `http://127.0.0.1:8787/app/` remains the same-origin page for other browsers. The `.tech` site does not redirect to it (FAQ 03).
+The [Local Network Access spec](https://wicg.github.io/local-network-access/) classifies `100.64.0.0/10` (carrier-grade NAT, which is Tailscale's IPv4 range) as **local**, and `127.0.0.0/8` as **loopback**. So a public page calling a `*.ts.net` name that resolves to `100.64/10` still raises Chrome's local-network prompt even when both sides are HTTPS. MDN's [local network access](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Local_network_access) page is the cross-browser statement: the permission exists in browsers that implement the spec. Firefox and Safari are not claimed here. Phase 1's supported browser is Chrome; phase 2's ts.net path is plain HTTPS and is meant to work in any browser. The gateway's own `http://127.0.0.1:8787/app/` remains the same-origin page for other browsers. The `.tech` site does not redirect to it (FAQ 03).
 
 WebSocket needs its own option. [Chrome 154 release notes](https://chromestatus.com/release-notes/154) (scheduled stable 2026-09-22) add `new WebSocket(url, { targetAddressSpace: "loopback" | "local" })`, with the same permission and the same "name must actually resolve there" rule. The tester records the Chrome version. Live updates on the loopback path are not done until that option connects.
 
@@ -87,6 +87,14 @@ Phase 2 adds a **serve listener**, default off:
 - The serve listener does not mount `/`, `/setup`, `/connect.json`, or `/mcp/oauth/callback`.
 - Profile secret routes stay on the local-machine gate. A tailnet browser, even with the host token, gets the public profile list and `?usage=1`, not `adminProfiles`.
 - The operator runs `tailscale serve` against `serveBindPort`, not against `8787`. The page's Host URL is the printed `https://…ts.net` origin.
+
+**As implemented** (`host/src/tailscale-serve.ts`, wired in `host/src/server.ts`):
+
+- `serveBindPort` must be an integer port different from `bindPort`. Anything else logs a warning and leaves the listener off. The listener binds `127.0.0.1` only, never `::1` or a Tailscale address.
+- The gate runs before routing. No non-empty `Tailscale-User-Login` → `403` JSON, every method and path, `OPTIONS` preflights included. The same check runs on WebSocket upgrades, which get a raw `403` and a closed socket before `ws` sees them. With the header, `/`, `/setup`, `/connect.json`, and `/mcp/oauth/callback` (trailing slash folded) are `404`. Everything else goes to the normal handler, so the token is still required and `/app/` is served (a tailnet browser can also use `https://…ts.net/app/` same-origin).
+- "Header present" for the local-machine rule means the header exists at all, empty value included. One helper, `isLocalMachineRequest`, backs `isLocalMachineReq`, the legacy `?token=` WebSocket check, and the "local client present" set that suppresses desktop notifications. `isTrustedLocalPageRequest` (`/setup`, `/connect.json` on `:8787`) also refuses a request that carries the header.
+- CORS is unchanged: the serve listener runs the same `corsHeadersFor`, so `https://clankerspanker.tech` is reflected there too. The `Access-Control-Allow-Private-Network` opt-in from phase 1 is sent but not needed for a `https:` ts.net target; Chrome's Local Network Access prompt decides that case, not a PNA preflight.
+- Client (`host/web/gateway-client.js`): the Host URL field accepts `https://<node>.<tailnet>.ts.net` (a bare `node.tailnet.ts.net` gets `https://`). A ts.net gateway is sent **no** `targetAddressSpace`, not even `local`. The option only exists so Chrome can skip mixed-content blocking for an `http:` target known to be local before DNS. An `https:` target is not mixed content; Chrome resolves the name into `100.64/10` and raises the local-network prompt by itself. Declaring `local` would only add a failure mode for a name that resolves elsewhere. The non-Chrome notice is not shown when the stored Host URL is a ts.net name, and a failed fetch to one gets a tailnet-specific message.
 
 `8787` itself stays `bindHost: "auto"` (loopback + Tailscale IPs) for native clients. Those clients are unchanged.
 
@@ -198,7 +206,7 @@ The tester is a different person from the implementer. Each phase is accepted on
 
 ### Phase 2
 
-- [ ] Vitest: serve listener without `Tailscale-User-Login` is 403 on `/health`, `/profiles?admin=1`, `/setup`, `/connect.json`. With the header, `/profiles?admin=1` returns `admin: false` and no `env`. Direct loopback to `8787` without the header still gets admin and still serves `/setup`. A forged `Tailscale-User-Login` on a direct `:8787` request does not grant admin (header present means not local).
+- [x] Vitest (`host/src/tailscale-serve.test.ts`, `host/web/gateway-client.test.js`): serve listener without `Tailscale-User-Login` is 403 on `/health`, `/profiles?admin=1`, `/setup`, `/connect.json`. With the header, `/profiles?admin=1` returns `admin: false` and no `env`. Direct loopback to `8787` without the header still gets admin and still serves `/setup`. A forged `Tailscale-User-Login` on a direct `:8787` request does not grant admin (header present means not local).
 - [ ] Tester, second device on the tailnet: `tailscale serve` aimed at `serveBindPort`. Host URL in the page is `https://<node>.<tailnet>.ts.net`. Sessions load after the Chrome local-network prompt. Profiles admin is locked. `/setup` on that `ts.net` origin is 403.
 - [ ] Tester confirms Funnel is not serving that port (serve status shows tailnet-only). A request to the serve port with the header removed is 403.
 - [ ] Mac app or Electron against `http://127.0.0.1:8787` still lists sessions and still opens local profile admin. Phone over the Tailscale IP (not the serve URL) still works with its existing token.
@@ -230,5 +238,5 @@ The tester is a different person from the implementer. Each phase is accepted on
 - Per-device tokens, so the hosted origin can be revoked without rotating the phone and the native apps.
 - Replace `Access-Control-Allow-Origin: *` with an allow-list once the Electron origin is explicit. Doing it in phase 1 would break the file-origin renderer.
 - Supabase bookmark sync of `{ hostId, label, baseURL }` only, as sketched in §2, if the owner wants the same host list on two browsers.
-- Revisit Firefox and Safari when their docs describe a local-network permission and a mixed-content exemption. Until then they use the gateway's own page.
+- Revisit Firefox and Safari for the loopback path when their docs describe a local-network permission and a mixed-content exemption. Until then they use the ts.net path (phase 2) or the gateway's own page.
 - A tailnet-status check that refuses to start the serve listener if Funnel is configured for that port, once the tester has confirmed which local Tailscale API reports it. Not guessed in this RFC.

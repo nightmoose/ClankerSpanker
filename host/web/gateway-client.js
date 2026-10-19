@@ -1,9 +1,11 @@
 /**
  * How the browser control plane reaches a gateway.
  *
- * The hosted page at https://clankerspanker.tech calls a gateway on the same
- * computer. Chrome allows that after the loopback permission. Other browsers
- * do not. Keep HOSTED_PRODUCT_ORIGIN in sync with host/src/trusted-local.ts.
+ * The hosted page at https://clankerspanker.tech calls either a gateway on the
+ * same computer (http://127.0.0.1:8787, Chrome only, after the loopback
+ * permission) or a gateway on the user's tailnet through `tailscale serve`
+ * (https://<node>.<tailnet>.ts.net, any browser, RFC-058 phase 2).
+ * Keep HOSTED_PRODUCT_ORIGIN in sync with host/src/trusted-local.ts.
  */
 
 export const HOSTED_PRODUCT_ORIGIN = "https://clankerspanker.tech";
@@ -17,6 +19,32 @@ export function isLoopbackHost(hostname) {
     .toLowerCase()
     .replace(/^\[|\]$/g, "");
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+/**
+ * A `tailscale serve` HTTPS name: `https://<node>.<tailnet>.ts.net`. HTTPS
+ * from an HTTPS page is not mixed content, so this works in every browser.
+ */
+export function isTailnetServeURL(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    const labels = u.hostname.toLowerCase().replace(/\.$/, "").split(".");
+    return labels.length >= 4 && labels.at(-2) === "ts" && labels.at(-1) === "net" && labels.every(Boolean);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What the Host URL field saved. Trims, drops trailing slashes, and gives a
+ * bare `node.tailnet.ts.net` the `https://` Serve answers on. Anything else
+ * is left alone.
+ */
+export function normalizeHostURL(input) {
+  let v = String(input || "").trim().replace(/\/+$/, "");
+  if (v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) && isTailnetServeURL(`https://${v}`)) v = `https://${v}`;
+  return v;
 }
 
 export function hostnameOf(url) {
@@ -55,6 +83,14 @@ export function isChromeUserAgent(userAgent, hints = {}) {
  * Fetch options for a loopback gateway. Other hosts, including a tailnet
  * name, must not declare `loopback` — Chrome blocks a name that does not
  * resolve into the declared address space.
+ *
+ * A `*.ts.net` gateway gets no `targetAddressSpace` either, not even
+ * `local`. The option exists so Chrome can skip mixed-content blocking for
+ * an `http:` target it knows is local before DNS. A ts.net target is
+ * `https:`, so there is nothing to skip: Chrome resolves the name (100.64/10,
+ * "local" in the LNA spec) and shows its local-network prompt on its own.
+ * Declaring `local` would only add a way to fail, for a name that resolves
+ * elsewhere (MagicDNS off, or a public resolver).
  */
 export function loopbackFetchInit(url) {
   if (!isLoopbackHost(hostnameOf(url))) return {};
@@ -127,7 +163,7 @@ export function defaultGatewayURL({ hostname, stored }) {
   return "";
 }
 
-export function publicPageNotice({ hostname, userAgent, brave = false }) {
+export function publicPageNotice({ hostname, userAgent, brave = false, baseURL = "" }) {
   const kind = productSiteKind(hostname);
   if (!kind) return "";
   const chrome = isChromeUserAgent(userAgent, { brave });
@@ -137,11 +173,12 @@ export function publicPageNotice({ hostname, userAgent, brave = false }) {
     if (chrome) return preview;
     return `${preview} Chrome is also the only browser that can reach a gateway on this computer from the public site.`;
   }
-  if (chrome) return "";
+  if (chrome || isTailnetServeURL(baseURL)) return "";
   return (
-    "Chrome is the browser that can reach a gateway on this computer from https://clankerspanker.tech. " +
-    "Firefox, Safari, and other browsers do not, so this page cannot connect from them. " +
-    `On the computer running the gateway, open ${LOOPBACK_APP} yourself. This site does not redirect you there.`
+    "Only Chrome can reach a gateway on this computer (http://127.0.0.1) from https://clankerspanker.tech. " +
+    "In Firefox, Safari, and other browsers, connect over your tailnet instead: run `tailscale serve` on the gateway machine " +
+    "and set Host URL to the https://<machine>.<tailnet>.ts.net address it prints (see /download/). " +
+    `Or, on the computer running the gateway, open ${LOOPBACK_APP} yourself. This site does not redirect you there.`
   );
 }
 
@@ -153,6 +190,14 @@ export function loopbackUnreachableMessage(baseURL) {
   );
 }
 
+export function tailnetUnreachableMessage(baseURL) {
+  return (
+    `Could not reach the gateway at ${baseURL}. Check that this device is signed in to the same tailnet, ` +
+    "that `tailscale serve` is running on the gateway machine against its serveBindPort, and that the gateway is up. " +
+    "In Chrome, allow local network access for this site."
+  );
+}
+
 const FETCH_FAILED = /failed to fetch|networkerror|load failed|network request failed/i;
 
 /**
@@ -160,9 +205,12 @@ const FETCH_FAILED = /failed to fetch|networkerror|load failed|network request f
  * applies. Other errors (a rejected token, for example) pass through.
  */
 export function explainFetchFailure({ hostname, userAgent, brave = false, baseURL, errorMessage }) {
-  const notice = publicPageNotice({ hostname, userAgent, brave });
+  const notice = publicPageNotice({ hostname, userAgent, brave, baseURL });
   const failed = !errorMessage || FETCH_FAILED.test(errorMessage);
   if (notice && (failed || !isChromeUserAgent(userAgent, { brave }))) return notice;
+  if (failed && productSiteKind(hostname) && isTailnetServeURL(baseURL)) {
+    return tailnetUnreachableMessage(baseURL);
+  }
   if (failed && productSiteKind(hostname) && isLoopbackHost(hostnameOf(baseURL))) {
     return loopbackUnreachableMessage(baseURL);
   }

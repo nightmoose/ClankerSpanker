@@ -54,7 +54,12 @@ import {
 } from "./config.js";
 import { listOutbox } from "./bot/outbox.js";
 import { seedHunter } from "./bot/seed.js";
-import { isLocalMachineAddr } from "./local-machine.js";
+import {
+  SERVE_BIND_ADDRESS,
+  isLocalMachineRequest,
+  serveListenerGate,
+  tailscaleUserLogin,
+} from "./tailscale-serve.js";
 import { corsHeadersFor, isTrustedLocalPageRequest } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
@@ -79,7 +84,7 @@ export function wsUpgradeAuthorized(
   const url = new URL(req.url ?? "", "http://localhost");
   if (tickets.consume(url.searchParams.get("ticket"))) return true;
   const legacy = url.searchParams.get("token");
-  if (legacy && isLocalMachineAddr(req.socket.remoteAddress)) {
+  if (legacy && isLocalMachineRequest(req)) {
     return tokensMatch(legacy, config.hostToken);
   }
   return false;
@@ -111,10 +116,11 @@ type WsClient = WebSocket & { isAlive?: boolean };
 /**
  * True when the request originates from this machine (loopback or any of our
  * own NIC / Tailscale addresses). Gates profile admin so API keys never leave
- * this host — a phone on the LAN/Tailscale is still refused.
+ * this host — a phone on the LAN/Tailscale is still refused. A request with
+ * `Tailscale-User-Login` is never local, on any listener (RFC-058 phase 2).
  */
 function isLocalMachineReq(req: IncomingMessage): boolean {
-  return isLocalMachineAddr(req.socket.remoteAddress);
+  return isLocalMachineRequest(req);
 }
 
 export function startServer(config: HostConfigFile, manager: SessionManager, bots?: BotRuntime) {
@@ -196,7 +202,7 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
 
     ws.isAlive = true;
     clients.add(ws);
-    if (isLocalMachineAddr(req.socket.remoteAddress)) {
+    if (isLocalMachineReq(req)) {
       localClients.add(ws);
     }
     ws.send(JSON.stringify({ type: "hello", at: new Date().toISOString(), version: "0.1.0" }));
@@ -272,6 +278,40 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     }
   };
   syncListeners();
+
+  // RFC-058 phase 2: `tailscale serve <serveBindPort>` target. Loopback only,
+  // and nothing answers without the identity header Serve adds.
+  let serveListener: Server | undefined;
+  if (config.serveBindPort !== undefined) {
+    const servePort = config.serveBindPort;
+    const srv = createServer((req, res) => {
+      const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      const gate = serveListenerGate(req.headers, path);
+      if (!gate.ok) {
+        json(res, gate.status, { error: gate.status === 403 ? "Forbidden" : "Not Found", message: gate.message });
+        return;
+      }
+      void onRequest(req, res);
+    });
+    srv.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      if (!tailscaleUserLogin(req.headers)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
+      onUpgrade(req, socket, head);
+    });
+    srv.on("error", (err: NodeJS.ErrnoException) => {
+      console.warn(`[server] could not listen on ${SERVE_BIND_ADDRESS}:${servePort} for tailscale serve — ${err.code ?? err.message}`);
+    });
+    srv.listen(servePort, SERVE_BIND_ADDRESS, () => {
+      console.log(
+        `[server] tailscale serve listener on http://${SERVE_BIND_ADDRESS}:${servePort} ` +
+          `(run \`tailscale serve --bg ${servePort}\`; keep Funnel off)`,
+      );
+    });
+    serveListener = srv;
+  }
+
   const rebind = isAutoBind(config.bindHost) ? setInterval(syncListeners, 30_000) : undefined;
   rebind?.unref();
 
@@ -292,10 +332,11 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     termWss.close();
     wss.close();
     for (const srv of listeners.values()) srv.close();
+    serveListener?.close();
     await manager.shutdown();
   };
 
-  return { listeners, wss, shutdown };
+  return { listeners, serveListener, wss, shutdown };
 }
 
 function firstHeaderValue(v: string | string[] | undefined): string | undefined {

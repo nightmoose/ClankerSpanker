@@ -12,6 +12,7 @@ import {
   firstExistingBinary,
 } from "./platform.js";
 import { defaultProfiles, normalizeProfiles } from "./profiles.js";
+import { normalizeServeBindPort } from "./tailscale-serve.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = join(homedir(), ".grok-dispatch");
@@ -356,6 +357,9 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   // Env overrides
   if (process.env.GROK_DISPATCH_HOST) merged.bindHost = process.env.GROK_DISPATCH_HOST;
   if (process.env.GROK_DISPATCH_PORT) merged.bindPort = Number(process.env.GROK_DISPATCH_PORT);
+  // After the port override, so the "must differ from bindPort" check sees the real port.
+  const serveBindPort = normalizeServeBindPort(raw.serveBindPort, merged.bindPort);
+  if (serveBindPort !== undefined) merged.serveBindPort = serveBindPort;
   if (process.env.GROK_DISPATCH_TOKEN) merged.hostToken = process.env.GROK_DISPATCH_TOKEN;
   if (process.env.GROK_BINARY) merged.grokBinary = process.env.GROK_BINARY;
   if (process.env.GROK_DISPATCH_PROMPT_IDLE_MS) {

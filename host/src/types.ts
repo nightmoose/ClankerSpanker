@@ -669,6 +669,13 @@ export interface HostConfigFile {
   hostToken: string;
   bindHost: string;
   bindPort: number;
+  /**
+   * RFC-058 phase 2: a second listener on 127.0.0.1 only, for
+   * `tailscale serve <serveBindPort>`. Every request must carry
+   * `Tailscale-User-Login`; `/setup`, `/connect.json`, `/` and the MCP OAuth
+   * callback are not mounted. Unset = off.
+   */
+  serveBindPort?: number;
   grokBinary: string;
   projects: ProjectInfo[];
   allowCustomPaths: boolean;

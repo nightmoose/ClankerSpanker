@@ -285,7 +285,7 @@ final class AppState: ObservableObject {
         if !hostCtrl.apiReachable {
             // Connect only. Kick the standalone repo LaunchAgent; never
             // spawn node or install the Application Support copy.
-            hostCtrl.start()
+            await hostCtrl.start()
             for _ in 0..<40 {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 await hostCtrl.refreshStatus()

@@ -47,7 +47,7 @@ struct SettingsView: View {
                                     ? "Saved host package path"
                                     : "That is the install location, not a source. Pick your checkout's host/ folder."
                             }
-                            Button("Kickstart") { localHost.start() }
+                            Button("Kickstart") { Task { await localHost.start() } }
                                 .disabled(localHost.apiReachable)
                             Button("Connect") {
                                 Task {

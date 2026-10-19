@@ -41,7 +41,7 @@ struct ClankerSpankerApp: App {
             }
             CommandMenu("Host") {
                 Button("Kickstart local host") {
-                    LocalHostController.shared.start()
+                    Task { await LocalHostController.shared.start() }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Show Host panel") {

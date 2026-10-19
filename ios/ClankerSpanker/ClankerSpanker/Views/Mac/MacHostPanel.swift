@@ -78,9 +78,18 @@ struct MacHostPanel: View {
     private var installCard: some View {
         GroupBox("Install & service") {
             VStack(alignment: .leading, spacing: 12) {
-                labeled("Installed package", HostInstaller.isInstalled ? HostInstaller.installRoot.path : "Not installed")
-                labeled("LaunchAgent", HostInstaller.launchAgentLoaded ? "Loaded · \(HostInstaller.label)" : "Not loaded")
+                // RFC-064: read the published snapshot only. A launchctl call
+                // here ran inside SwiftUI's update and crashed the app.
+                labeled("Installed package", installedLabel)
+                labeled("LaunchAgent", agentLabel)
                 labeled("Config", LocalHostConfigFile.configURL.path)
+
+                if host.service?.recovery == .loadAppAgent {
+                    Text("The LaunchAgent plist is installed but launchd has not loaded it, so the gateway is down. Click Load LaunchAgent.")
+                        .font(.callout)
+                        .foregroundStyle(DispatchColors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 10) {
                     Button {
@@ -102,7 +111,7 @@ struct MacHostPanel: View {
                             Task { await runLoadAgent(takeover: false) }
                         }
                     }
-                    .disabled(installBusy || !HostInstaller.isInstalled)
+                    .disabled(installBusy || host.service?.packageInstalled != true)
 
                     Button("Unload LaunchAgent", role: .destructive) {
                         Task { await runUnloadAgent() }
@@ -216,7 +225,7 @@ struct MacHostPanel: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button("Kickstart host") { host.start() }
+                    Button("Kickstart host") { Task { await host.start() } }
                         .buttonStyle(.borderedProminent)
                         .disabled(host.apiReachable)
                     Button("Refresh") {
@@ -324,6 +333,33 @@ struct MacHostPanel: View {
         }
     }
 
+    private var installedLabel: String {
+        guard let service = host.service else { return "Checking…" }
+        return service.packageInstalled ? HostInstaller.installRoot.path : "Not installed"
+    }
+
+    private var agentLabel: String {
+        guard let service = host.service else { return "Checking…" }
+        if service.appAgentLoaded { return "Loaded · \(HostInstaller.label)" }
+        return service.plistPresent ? "Not loaded (plist present)" : "Not loaded"
+    }
+
+    /// Appends from any thread, in order.
+    private func appendInstallLog(_ line: String) {
+        DispatchQueue.main.async { installLog.append(line) }
+    }
+
+    /// Marks a deliberate LaunchAgent change so launch-time recovery stays out of the way.
+    private func beginServiceChange() {
+        installBusy = true
+        host.serviceChangeInProgress = true
+    }
+
+    private func endServiceChange() {
+        installBusy = false
+        host.serviceChangeInProgress = false
+    }
+
     /// True when the repo-standalone LaunchAgent is the currently-loaded one.
     /// The Install / Load buttons prompt for confirmation before evicting it.
     private var repoAgentLoaded: Bool {
@@ -367,21 +403,21 @@ struct MacHostPanel: View {
 
     @MainActor
     private func runInstall(loadAgent: Bool, takeover: Bool) async {
-        installBusy = true
+        beginServiceChange()
         installLog = []
-        defer { installBusy = false }
+        defer { endServiceChange() }
         do {
             host.lastError = nil
             // RFC-063: an install-root path here is ignored; resolveSource clears it.
             let path = host.hostPackagePath
             let source = path.isEmpty || HostInstaller.isInstallRootPath(path) ? nil : URL(fileURLWithPath: path)
-            try HostInstaller.install(
+            // RFC-064: build, npm and launchctl run off the main thread.
+            try await HostInstaller.install(
                 fromSource: source,
                 loadLaunchAgent: loadAgent,
-                takeoverStandalone: takeover
-            ) { line in
-                installLog.append(line)
-            }
+                takeoverStandalone: takeover,
+                log: appendInstallLog
+            )
             // RFC-027: HostInstaller already saved the source path. Saving the
             // install root here made the next update install from itself.
             await host.refreshStatus()
@@ -392,16 +428,17 @@ struct MacHostPanel: View {
             statusNote = "Host installed to Application Support"
         } catch {
             host.lastError = error.localizedDescription
-            installLog.append("ERROR: \(error.localizedDescription)")
+            appendInstallLog("ERROR: \(error.localizedDescription)")
+            await host.refreshStatus()
         }
     }
 
     @MainActor
     private func runLoadAgent(takeover: Bool) async {
-        installBusy = true
-        defer { installBusy = false }
+        beginServiceChange()
+        defer { endServiceChange() }
         do {
-            try HostInstaller.installLaunchAgent(takeoverStandalone: takeover) { installLog.append($0) }
+            try await HostInstaller.loadLaunchAgent(takeoverStandalone: takeover, log: appendInstallLog)
             await host.refreshStatus()
             statusNote = "LaunchAgent loaded"
         } catch {
@@ -411,10 +448,10 @@ struct MacHostPanel: View {
 
     @MainActor
     private func runUnloadAgent() async {
-        installBusy = true
-        defer { installBusy = false }
+        beginServiceChange()
+        defer { endServiceChange() }
         do {
-            try HostInstaller.unloadLaunchAgent { installLog.append($0) }
+            try await HostInstaller.unloadLaunchAgent(log: appendInstallLog)
             await host.refreshStatus()
             statusNote = "LaunchAgent unloaded"
         } catch {
@@ -424,10 +461,10 @@ struct MacHostPanel: View {
 
     @MainActor
     private func runUninstall() async {
-        installBusy = true
-        defer { installBusy = false }
+        beginServiceChange()
+        defer { endServiceChange() }
         do {
-            try HostInstaller.uninstall(removeFiles: true) { installLog.append($0) }
+            try await HostInstaller.uninstall(removeFiles: true, log: appendInstallLog)
             await host.refreshStatus()
             statusNote = "Host package removed from Application Support"
         } catch {

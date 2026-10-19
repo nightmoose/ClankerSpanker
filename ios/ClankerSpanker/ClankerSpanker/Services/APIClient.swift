@@ -311,7 +311,7 @@ actor APIClient {
         ) as EmptyResponse
     }
 
-    /// RFC-058: Bind a Postgres/Supabase connection string to a project.
+    /// RFC-061: Bind a Postgres/Supabase connection string to a project.
     /// The connection string is stored server-side and never returned to clients.
     func connectDatabase(
         projectId: String,
@@ -327,7 +327,7 @@ actor APIClient {
         return res.project
     }
 
-    /// RFC-058: Remove the database binding from a project.
+    /// RFC-061: Remove the database binding from a project.
     func disconnectDatabase(projectId: String, host: HostEndpoint) async throws {
         _ = try await request(
             method: "DELETE",

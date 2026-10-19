@@ -664,7 +664,7 @@ async function handleHttp(
   // goes into HostConfigFile.projectSecrets[id][DATABASE_CONNECTION_SLOT] and
   // is never echoed back (not here, not on GET /projects). Only the
   // non-sensitive ProjectDatabase block (connectionRef + hostHint + timestamps)
-  // lands on the project. RFC-058.
+  // lands on the project. RFC-061.
   const projectDatabaseMatch = /^\/projects\/([^/]+)\/database$/.exec(path);
   if (method === "POST" && projectDatabaseMatch) {
     const id = decodeURIComponent(projectDatabaseMatch[1]!);

@@ -2602,7 +2602,7 @@ export class SessionManager extends EventEmitter {
       mcpEnvFor(profile),
       oauthHeaderMap(this.config.dataDir, profile.id, profile.mcpServers),
     );
-    // RFC-058: inject sql_execute MCP server when the project has a database configured.
+    // RFC-061: inject sql_execute MCP server when the project has a database configured.
     if (session.projectId) {
       const connStr = projectSecrets.get(
         this.config,

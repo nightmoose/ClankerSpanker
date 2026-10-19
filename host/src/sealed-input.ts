@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PendingSecretRequest } from "./types.js";
 
 /**
- * RFC-058 — Sealed secret input manager.
+ * RFC-061 — Sealed secret input manager.
  *
  * Parallel to `PendingApproval` / `PendingQuestion`: host code calls
  * `request()` when it needs a value from the user that must not touch

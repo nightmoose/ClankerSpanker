@@ -42,7 +42,7 @@ export interface ProjectAttachment {
 }
 
 /**
- * RFC-058 — Connection metadata for a project's database. The password
+ * RFC-061 — Connection metadata for a project's database. The password
  * does **not** live here; `connectionRef` points at a slot in
  * `HostConfigFile.projectSecrets[projectId]` which is never serialized to
  * clients. `hostHint` is a display-only breadcrumb so the UI can show
@@ -77,7 +77,7 @@ export interface ProjectInfo {
   attachments?: ProjectAttachment[];
   /** Suggested default profile for new sessions in this project — not enforced. */
   defaultProfileId?: string;
-  /** RFC-058 database binding; secret lives server-side in projectSecrets. */
+  /** RFC-061 database binding; secret lives server-side in projectSecrets. */
   database?: ProjectDatabase;
   archived?: boolean;
   createdAt?: string;
@@ -506,7 +506,7 @@ export interface PendingQuestion {
 }
 
 /**
- * RFC-058 — Sealed secret input. Parallel side-channel to approvals and
+ * RFC-061 — Sealed secret input. Parallel side-channel to approvals and
  * questions: the host pauses whatever triggered it (today: a failed
  * `sql_execute` precondition) and prompts the user for a value through a
  * dedicated modal. The raw value is written to `projectSecrets` and never
@@ -722,7 +722,7 @@ export interface HostConfigFile {
   grokBinary: string;
   projects: ProjectInfo[];
   /**
-   * RFC-058 per-project secret slots (connection strings, API keys later).
+   * RFC-061 per-project secret slots (connection strings, API keys later).
    * Keyed `[projectId][slot]`. Never serialized to clients; writes go
    * through `setProjectSecret` so `saveConfig` persists them under 0600.
    */

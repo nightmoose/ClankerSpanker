@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Sheet for entering a Postgres / Supabase connection string.
 /// The string is sent to the host and stored server-side; it is never
-/// returned to any client (RFC-058).
+/// returned to any client (RFC-061).
 struct ProjectDatabaseSheet: View {
     let projectId: String
     let host: HostEndpoint

@@ -1,7 +1,7 @@
 import type { HostConfigFile } from "./types.js";
 
 /**
- * RFC-058 — Per-project secret slots. The slot *name* is public (it
+ * RFC-061 — Per-project secret slots. The slot *name* is public (it
  * appears in `ProjectDatabase.connectionRef` and in tool call payloads);
  * the value is not. All writes go through here so there's one place to
  * audit — the handler for `secret_request` and the "Set connection

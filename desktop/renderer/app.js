@@ -2687,7 +2687,7 @@ async function editProject(existing) {
     banner(e.message, true);
     return;
   }
-  // RFC-058: database management for existing projects
+  // RFC-061: database management for existing projects
   if (saved?.id) {
     if (saved.database) {
       const hint = saved.database.hostHint || saved.database.provider || "connected";

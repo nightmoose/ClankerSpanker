@@ -1,5 +1,5 @@
 /**
- * RFC-058/059 — Built-in SQL executor MCP server (stdio).
+ * RFC-061/062 — Built-in SQL executor MCP server (stdio).
  * Spawned by the host when a session's project has a database configured.
  * DATABASE_URL is injected via env by the host; it is NEVER echoed in any output.
  */

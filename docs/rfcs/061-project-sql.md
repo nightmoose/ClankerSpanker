@@ -1,9 +1,10 @@
-# RFC-058 — Project database binding + sealed-input primitive
+# RFC-061 — Project database binding + sealed-input primitive
 
 **Status:** Draft
 **Date:** 2026-10-13
 **Branch:** nightly-maintenance-2026-10-13-rfc058-project-sql
 **Severity:** P2
+**Renumbered:** 2026-10-19, from RFC-058 (and its follow-on from RFC-059 to RFC-062). 058 is the hosted product site on `main`; 059 is host self-update. The branch name keeps the old number.
 
 ---
 
@@ -23,20 +24,20 @@ cannot be handed a service-role connection string in a chat message
 (3) is deferred. Making the agent emit a `sql_execute` tool call
 requires wiring a built-in MCP server into every profile's `mcpServers`
 list, which collides with the "backend parity before MCP" decision
-(2026-08-28). RFC-059 picks that up once the parity pass is further
+(2026-08-28). RFC-062 picks that up once the parity pass is further
 along.
 
-RFC-058 ships the two pieces (1) and (2) need in isolation. Scoping it
+RFC-061 ships the two pieces (1) and (2) need in isolation. Scoping it
 this way means (a) the project edit sheet can save a connection string
 today, (b) the sealed-input primitive is unit-tested and ready for
-RFC-059 to consume without redesign.
+RFC-062 to consume without redesign.
 
 ## Non-goals
 
-- The `sql_execute` tool itself — deferred to RFC-059.
+- The `sql_execute` tool itself — deferred to RFC-062.
 - Any agent-callable version of the sealed-input primitive. Today the
   only caller is the host-side project edit sheet route, which doesn't
-  involve the agent. RFC-059 will add the agent-triggered path.
+  involve the agent. RFC-062 will add the agent-triggered path.
 - Keychain / libsecret encryption-at-rest. The secret lands next to
   `profile.env` API keys in the config JSON (0600). Encrypted storage is
   a fast-follow.
@@ -121,7 +122,7 @@ a standalone manager that mirrors `PendingQuestion`:
   (bound to `project-secrets.set`), resolves the promise with `{ ok:
   true, slot }`.
 - `cancel(id)` and TTL expiry resolve with `{ ok: false }`.
-- Unused in production until RFC-059's `sql_execute` imports it. Still
+- Unused in production until RFC-062's `sql_execute` imports it. Still
   worth shipping now: it has nine passing vitest cases, no live caller
   cost, and the API-key fast-follow is already lined up to consume it.
 
@@ -173,12 +174,12 @@ Linux follow Mac.
       as the official deploy path (RFC-027 adjunct).
 - [ ] Flip `docs/rfcs/README.md` row for 058 to **Shipped** once the
       routes are proven in use. Leaving it at **Draft** until that
-      checkpoint — RFC-059 can land against the same primitive without
+      checkpoint — RFC-062 can land against the same primitive without
       waiting.
 
 ## Follow-ups
 
-- **RFC-059** (next, after backend parity progresses): `sql_execute` as
+- **RFC-062** (next, after backend parity progresses): `sql_execute` as
   a stdio MCP server auto-wired per profile; agent-callable sealed-input
   tool kind; approval card SQL preview; iOS + Linux parity.
 - Mac project-edit-sheet "Database" section (lightweight once routes

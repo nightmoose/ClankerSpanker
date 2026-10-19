@@ -218,6 +218,13 @@ paths:
     delete:
       summary: Soft-archive; ?hard=1 removes it and its attachments.
       security: [{ bearerAuth: [] }]
+  /projects/{id}/database:
+    post:
+      summary: Attach a Postgres/Supabase connection string to a project (RFC-061); value stored server-side only.
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Detach the connection and clear the project's database secret slot (RFC-061).
+      security: [{ bearerAuth: [] }]
   /projects/{id}/attachments:
     post:
       summary: Upload a project attachment (base64 JSON body).

@@ -91,6 +91,17 @@ struct ProjectAttachment: Codable, Identifiable, Hashable, Sendable {
     var note: String?
 }
 
+/// RFC-061 — Public metadata for a project's database connection.
+/// The actual connection string lives server-side in projectSecrets; this
+/// struct only carries display metadata (never the password).
+struct ProjectDatabase: Codable, Hashable, Sendable {
+    var provider: String
+    var connectionRef: String
+    var hostHint: String?
+    var addedAt: String
+    var updatedAt: String
+}
+
 struct ProjectInfo: Codable, Identifiable, Hashable, Sendable {
     let id: String
     var name: String
@@ -105,6 +116,8 @@ struct ProjectInfo: Codable, Identifiable, Hashable, Sendable {
     var resources: [ProjectResource]?
     var attachments: [ProjectAttachment]?
     var defaultProfileId: String?
+    /// RFC-061: database binding; connection string lives server-side.
+    var database: ProjectDatabase?
     var archived: Bool?
     var createdAt: String?
     var updatedAt: String?

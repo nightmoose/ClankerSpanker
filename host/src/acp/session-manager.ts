@@ -15,7 +15,8 @@ import { allowlistAllowsTool, defaultModelForBackend, grokAgentModelArgs, isGrok
 import { approvalPreview } from "../approval-preview.js";
 import { knownGrokHomes, listGrokHomeSessions } from "../grok-home.js";
 import { TombstoneFile } from "./tombstones.js";
-import { mcpEnvFor, toAcpMcpServers } from "../mcp.js";
+import { mcpEnvFor, projectSqlMcpServer, removeSessionMcpJson, toAcpMcpServers } from "../mcp.js";
+import * as projectSecrets from "../project-secrets.js";
 import { oauthHeaderMap, refreshAllMcpOAuth } from "../mcp-oauth.js";
 import { fetchGrokWeeklyCreditPct } from "../usage.js";
 import {
@@ -1294,6 +1295,11 @@ export class SessionManager extends EventEmitter {
     try {
       const file = join(this.config.dataDir, "sessions", `${sessionId}.json`);
       rmSync(file, { force: true });
+    } catch { /* ignore */ }
+    // RFC-061: a per-session MCP config may hold the project's database URL.
+    try {
+      const profile = this.profileFor(s);
+      if (profile) removeSessionMcpJson(this.config.dataDir, profile.id, sessionId);
     } catch { /* ignore */ }
     // Tombstone the underlying Grok session so /sessions doesn't re-import it
     // from ~/.grok/sessions on the next list refresh.
@@ -2592,11 +2598,34 @@ export class SessionManager extends EventEmitter {
     const profile = this.profileFor(session);
     if (!profile) return [];
     await refreshAllMcpOAuth(this.config.dataDir, profile.id, profile.mcpServers).catch(() => undefined);
-    return toAcpMcpServers(
+    const servers = toAcpMcpServers(
       profile.mcpServers,
       mcpEnvFor(profile),
       oauthHeaderMap(this.config.dataDir, profile.id, profile.mcpServers),
     );
+    // RFC-061: inject sql_execute MCP server when the project has a database configured.
+    if (session.projectId) {
+      const connStr = projectSecrets.get(
+        this.config,
+        session.projectId,
+        projectSecrets.DATABASE_CONNECTION_SLOT,
+      );
+      if (connStr) {
+        const sql = projectSqlMcpServer(connStr);
+        // A profile server named "sql" would shadow the project's; ours wins.
+        const kept = servers.filter((s) => s.name !== sql.name);
+        // Not via toAcpMcpServers: it expands ${VAR} in env values, which
+        // would rewrite a password containing "${…}".
+        kept.push({
+          name: sql.name,
+          command: sql.command!,
+          args: sql.args ?? [],
+          env: [{ name: "DATABASE_URL", value: connStr }],
+        });
+        return kept;
+      }
+    }
+    return servers;
   }
 
   private newAcpClient(session: DispatchSession): AcpClient {

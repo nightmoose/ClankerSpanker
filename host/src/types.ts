@@ -41,6 +41,21 @@ export interface ProjectAttachment {
   note?: string;
 }
 
+/**
+ * RFC-061 — Connection metadata for a project's database. The password
+ * does **not** live here; `connectionRef` points at a slot in
+ * `HostConfigFile.projectSecrets[projectId]` which is never serialized to
+ * clients. `hostHint` is a display-only breadcrumb so the UI can show
+ * "db.abc.supabase.co" without reconstructing it from the secret.
+ */
+export interface ProjectDatabase {
+  provider: "supabase";
+  connectionRef: string;
+  hostHint?: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -62,6 +77,8 @@ export interface ProjectInfo {
   attachments?: ProjectAttachment[];
   /** Suggested default profile for new sessions in this project — not enforced. */
   defaultProfileId?: string;
+  /** RFC-061 database binding; secret lives server-side in projectSecrets. */
+  database?: ProjectDatabase;
   archived?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -488,6 +505,30 @@ export interface PendingQuestion {
   canRespondViaAcp?: boolean;
 }
 
+/**
+ * RFC-061 — Sealed secret input. Parallel side-channel to approvals and
+ * questions: the host pauses whatever triggered it (today: a failed
+ * `sql_execute` precondition) and prompts the user for a value through a
+ * dedicated modal. The raw value is written to `projectSecrets` and never
+ * flows back to the agent — the trigger just resolves to "ok, retry".
+ */
+export interface PendingSecretRequest {
+  id: string;
+  sessionId: string;
+  projectId: string;
+  slot: string;
+  purpose: string;
+  hint?: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface SubmitSecretRequest {
+  requestId: string;
+  value?: string;
+  cancel?: boolean;
+}
+
 export interface AnswerQuestionsRequest {
   questionId?: string;
   /** One answer string per question (for multiSelect, join labels with ", "). */
@@ -512,6 +553,8 @@ export type SessionEventType =
   | "approval.resolved"
   | "question.needed"
   | "question.answered"
+  | "secret.needed"
+  | "secret.resolved"
   | "task.created"
   | "task.updated"
   | "task.deleted"
@@ -678,6 +721,12 @@ export interface HostConfigFile {
   serveBindPort?: number;
   grokBinary: string;
   projects: ProjectInfo[];
+  /**
+   * RFC-061 per-project secret slots (connection strings, API keys later).
+   * Keyed `[projectId][slot]`. Never serialized to clients; writes go
+   * through `setProjectSecret` so `saveConfig` persists them under 0600.
+   */
+  projectSecrets?: Record<string, Record<string, string>>;
   allowCustomPaths: boolean;
   /** Concurrent agent accounts — each is a colored nav segment on clients. */
   profiles: AgentProfile[];

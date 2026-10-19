@@ -26,6 +26,9 @@ struct ProjectEditorView: View {
     @State private var defaultProfileId: String = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var currentProject: ProjectInfo?
+    @State private var connectionStringDraft: String = ""
+    @State private var isConnecting = false
 
     private var isEditing: Bool {
         if case .edit = mode { return true } else { return false }
@@ -114,6 +117,55 @@ struct ProjectEditorView: View {
                         .font(.caption2)
                 }
 
+                // Database — only for existing projects.
+                if case .edit(let editing) = mode {
+                    let proj = currentProject ?? editing
+                    Section {
+                        if let db = proj.database {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(db.hostHint ?? db.provider.capitalized, systemImage: "cylinder.fill")
+                                Text("sql_execute available")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button(role: .destructive) {
+                                Task { await disconnectDatabase(project: proj) }
+                            } label: {
+                                Label("Disconnect", systemImage: "minus.circle")
+                                    .foregroundStyle(DispatchColors.danger)
+                            }
+                        } else {
+                            TextField(
+                                "Connection string",
+                                text: $connectionStringDraft,
+                                prompt: Text("postgresql://user:pass@host/db"),
+                                axis: .vertical
+                            )
+                            .font(.system(.footnote, design: .monospaced))
+                            .autocorrectionDisabled(true)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .lineLimit(2...4)
+                            Button {
+                                Task { await connectDatabase(project: proj) }
+                            } label: {
+                                if isConnecting {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Label("Connect", systemImage: "plus.circle")
+                                }
+                            }
+                            .disabled(isConnecting || !connectionStringDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("postgres"))
+                        }
+                    } header: {
+                        Text("Database")
+                    } footer: {
+                        Text("Connection string stored on the host — never sent to clients. Gives the agent a read-only sql_execute tool.")
+                            .font(.caption2)
+                    }
+                }
+
                 // Attachments — only meaningful for an existing project.
                 if case .edit(let editing) = mode {
                     ProjectAttachmentsSection(project: editing, host: host)
@@ -157,6 +209,37 @@ struct ProjectEditorView: View {
             }
         }
         .onAppear(perform: prime)
+    }
+
+    // MARK: - Database
+
+    private func connectDatabase(project: ProjectInfo) async {
+        let cs = connectionStringDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cs.isEmpty else { return }
+        isConnecting = true
+        defer { isConnecting = false }
+        do {
+            let updated = try await appState.api.connectDatabase(
+                projectId: project.id,
+                connectionString: cs,
+                host: host
+            )
+            currentProject = updated
+            connectionStringDraft = ""
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func disconnectDatabase(project: ProjectInfo) async {
+        do {
+            try await appState.api.disconnectDatabase(projectId: project.id, host: host)
+            var updated = project
+            updated.database = nil
+            currentProject = updated
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Prime from mode
@@ -207,6 +290,7 @@ struct ProjectEditorView: View {
                     host: host
                 )
             }
+            currentProject = saved
             onSaved(saved)
         } catch {
             errorMessage = error.localizedDescription

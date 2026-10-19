@@ -52,6 +52,8 @@ repository, so numbering has gaps; numbers 000-057 are reserved. Start a new RFC
 | 055 | [Split Grok ACP inbound handling](055-grok-events-split.md) | Shipped |
 | 056 | [Claude tool rows finish and show output](056-claude-tool-results.md) | Shipped |
 | 058 | [Host the product at clankerspanker.tech](058-hosted-product-site.md) | Draft |
+| 058 | [Per-project SQL execution + sealed-input secrets](058-project-sql.md) | Draft |
 | 059 | [Host updates itself from the git checkout](059-host-self-update.md) | Accepted |
 | 060 | [Inline shell execution from chat code blocks](060-inline-exec.md) | Accepted |
+| 061 | [Project database binding, sealed-input secrets, `sql_execute` (absorbs 062)](061-project-sql.md) | Draft |
 | 063 | [Mac host installer stages, then swaps](063-installer-staged-swap.md) | Draft |

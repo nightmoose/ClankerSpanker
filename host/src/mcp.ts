@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { oauthHeaderMap } from "./mcp-oauth.js";
 import type { AgentProfile, ProfileMcpServer } from "./types.js";
 
@@ -202,24 +203,67 @@ export function toAcpMcpServers(
   return out;
 }
 
+/** dist/mcp.js → dist/mcp/sql-execute.js (RFC-061). */
+export const SQL_MCP_PATH = join(dirname(fileURLToPath(import.meta.url)), "mcp", "sql-execute.js");
+
+/**
+ * RFC-061: the built-in `sql` stdio server for a project whose database is
+ * bound. Built by the host per session; never stored on a profile, so
+ * `/profiles` cannot show it.
+ */
+export function projectSqlMcpServer(connectionString: string): ProfileMcpServer {
+  return {
+    name: "sql",
+    command: process.execPath,
+    args: [SQL_MCP_PATH],
+    env: { DATABASE_URL: connectionString },
+    transport: "stdio",
+  };
+}
+
+/**
+ * Write Claude's `--mcp-config` file for `profile`. With `extraServers`
+ * (per-session servers that carry a project secret) pass `sessionId`: the
+ * file is then per session, so two sessions on one profile in different
+ * projects cannot pick up each other's database, and a session whose
+ * extras went away gets its stale file removed.
+ */
 export function writeProfileMcpJson(
   dataDir: string,
   profile: AgentProfile,
   env: Record<string, string | undefined>,
+  extraServers?: ProfileMcpServer[],
+  sessionId?: string,
 ): string | undefined {
-  const enabled = enabledMcpServers(profile.mcpServers);
-  if (!enabled.length) return undefined;
+  const dir = join(dataDir, "mcp");
+  const sessionPath = sessionId ? join(dir, `${profile.id}.${sessionId}.mcp.json`) : undefined;
+  const hasExtras = Boolean(extraServers?.length);
+  if (sessionPath && !hasExtras) rmSync(sessionPath, { force: true });
+  // Extras replace a profile server of the same name, and are written
+  // literally: no ${VAR} expansion over a value that is a secret.
+  const profileServers = hasExtras
+    ? (profile.mcpServers ?? []).filter((s) => !extraServers!.some((x) => x.name === s.name))
+    : profile.mcpServers;
+  if (!enabledMcpServers(profileServers).length && !enabledMcpServers(extraServers).length) return undefined;
   const body = toMcpJson(
-    profile.mcpServers,
+    profileServers,
     env,
     oauthHeaderMap(dataDir, profile.id, profile.mcpServers),
   );
+  for (const x of enabledMcpServers(extraServers)) {
+    if (!x.command) continue;
+    body.mcpServers[x.name] = { command: x.command, args: x.args ?? [], ...(x.env ? { env: x.env } : {}) };
+  }
   if (!Object.keys(body.mcpServers).length) return undefined;
-  const dir = join(dataDir, "mcp");
   mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${profile.id}.mcp.json`);
+  const path = hasExtras && sessionPath ? sessionPath : join(dir, `${profile.id}.mcp.json`);
   writeFileSync(path, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
   return path;
+}
+
+/** Drop a session's per-session MCP config (session deleted). */
+export function removeSessionMcpJson(dataDir: string, profileId: string, sessionId: string): void {
+  rmSync(join(dataDir, "mcp", `${profileId}.${sessionId}.mcp.json`), { force: true });
 }
 
 export function claudeMcpConfigArgs(mcpConfigPath?: string): string[] {

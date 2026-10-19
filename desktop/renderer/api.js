@@ -139,6 +139,13 @@ const Api = (() => {
     deleteProject: (id, hard = false, hostConn) =>
       request(`/projects/${enc(id)}${hard ? "?hard=1" : ""}`, { method: "DELETE" }, hostConn),
     discoverProjects: (hostConn) => request("/projects/discover", { method: "POST", body: "{}" }, hostConn),
+    connectDatabase: (projectId, connectionString, hostConn) =>
+      request(`/projects/${enc(projectId)}/database`, {
+        method: "POST",
+        body: jsonBody({ connectionString }),
+      }, hostConn),
+    disconnectDatabase: (projectId, hostConn) =>
+      request(`/projects/${enc(projectId)}/database`, { method: "DELETE" }, hostConn),
     uploadProjectAttachment: (projectId, body, hostConn) =>
       request(`/projects/${enc(projectId)}/attachments`, {
         method: "POST",

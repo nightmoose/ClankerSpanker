@@ -51,3 +51,4 @@ repository, so numbering has gaps; numbers 000-057 are reserved. Start a new RFC
 | 054 | [Claude MCP config uses `type`](054-claude-mcp-type.md) | Shipped |
 | 055 | [Split Grok ACP inbound handling](055-grok-events-split.md) | Shipped |
 | 056 | [Claude tool rows finish and show output](056-claude-tool-results.md) | Shipped |
+| 058 | [Host the product at clankerspanker.tech](058-hosted-product-site.md) | Draft |

@@ -51,6 +51,26 @@ Everyone else pairs by scanning the `/setup` QR code.
 
 Phones and other laptops should connect over Tailscale.
 
+### Tailscale Serve (HTTPS for any browser, RFC-058 phase 2)
+
+`https://clankerspanker.tech` can only call `http://127.0.0.1:8787` from Chrome (an HTTPS page calling `http:` is mixed content). For Safari, Firefox, and other devices, give the gateway a tailnet HTTPS name:
+
+1. Pick a machine name you don't mind being public. Enabling HTTPS publishes `<machine>.<tailnet>.ts.net` in Certificate Transparency logs. Rename the machine first if needed.
+2. In the Tailscale admin console, DNS page: MagicDNS on, HTTPS Certificates enabled.
+3. Set `"serveBindPort": 8788` (any free port other than `bindPort`; unset = off, the default) in `config.json` and restart the host. It logs `tailscale serve listener on http://127.0.0.1:8788`.
+4. `tailscale serve --bg 8788` — **the serve port, never 8787**. Use the `https://…ts.net` address it prints as the Host URL.
+5. `tailscale serve status` must show the entry as tailnet only. Funnel stays off.
+
+What the serve listener does:
+
+- Binds `127.0.0.1` only.
+- Every request (HTTP and WebSocket upgrade, `/health` included) without a non-empty `Tailscale-User-Login` header gets `403`. Serve sets that header for signed-in tailnet users and strips client-sent copies. Funnel and tagged nodes get no header, so they fail closed.
+- `/`, `/setup`, `/connect.json`, and `/mcp/oauth/callback` are not mounted (`404`).
+- The host token is still required for the API.
+- Any request carrying `Tailscale-User-Login`, on either port, is not "this machine": no `?admin=1` profile records, no profile create/edit/delete, no MCP catalog apply or OAuth, no legacy `?token=` WebSocket. Direct loopback to `8787` without the header is unchanged.
+
+Do not point `tailscale serve` (or Funnel) at `8787`: its peer is loopback, which `8787` treats as the host machine.
+
 ### Import from disk
 
 `POST /projects/discover` (the apps' **Import from disk…**) lists git repos

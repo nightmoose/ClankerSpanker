@@ -32,14 +32,30 @@ npm install &amp;&amp; npm run build &amp;&amp; npm start</code></pre>
     <ol>
       <li>On the computer running the gateway, open <a href="http://127.0.0.1:8787/setup">http://127.0.0.1:8787/setup</a> and copy the host token. That page only answers on the host machine.</li>
       <li>In Chrome, open <a href="https://clankerspanker.tech/">https://clankerspanker.tech/</a>.</li>
-      <li>In Settings, leave Host URL as <code>http://127.0.0.1:8787</code> (or the port you set) and paste the token.</li>
+      <li>In Settings, leave Host URL as <code>http://127.0.0.1:8787</code> (or the port you set) and paste the token. For a gateway on another machine, see <a href="#tailnet">the tailnet steps</a> below.</li>
       <li>Allow Chrome's loopback permission when it asks. The session list then loads from your gateway, not from this website.</li>
     </ol>
     <p>The token is stored in this browser only. WebSocket updates use a single-use ticket. The token is not placed in the socket URL.</p>
 
     <div class="callout">
-      <p>Chrome is the browser that can reach a gateway on this computer from this site. Firefox and Safari do not. On the computer running the gateway, open <a href="http://127.0.0.1:8787/app/">http://127.0.0.1:8787/app/</a> yourself. This site does not redirect you there.</p>
+      <p>Only Chrome can reach a gateway on this computer (<code>http://127.0.0.1</code>) from this site. In Firefox and Safari, connect over your tailnet instead (next section), or on the computer running the gateway open <a href="http://127.0.0.1:8787/app/">http://127.0.0.1:8787/app/</a> yourself. This site does not redirect you there.</p>
     </div>
+
+    <h2 id="tailnet">Connect from another device, in any browser</h2>
+    <p>Use this for an iPhone, an iPad, another laptop, or Safari and Firefox on the gateway machine itself. <code>tailscale serve</code> gives the gateway an HTTPS address that only your tailnet can reach. TLS ends on your own machine. This website does not join your tailnet and does not relay anything.</p>
+    <ol>
+      <li><strong>Pick a machine name you don't mind being public.</strong> Turning on HTTPS gets a certificate for <code>&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code>, and every certificate is published in the public Certificate Transparency logs. If the name gives away something private (your name, a client, a project), rename the machine first in the Tailscale admin console (Machines → the machine → Edit machine name).</li>
+      <li><strong>Enable HTTPS for the tailnet.</strong> In the Tailscale admin console, open DNS, make sure MagicDNS is on, and enable HTTPS Certificates.</li>
+      <li><strong>Turn on the serve listener.</strong> In <code>~/.grok-dispatch/config.json</code> on the gateway machine, add a port that is not <code>bindPort</code>, then restart the gateway:
+        <pre><code>"serveBindPort": 8788</code></pre>
+        The gateway then also listens on <code>127.0.0.1:8788</code>, and only there. That port refuses every request that did not come through <code>tailscale serve</code> from a signed-in tailnet user, and it never serves the setup page or the token.</li>
+      <li><strong>Point Serve at that port, not at 8787.</strong>
+        <pre><code>tailscale serve --bg 8788</code></pre>
+        It prints the address, <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code>.</li>
+      <li><strong>Make sure Funnel is off.</strong> Run <code>tailscale serve status</code>. The entry must say <em>tailnet only</em>. If it mentions Funnel, turn Funnel off for that port before you go on. Funnel would put the address on the public internet. The gateway refuses Funnel traffic anyway, but don't rely on that alone.</li>
+      <li><strong>Connect.</strong> On the other device (signed in to the same tailnet), open <a href="https://clankerspanker.tech/">https://clankerspanker.tech/</a>. In Settings, set Host URL to the <code>https://…ts.net</code> address and paste the host token from the setup page on the gateway machine. Chrome asks for local network access because the address is on your tailnet; allow it. Safari and Firefox connect without that prompt.</li>
+    </ol>
+    <p>Through the tailnet address you can run and watch agents. Profile secrets, API keys, MCP sign-in, and creating or deleting profiles stay on the gateway machine itself. Tagged devices are not supported on the serve address, because Tailscale does not tell the gateway who is calling from them.</p>
 
     <h2>Other clients</h2>
     <p>These talk to the gateway directly. They do not use this website.</p>

@@ -9,7 +9,7 @@ Goal: **same story on every OS** — install the gateway and the agent CLIs with
 | **What** | Node process on port **8787** that runs Grok/Claude and serves REST/WS + `/app/` |
 | **Config** | `~/.grok-dispatch/config.json` (all OSes) |
 | **Dev** | `cd host && npm i && npm run build && npm start` |
-| **Website** | [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome talks to `http://127.0.0.1:8787` on that machine. Other browsers open `http://127.0.0.1:8787/app/` on the host. |
+| **Website** | [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome talks to `http://127.0.0.1:8787` on that machine. Any browser on the tailnet (Safari, Firefox, iPhone) uses `https://<machine>.<tailnet>.ts.net` from `tailscale serve` against `serveBindPort` ([host README](../host/README.md#tailscale-serve-https-for-any-browser-rfc-058-phase-2)). Or open `http://127.0.0.1:8787/app/` on the host. |
 
 ### Managed by desktop apps (preferred for laptops)
 
@@ -98,3 +98,4 @@ Future work (not required for host install parity):
 - Host token stays in `~/.grok-dispatch/config.json` (user-only permissions).  
 - Desktop apps may store a copy for API calls; host config remains source of truth.  
 - Do not expose `:8787` to the public internet.
+- `tailscale serve` goes against `serveBindPort`, never `:8787`. Keep Funnel off. Enabling Tailscale HTTPS puts the machine name in public Certificate Transparency logs, so rename a sensitively named machine first.

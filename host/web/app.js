@@ -4,11 +4,13 @@
  */
 
 import {
+  LOOPBACK_GATEWAY,
   LOOPBACK_SETUP,
   defaultGatewayURL,
   explainFetchFailure,
   gatewayTerminalURL,
   loopbackFetchInit,
+  normalizeHostURL,
   openWebSocket,
   productSiteKind,
   publicPageNotice,
@@ -1360,7 +1362,7 @@ function envFromText(text) {
 
 function connectionHint() {
   if (productSiteKind(location.hostname)) {
-    return `This page talks to a gateway on this computer. Host URL stays <code>${escapeHtml(state.baseURL)}</code> unless yours listens elsewhere. Paste the host token from <code>${escapeHtml(LOOPBACK_SETUP)}</code> on that machine. The token is not fetched from this website.`;
+    return `Host URL is <code>${escapeHtml(LOOPBACK_GATEWAY)}</code> for a gateway on this computer (Chrome), or the <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> address <code>tailscale serve</code> prints for one on your tailnet (any browser, see <a href="/download/">Download</a>). Paste the host token from <code>${escapeHtml(LOOPBACK_SETUP)}</code> on the gateway machine. The token is not fetched from this website.`;
   }
   return "When this UI is served by the host, Host URL can stay as this origin. Paste the host token from <code>/setup</code>.";
 }
@@ -1384,11 +1386,11 @@ function renderSettings() {
       <button type="button" class="secondary" id="s-clear" style="width:100%;margin-top:8px">Clear token</button>
     </div>`;
   $("#s-save")?.addEventListener("click", async () => {
-    state.baseURL = $("#s-url").value.trim().replace(/\/$/, "") || window.location.origin;
+    state.baseURL = normalizeHostURL($("#s-url").value) || window.location.origin;
     state.token = $("#s-token").value.trim();
     localStorage.setItem(STORAGE_URL, state.baseURL);
     localStorage.setItem(STORAGE_TOKEN, state.token);
-    syncTerminalLink();
+    showProductChrome();
     try {
       await api("/auth/validate", { method: "POST", body: "{}" });
       banner("Connected");
@@ -1490,6 +1492,7 @@ async function connectWs() {
       hostname: location.hostname,
       userAgent: navigator.userAgent,
       brave: Boolean(navigator.brave),
+      baseURL: state.baseURL,
     });
     if (notice) banner(notice, true);
     else if (productSiteKind(location.hostname)) banner(fetchFailure(err).message, true);
@@ -1634,6 +1637,7 @@ function showProductChrome() {
     hostname: location.hostname,
     userAgent: navigator.userAgent,
     brave: Boolean(navigator.brave),
+    baseURL: state.baseURL,
   });
   const limit = $("#browser-limit");
   if (limit) {

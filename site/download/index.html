@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Download — ClankerSpanker</title>
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="https://clankerspanker.tech/">ClankerSpanker</a>
+      <nav aria-label="Site">
+        <a href="https://clankerspanker.tech/">Product</a>
+        <a href="/download/" aria-current="page">Download</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+    </header>
+
+    <h1>Run the gateway, then open the product</h1>
+    <p class="muted">The website is the control plane. The gateway stays on your machine. Nothing you send to an agent is uploaded to this site.</p>
+
+    <h2>Run the gateway</h2>
+    <p>Requires Node 20+ and the agent CLI you want to drive (<code>grok</code>, <code>claude</code>).</p>
+    <pre><code>git clone https://github.com/nightmoose/ClankerSpanker.git
+cd ClankerSpanker/host
+npm install &amp;&amp; npm run build &amp;&amp; npm start</code></pre>
+    <p>Run it in the background from the repo with <code>./scripts/install-service.sh</code> (macOS launchd, or Linux <code>systemd --user</code>).</p>
+    <p>The gateway listens on loopback and this machine's Tailscale addresses. Do not publish port 8787 on the public internet. The default port is 8787; change it with <code>bindPort</code> in <code>~/.grok-dispatch/config.json</code>.</p>
+
+    <h2>Connect this page</h2>
+    <ol>
+      <li>On the computer running the gateway, open <a href="http://127.0.0.1:8787/setup">http://127.0.0.1:8787/setup</a> and copy the host token. That page only answers on the host machine.</li>
+      <li>In Chrome, open <a href="https://clankerspanker.tech/">https://clankerspanker.tech/</a>.</li>
+      <li>In Settings, leave Host URL as <code>http://127.0.0.1:8787</code> (or the port you set) and paste the token.</li>
+      <li>Allow Chrome's loopback permission when it asks. The session list then loads from your gateway, not from this website.</li>
+    </ol>
+    <p>The token is stored in this browser only. WebSocket updates use a single-use ticket. The token is not placed in the socket URL.</p>
+
+    <div class="callout">
+      <p>Chrome is the browser that can reach a gateway on this computer from this site. Firefox and Safari do not. On the computer running the gateway, open <a href="http://127.0.0.1:8787/app/">http://127.0.0.1:8787/app/</a> yourself. This site does not redirect you there.</p>
+    </div>
+
+    <h2>Other clients</h2>
+    <p>These talk to the gateway directly. They do not use this website.</p>
+    <ul>
+      <li>macOS: the native app in <code>ios/ClankerSpanker</code>. See the repository README.</li>
+      <li>Linux: the Electron app in <code>desktop/</code>.</li>
+      <li>iPhone: the phone scheme in the same <code>ios/</code> project, paired from the setup page on the host machine.</li>
+    </ul>
+
+    <h2>Previews</h2>
+    <p>Do not paste a host token into a <code>*.vercel.app</code> preview. A preview is a different origin. It cannot read a token stored on <a href="https://clankerspanker.tech/">https://clankerspanker.tech</a>, and the gateway does not allow that origin to read its API.</p>
+  </div>
+</body>
+</html>

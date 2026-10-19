@@ -1,5 +1,8 @@
 # Host
 host/node_modules/
+
+# Static product site. Built by site/build.mjs; Vercel publishes site/dist.
+site/dist/
 host/dist/
 host/*.log
 npm-debug.log*

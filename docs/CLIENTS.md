@@ -8,7 +8,7 @@ There is **one host gateway** (`host/`). Everything else is a **client** (and op
 |----------|--------|----------|---------------------|
 | **macOS laptop** | **Native Swift** | `ios/ClankerSpanker` → scheme `ClankerSpanker` → `ClankerSpankerMac.app` | Yes (`LocalHostController`, optional Application Support install + LaunchAgent) |
 | **Linux laptop** | **Electron** | `desktop/` | Yes (`host-process.js`, reads/writes `~/.grok-dispatch`) |
-| **Any OS browser** | Static UI | `host/web` served at `/app/` | No — host must already be running |
+| **Any OS browser** | Static UI | [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome, or `host/web` at `/app/` on the gateway | No — host must already be running |
 | **iPhone** | SwiftUI | same `ios/` sources, scheme **ClankerSpankerPhone** → **your iPhone** | No — remote host only |
 
 **Configurator** (not a client, no session UI): **ClankerSpankerHostTray** —

@@ -25,6 +25,10 @@ iOS (phone)     ──┘                              └── claude (+ appro
 
 ## Quickstart
 
+The primary website is [https://clankerspanker.tech/](https://clankerspanker.tech/).
+In Chrome, with the gateway already running on that computer, paste `http://127.0.0.1:8787` and the token from the host machine's setup page.
+Firefox and Safari use the on-machine page instead: `http://127.0.0.1:8787/app/`. That address is one you open; the site does not redirect you there.
+
 Requires Node 20+ and the agent CLI(s) you want to drive (`grok`, `claude`).
 
 ```bash
@@ -34,7 +38,7 @@ npm install && npm run build && npm start
 ```
 
 1. Open `http://localhost:8787/setup` **on the host machine** to see the QR code and token.
-2. Open `http://localhost:8787/app/` in a browser and sign in with the token, or pair the iOS / desktop client.
+2. Open [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome and sign in with the token, or open `http://localhost:8787/app/` on the host machine, or pair the iOS / desktop client.
 3. Pick a project and send your first prompt.
 
 Run it as a background service: `./scripts/install-service.sh` (macOS launchd / Linux `systemd --user`).
@@ -63,7 +67,7 @@ ClankerSpanker/
 
 | | |
 |--|--|
-| Browser UI | `http://<host-ip>:8787/app/` |
+| Browser UI | [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome, or `http://<host-ip>:8787/app/` on the gateway |
 | Pair a phone | `http://localhost:8787/setup` on the host (QR code; host-machine only) |
 | Config | `~/.grok-dispatch/config.json` (legacy directory name from the project's earlier name; kept for compatibility) |
 
@@ -96,7 +100,9 @@ Standalone host + agent CLIs: [docs/STANDALONE-INSTALLS.md](docs/STANDALONE-INST
 
 ### Browser (any OS)
 
-Open `/app/` with the host token. No local process management.
+Chrome on the same computer as the gateway: [https://clankerspanker.tech/](https://clankerspanker.tech/).
+Any browser on the host machine: `http://127.0.0.1:8787/app/` with the host token.
+No local process management.
 
 ### iPhone
 

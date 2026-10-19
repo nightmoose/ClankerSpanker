@@ -16,7 +16,8 @@ First run writes `~/.grok-dispatch/config.json` (mode `0600`) including a **host
 
 | URL | Purpose |
 |-----|---------|
-| `http://<host>:8787/app/` | Browser control plane |
+| [https://clankerspanker.tech/](https://clankerspanker.tech/) | Primary website. Chrome on the same machine calls this gateway over loopback |
+| `http://<host>:8787/app/` | The same control plane, served by the gateway (any browser on a machine that can reach it) |
 | `http://localhost:8787/setup` | Pairing: QR code + token. **Only answers on the host machine itself** |
 | `http://<host>:8787/health` | Liveness |
 

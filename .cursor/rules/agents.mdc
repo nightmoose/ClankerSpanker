@@ -1,0 +1,13 @@
+---
+description: Mandatory repo rules for every agent. Read AGENTS.md first.
+alwaysApply: true
+---
+
+Read and follow `AGENTS.md` at the repo root before any change. It is mandatory.
+
+Short version:
+
+- RFC numbers are global across every branch. Run `git fetch --prune origin && make rfc SLUG=...`. Never pick a number yourself.
+- Branch from a freshly fetched `origin/main`.
+- `make check` must pass before you push. New host modules ship with tests.
+- Never merge your own PR, force-push branches you didn't create, touch auth/CORS/token code without an RFC, or change deploy/DNS settings.

@@ -10,6 +10,8 @@ Always:
 
 When compared to a git base (origin/main if present, else empty-tree):
   - new 192.168.* literals outside the allowlist fail
+  - an RFC file added on this branch may not reuse a number that any other
+    origin/* branch already has under a different filename
 """
 from __future__ import annotations
 
@@ -102,6 +104,49 @@ def check_rfcs() -> list[str]:
     dupes = sorted({n for n in nums if nums.count(n) > 1})
     if dupes:
         errors.append("duplicate RFC numbers: " + ", ".join(f"{n:03d}" for n in dupes))
+    return errors
+
+
+def rfc_files_on(ref: str) -> list[str]:
+    r = run(["git", "ls-tree", "--name-only", ref, "docs/rfcs/"])
+    if r.returncode != 0:
+        return []
+    return [Path(n).name for n in r.stdout.splitlines() if RFC_NAME.match(Path(n).name)]
+
+
+def check_rfc_claims_across_branches(files: list[str]) -> list[str]:
+    """Numbers are global across every branch, not per branch.
+
+    Three different RFC-058s existed at once because each branch only
+    checked its own tree. Any RFC this branch adds must not take a number
+    some other origin/* branch already uses for a different file.
+    """
+    added = [
+        Path(f).name for f in files
+        if f.startswith("docs/rfcs/") and RFC_NAME.match(Path(f).name)
+        and (ROOT / f).exists()
+    ]
+    if not added:
+        return []
+    refs = run(["git", "for-each-ref", "--format=%(refname)", "refs/remotes/origin/"])
+    claims: dict[str, set[tuple[str, str]]] = {}
+    for ref in refs.stdout.splitlines():
+        if ref.endswith("/HEAD"):
+            continue
+        for name in rfc_files_on(ref):
+            claims.setdefault(name[:3], set()).add((name, ref.removeprefix("refs/remotes/")))
+    errors: list[str] = []
+    for name in sorted(set(added)):
+        clash = sorted(
+            f"{other} on {ref}" for other, ref in claims.get(name[:3], set())
+            if other != name
+        )
+        if clash:
+            errors.append(
+                f"RFC number {name[:3]} in {name} is already taken: "
+                + "; ".join(clash)
+                + ". Run `make rfc SLUG=...` after `git fetch origin` for a free number."
+            )
     return errors
 
 
@@ -252,6 +297,8 @@ def main() -> int:
     print(f"== diff vs {base or '(no origin/main)'} ==")
     files = changed_files(base)
     errors += check_new_lan_ips(files, base)
+    print("== RFC numbers vs other branches ==")
+    errors += check_rfc_claims_across_branches(files)
     if errors:
         print("\nHOUSE STYLE FAILED:")
         for e in errors:

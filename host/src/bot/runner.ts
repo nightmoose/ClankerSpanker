@@ -46,6 +46,8 @@ export async function runBotSession(opts: {
   promptMaxMs?: number;
   toolsAllowlist?: string[];
   autoApproveKinds: string[];
+  /** Host data dir — CLI login is `{dataDir}/grok-homes/{profileId}/auth.json`. */
+  dataDir?: string;
   fetchImpl?: FetchLike;
   /** Test seam — production callers omit this and pickProvider is used. */
   provider?: import("./protocol.js").ChatProvider;
@@ -55,7 +57,7 @@ export async function runBotSession(opts: {
   const { session, profile, callbacks } = opts;
   const fetchImpl = opts.fetchImpl ?? fetch;
   const tools = toolsForAllowlist(opts.toolsAllowlist);
-  const provider = opts.provider ?? (await pickProvider(profile, fetchImpl));
+  const provider = opts.provider ?? (await pickProvider(profile, fetchImpl, { dataDir: opts.dataDir }));
   const maxTurns = opts.maxTurns ?? 20;
   const maxMs = opts.promptMaxMs && opts.promptMaxMs > 0 ? opts.promptMaxMs : DEFAULT_PROMPT_MAX_MS;
 

@@ -6,6 +6,7 @@ import {
   defaultGatewayURL,
   explainFetchFailure,
   gatewayTerminalURL,
+  hostUpdateAvailable,
   isChromeUserAgent,
   isLoopbackHost,
   isTailnetServeURL,
@@ -235,5 +236,37 @@ describe("tailnet serve URL (RFC-058 phase 2)", () => {
       errorMessage: "The host rejected this browser's token",
     });
     expect(rejected).toContain("rejected");
+  });
+});
+
+describe("hostUpdateAvailable (RFC-059)", () => {
+  it("shows on the gateway's own /app/ page, loopback or Tailscale IP", () => {
+    expect(
+      hostUpdateAvailable({ pageOrigin: "http://127.0.0.1:8787", baseURL: "http://127.0.0.1:8787", hostname: "127.0.0.1" }),
+    ).toBe(true);
+    expect(
+      hostUpdateAvailable({ pageOrigin: "http://100.64.0.10:8787", baseURL: "http://100.64.0.10:8787", hostname: "100.64.0.10" }),
+    ).toBe(true);
+  });
+
+  it("hides on the hosted site and previews", () => {
+    expect(
+      hostUpdateAvailable({ pageOrigin: HOSTED_PRODUCT_ORIGIN, baseURL: LOOPBACK_GATEWAY, hostname: "clankerspanker.tech" }),
+    ).toBe(false);
+    expect(
+      hostUpdateAvailable({ pageOrigin: "https://x.vercel.app", baseURL: "https://x.vercel.app", hostname: "x.vercel.app" }),
+    ).toBe(false);
+  });
+
+  it("hides through tailscale serve, even same-origin", () => {
+    const serve = "https://node.tail1234.ts.net";
+    expect(hostUpdateAvailable({ pageOrigin: serve, baseURL: serve, hostname: "node.tail1234.ts.net" })).toBe(false);
+  });
+
+  it("hides when the page points at another gateway or the URL is junk", () => {
+    expect(
+      hostUpdateAvailable({ pageOrigin: "http://127.0.0.1:8787", baseURL: "http://100.64.0.10:8787", hostname: "127.0.0.1" }),
+    ).toBe(false);
+    expect(hostUpdateAvailable({ pageOrigin: "http://127.0.0.1:8787", baseURL: "", hostname: "127.0.0.1" })).toBe(false);
   });
 });

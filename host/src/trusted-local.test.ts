@@ -4,6 +4,7 @@ import {
   corsAllowedFor,
   corsHeadersFor,
   isTrustedLocalPageRequest,
+  nativeOnlyRefusal,
   stripPort,
 } from "./trusted-local.js";
 
@@ -116,5 +117,58 @@ describe("corsHeadersFor", () => {
       expect(corsHeadersFor(path, HOSTED_PRODUCT_ORIGIN)).toBeNull();
       expect(corsHeadersFor(path, undefined)).toBeNull();
     }
+  });
+});
+
+describe("nativeOnlyRefusal (RFC-059, RFC-060)", () => {
+  const h = (headers: Record<string, string>) => ({ headers });
+
+  it("allows a native client, which sends no Origin, from any address", () => {
+    expect(nativeOnlyRefusal(h({ host: "100.64.0.10:8787" }))).toBeNull();
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787" }))).toBeNull();
+  });
+
+  it("allows the gateway's own page on the direct listener", () => {
+    expect(
+      nativeOnlyRefusal(
+        h({ host: "100.64.0.10:8787", origin: "http://100.64.0.10:8787", "sec-fetch-site": "same-origin" }),
+      ),
+    ).toBeNull();
+    expect(nativeOnlyRefusal(h({ host: "localhost:8787", "sec-fetch-site": "same-origin" }))).toBeNull();
+  });
+
+  it("refuses the hosted product site", () => {
+    expect(
+      nativeOnlyRefusal(h({ host: "127.0.0.1:8787", origin: HOSTED_PRODUCT_ORIGIN, "sec-fetch-site": "cross-site" })),
+    ).toMatch(/native apps/);
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", origin: HOSTED_PRODUCT_ORIGIN }))).toMatch(/native apps/);
+  });
+
+  it("refuses foreign and null origins", () => {
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", origin: "https://evil.example" }))).not.toBeNull();
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", origin: "null" }))).not.toBeNull();
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", origin: "https://127.0.0.1:8787" }))).not.toBeNull();
+  });
+
+  it("refuses a cross-site browser request that omits Origin", () => {
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", "sec-fetch-site": "cross-site" }))).not.toBeNull();
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", "sec-fetch-site": "same-site" }))).not.toBeNull();
+  });
+
+  it("refuses anything that came through tailscale serve, same-origin or not", () => {
+    expect(nativeOnlyRefusal(h({ host: "node.tail.ts.net", "tailscale-user-login": "me@example.com" }))).toMatch(
+      /tailscale serve/,
+    );
+    expect(
+      nativeOnlyRefusal(
+        h({
+          host: "node.tail.ts.net",
+          origin: "http://node.tail.ts.net",
+          "sec-fetch-site": "same-origin",
+          "tailscale-user-login": "me@example.com",
+        }),
+      ),
+    ).toMatch(/tailscale serve/);
+    expect(nativeOnlyRefusal(h({ host: "127.0.0.1:8787", "tailscale-user-login": "" }))).not.toBeNull();
   });
 });

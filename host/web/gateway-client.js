@@ -67,6 +67,23 @@ export function productSiteKind(hostname) {
 }
 
 /**
+ * Whether this page may offer "Update this host" (RFC-059). The gateway only
+ * honors `/host/update` from native apps and from its own page on the direct
+ * listener, so the button shows only when the page and the gateway share an
+ * origin and that origin is not a `tailscale serve` name. The hosted site,
+ * Vercel previews, and any page pointed at another gateway hide it.
+ */
+export function hostUpdateAvailable({ pageOrigin, baseURL, hostname }) {
+  if (productSiteKind(hostname)) return false;
+  if (isTailnetServeURL(pageOrigin) || isTailnetServeURL(baseURL)) return false;
+  try {
+    return new URL(baseURL).origin === new URL(pageOrigin).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Chrome, including desktop Chrome. Edge, Opera, Samsung Internet, iOS Chrome
  * (WebKit), and Brave are not Chrome. Brave shares Chrome's user-agent string;
  * pass `brave: true` when `navigator.brave` exists.

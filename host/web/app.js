@@ -9,6 +9,7 @@ import {
   defaultGatewayURL,
   explainFetchFailure,
   gatewayTerminalURL,
+  hostUpdateAvailable,
   loopbackFetchInit,
   normalizeHostURL,
   openWebSocket,
@@ -1367,13 +1368,37 @@ function connectionHint() {
   return "When this UI is served by the host, Host URL can stay as this origin. Paste the host token from <code>/setup</code>.";
 }
 
+/** `/host/update` answers only native apps and the gateway's own page (RFC-059). */
+function canUpdateHost() {
+  return hostUpdateAvailable({
+    pageOrigin: location.origin,
+    baseURL: state.baseURL,
+    hostname: location.hostname,
+  });
+}
+
 function renderSettings() {
   showView("settings");
+  // Keep a socket refresh from painting the session list over this page.
+  state.tab = "settings";
   const root = $("#view-settings");
   const siteLinks = productSiteKind(location.hostname)
     ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
     : "";
-  root.innerHTML = `
+  const updateCard = canUpdateHost()
+    ? `
+    <div class="card" id="host-update-card">
+      <h3>Update this host</h3>
+      <p class="preview" id="host-update-summary">Checking the checkout…</p>
+      <p class="meta" id="host-update-meta"></p>
+      <div class="row-actions" style="margin-top:12px">
+        <button type="button" class="primary" id="host-update-apply" disabled>Update from repo</button>
+        <button type="button" class="secondary" id="host-update-check">Check again</button>
+      </div>
+      <p class="preview">Ships with the host, so a machine that only has the host can use it. Fast-forwards that machine’s git checkout, rebuilds, and restarts. Dirty or diverged branches are left alone.</p>
+    </div>`
+    : "";
+  root.innerHTML = `${updateCard}
     <div class="card">
       <h3>Connection</h3>
       ${siteLinks}
@@ -1412,6 +1437,52 @@ function renderSettings() {
     setConn(false);
     banner("Token cleared");
   });
+  $("#host-update-check")?.addEventListener("click", () => loadHostUpdate());
+  $("#host-update-apply")?.addEventListener("click", () => applyHostUpdate());
+  loadHostUpdate();
+}
+
+async function loadHostUpdate() {
+  const summary = $("#host-update-summary");
+  const meta = $("#host-update-meta");
+  const btn = $("#host-update-apply");
+  if (!summary) return;
+  if (!state.token) {
+    summary.textContent = "Save the host token below first.";
+    if (meta) meta.textContent = "";
+    if (btn) btn.disabled = true;
+    return;
+  }
+  summary.textContent = "Checking the checkout…";
+  if (btn) btn.disabled = true;
+  try {
+    const s = await api("/host/update?fetch=1");
+    summary.textContent = s.summary || s.state || "Checked";
+    const bits = [];
+    if (s.repoDir) bits.push(s.repoDir);
+    if (s.upstream) bits.push(s.upstream);
+    if (s.autoUpdate) bits.push("auto-update on");
+    if (meta) meta.textContent = bits.join(" · ");
+    if (btn) btn.disabled = !s.canApply;
+  } catch (e) {
+    summary.textContent = e.message;
+    if (meta) meta.textContent = "";
+    if (btn) btn.disabled = true;
+  }
+}
+
+async function applyHostUpdate() {
+  const btn = $("#host-update-apply");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api("/host/update", { method: "POST", body: "{}" });
+    banner("Update started. This page will drop offline for a moment, then come back.");
+    const summary = $("#host-update-summary");
+    if (summary && r.status?.summary) summary.textContent = r.status.summary;
+  } catch (e) {
+    banner(e.message, true);
+    await loadHostUpdate();
+  }
 }
 
 // ——— Data / WS ———
@@ -1585,6 +1656,7 @@ function boot() {
   });
   $("#btn-refresh")?.addEventListener("click", () => refresh());
   $("#btn-settings")?.addEventListener("click", () => renderSettings());
+  $("#btn-host-update")?.addEventListener("click", () => renderSettings());
   $("#btn-archived")?.addEventListener("click", () => {
     state.showArchived = !state.showArchived;
     state.tab = "active";
@@ -1594,6 +1666,7 @@ function boot() {
 
   // Prefer token from ?token= once (setup flow)
   const q = new URLSearchParams(location.search);
+  const openUpdate = q.get("update") === "1";
   if (q.get("token")) {
     state.token = q.get("token");
     localStorage.setItem(STORAGE_TOKEN, state.token);
@@ -1603,6 +1676,9 @@ function boot() {
   const start = () => {
     if (!state.token) {
       renderSettings();
+    } else if (openUpdate) {
+      connectWs();
+      refresh().then(() => renderSettings());
     } else {
       connectWs();
       refresh().then(() => renderList());
@@ -1649,6 +1725,7 @@ function showProductChrome() {
     }
   }
   if (productSiteKind(location.hostname)) $("#site-nav")?.classList.add("on");
+  $("#btn-host-update")?.classList.toggle("hidden", !canUpdateHost());
   syncTerminalLink();
 }
 

@@ -132,3 +132,44 @@ export function corsHeadersFor(path: string, origin: string | undefined): CorsHe
 function normalizeOrigin(origin: string | undefined): string {
   return (origin ?? "").trim().toLowerCase();
 }
+
+/**
+ * Routes that act on the machine with no approval card: `POST /exec` runs a
+ * shell command (RFC-060) and `/host/update` fast-forwards and restarts the
+ * gateway (RFC-059). The host token alone is not enough for them, because
+ * since RFC-058 phase 2 the token also works from browsers that are not the
+ * gateway's own page.
+ */
+export const NATIVE_ONLY_PATHS = new Set(["/exec", "/host/update"]);
+
+/**
+ * Why a native-only route must refuse this request, or null to let it through.
+ *
+ * Allowed: native clients (iOS, Mac), which send no `Origin`, and the
+ * gateway's own pages (`/app/`, `/setup`) on the direct listener, whose
+ * `Origin` is `http://<Host header>`. A phone on a Tailscale IP passes, since
+ * the peer address is not checked.
+ *
+ * Refused:
+ *  - `Tailscale-User-Login` on any listener: the request came through
+ *    `tailscale serve`, which is how a browser on another tailnet device, or
+ *    the hosted site, reaches the gateway;
+ *  - any other `Origin`, including `https://clankerspanker.tech` and `null`
+ *    (sandboxed frames; Electron does not call these routes);
+ *  - `Sec-Fetch-Site` other than `same-origin` or `none`, for a browser GET
+ *    that omits `Origin`.
+ */
+export function nativeOnlyRefusal(req: Pick<IncomingMessage, "headers">): string | null {
+  if (hasTailscaleUserHeader(req.headers)) {
+    return "Not available through tailscale serve. Use the iOS or Mac app, or the web UI at http://<host>:8787/app/.";
+  }
+  const site = firstHeader(req.headers["sec-fetch-site"])?.toLowerCase();
+  if (site && site !== "same-origin" && site !== "none") {
+    return "Only the native apps and the gateway's own web UI can call this route.";
+  }
+  const origin = firstHeader(req.headers.origin)?.trim().toLowerCase();
+  if (origin === undefined || origin === "") return null;
+  const host = firstHeader(req.headers.host)?.trim().toLowerCase();
+  if (host && origin === `http://${host}`) return null;
+  return "Only the native apps and the gateway's own web UI can call this route.";
+}

@@ -61,7 +61,12 @@ import {
   serveListenerGate,
   tailscaleUserLogin,
 } from "./tailscale-serve.js";
-import { corsHeadersFor, isTrustedLocalPageRequest } from "./trusted-local.js";
+import {
+  NATIVE_ONLY_PATHS,
+  corsHeadersFor,
+  isTrustedLocalPageRequest,
+  nativeOnlyRefusal,
+} from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
@@ -489,6 +494,17 @@ async function handleHttp(
       bindPort: config.bindPort,
     });
     return;
+  }
+
+  // Shell exec and self-update skip the approval card, so the token is not
+  // enough: refuse the hosted site, foreign origins, and the serve listener
+  // (RFC-059, RFC-060).
+  if (NATIVE_ONLY_PATHS.has(path)) {
+    const refusal = nativeOnlyRefusal(req);
+    if (refusal) {
+      json(res, 403, { error: "Forbidden", message: refusal });
+      return;
+    }
   }
 
   // RFC-059: compare this machine's checkout to its upstream, and fast-forward when asked.

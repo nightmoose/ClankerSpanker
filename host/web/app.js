@@ -9,6 +9,7 @@ import {
   defaultGatewayURL,
   explainFetchFailure,
   gatewayTerminalURL,
+  hostUpdateAvailable,
   loopbackFetchInit,
   normalizeHostURL,
   openWebSocket,
@@ -1367,6 +1368,15 @@ function connectionHint() {
   return "When this UI is served by the host, Host URL can stay as this origin. Paste the host token from <code>/setup</code>.";
 }
 
+/** `/host/update` answers only native apps and the gateway's own page (RFC-059). */
+function canUpdateHost() {
+  return hostUpdateAvailable({
+    pageOrigin: location.origin,
+    baseURL: state.baseURL,
+    hostname: location.hostname,
+  });
+}
+
 function renderSettings() {
   showView("settings");
   // Keep a socket refresh from painting the session list over this page.
@@ -1375,7 +1385,8 @@ function renderSettings() {
   const siteLinks = productSiteKind(location.hostname)
     ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
     : "";
-  root.innerHTML = `
+  const updateCard = canUpdateHost()
+    ? `
     <div class="card" id="host-update-card">
       <h3>Update this host</h3>
       <p class="preview" id="host-update-summary">Checking the checkout…</p>
@@ -1385,7 +1396,9 @@ function renderSettings() {
         <button type="button" class="secondary" id="host-update-check">Check again</button>
       </div>
       <p class="preview">Ships with the host, so a machine that only has the host can use it. Fast-forwards that machine’s git checkout, rebuilds, and restarts. Dirty or diverged branches are left alone.</p>
-    </div>
+    </div>`
+    : "";
+  root.innerHTML = `${updateCard}
     <div class="card">
       <h3>Connection</h3>
       ${siteLinks}
@@ -1712,6 +1725,7 @@ function showProductChrome() {
     }
   }
   if (productSiteKind(location.hostname)) $("#site-nav")?.classList.add("on");
+  $("#btn-host-update")?.classList.toggle("hidden", !canUpdateHost());
   syncTerminalLink();
 }
 

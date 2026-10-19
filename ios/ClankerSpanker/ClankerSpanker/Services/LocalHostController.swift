@@ -143,6 +143,13 @@ final class LocalHostController: ObservableObject {
     private let maxLogs = 200
     private var healthTimer: Timer?
 
+    /// RFC-064: install / LaunchAgent state, probed off the main thread in
+    /// `refreshStatus`. Views read this; they never run launchctl themselves.
+    @Published private(set) var service: HostServiceStatus?
+    /// Set by the Host panel while it installs, loads or unloads the agent, so
+    /// launch-time recovery does not race a deliberate bootout.
+    var serviceChangeInProgress = false
+
     /// LaunchAgent labels this app knows about, in preference order.
     /// The app-managed install (`clankerspanker-host`) wins over the repo
     /// standalone (`grok-dispatch-host`) when both are present.
@@ -164,6 +171,32 @@ final class LocalHostController: ObservableObject {
             hostPackagePath = Self.defaultHostPackagePath() ?? ""
         }
         startHealthPolling()
+        // XCTest is hosted by this app; never touch the real LaunchAgent from tests.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            Task { await recoverLaunchAgentIfNeeded() }
+        }
+    }
+
+    /// RFC-064: if the app died mid-install (plist written, agent booted out,
+    /// never bootstrapped), the gateway stays down until someone loads it.
+    /// launchd would load that plist at the next login anyway, so do it now.
+    /// Runs once per launch, not on every health poll: during an install the
+    /// agent is briefly unloaded on purpose.
+    func recoverLaunchAgentIfNeeded() async {
+        await refreshStatus()
+        guard service?.recovery == .loadAppAgent, !serviceChangeInProgress else { return }
+        let label = LocalHostConfigFile.launchAgentLabel
+        appendLog("[desktop] \(label) plist is present but not loaded (interrupted install?) — loading it")
+        serviceChangeInProgress = true
+        defer { serviceChangeInProgress = false }
+        do {
+            try await HostInstaller.loadExistingLaunchAgent { [weak self] line in
+                DispatchQueue.main.async { self?.appendLog("[desktop] \(line)") }
+            }
+        } catch {
+            lastError = "\(label) is installed but could not be loaded: \(error.localizedDescription). Use Host → Load LaunchAgent."
+        }
+        await refreshStatus()
     }
 
     private static func defaultHostPackagePath() -> String? {
@@ -218,14 +251,25 @@ final class LocalHostController: ObservableObject {
     func refreshStatus() async {
         await probeAPI()
         listenerPid = await Self.findListenerPid(port: readBindPort())
-        loadedAgentLabel = await Self.firstLoadedAgentLabel(Self.knownAgentLabels)
+        let status = await Self.probeService()
+        service = status
+        loadedAgentLabel = status.loadedAgentLabel
+    }
+
+    /// `HostServiceStatus.probe` on a utility queue.
+    private static func probeService() async -> HostServiceStatus {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .utility).async {
+                cont.resume(returning: HostServiceStatus.probe())
+            }
+        }
     }
 
     /// Kickstart the gateway via launchd. Never spawns node in-process.
     /// Tries `clankerspanker-host` first, then falls back to
     /// `grok-dispatch-host`. If neither is loaded, points the user at the
-    /// two install paths.
-    func start() {
+    /// two install paths. launchctl runs off the main thread (RFC-064).
+    func start() async {
         lastError = nil
         if apiReachable {
             appendLog("[desktop] gateway already reachable at \(localBaseURL) — no kickstart needed")
@@ -234,7 +278,7 @@ final class LocalHostController: ObservableObject {
         let uid = getuid()
         for label in Self.knownAgentLabels {
             appendLog("[desktop] kickstart gui/\(uid)/\(label)")
-            let (ok, output) = Self.launchctl(["kickstart", "-k", "gui/\(uid)/\(label)"])
+            let (ok, output) = await Self.launchctlAsync(["kickstart", "-k", "gui/\(uid)/\(label)"])
             if ok {
                 appendLog("[desktop] kickstarted \(label)")
                 Task { await refreshStatus() }
@@ -269,9 +313,10 @@ final class LocalHostController: ObservableObject {
     }
 
     /// Run `/bin/launchctl` synchronously. Returns (success, combined output).
-    /// Success means the process exited 0.
+    /// Success means the process exited 0. Blocks on `waitUntilExit`, which
+    /// spins the run loop: never call it on the main thread (RFC-064).
     @discardableResult
-    static func launchctl(_ args: [String]) -> (ok: Bool, output: String) {
+    nonisolated static func launchctl(_ args: [String]) -> (ok: Bool, output: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = args
@@ -289,20 +334,11 @@ final class LocalHostController: ObservableObject {
         }
     }
 
-    /// First LaunchAgent label in `candidates` that `launchctl print` reports
-    /// as loaded for the current GUI session. Nil if none are loaded.
-    static func firstLoadedAgentLabel(_ candidates: [String]) async -> String? {
+    /// `launchctl(_:)` on a utility queue.
+    static func launchctlAsync(_ args: [String]) async -> (ok: Bool, output: String) {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
-                let uid = getuid()
-                for label in candidates {
-                    let (ok, _) = launchctl(["print", "gui/\(uid)/\(label)"])
-                    if ok {
-                        cont.resume(returning: label)
-                        return
-                    }
-                }
-                cont.resume(returning: nil)
+                cont.resume(returning: launchctl(args))
             }
         }
     }
@@ -337,7 +373,7 @@ final class LocalHostController: ObservableObject {
     func bootstrapLocalHost() async -> (url: String, token: String)? {
         await refreshStatus()
         if !apiReachable {
-            start()
+            await start()
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 await probeAPI()
@@ -388,7 +424,7 @@ final class LocalHostController: ObservableObject {
     func readHostToken() -> String? { nil }
     func readBindPort() -> Int { 8787 }
     func refreshStatus() async {}
-    func start() { lastError = "Host process control is macOS-only" }
+    func start() async { lastError = "Host process control is macOS-only" }
     func stop() {}
     func bootstrapLocalHost() async -> (url: String, token: String)? { nil }
     static func readTokenFromConfigFile() -> String? { nil }

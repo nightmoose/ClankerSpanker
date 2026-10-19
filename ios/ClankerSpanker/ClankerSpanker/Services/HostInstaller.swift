@@ -4,45 +4,131 @@ import AppKit
 
 /// Installs the Node host into Application Support and manages a user LaunchAgent.
 /// Source can be a monorepo `host/` checkout; install root is not a git tree.
-@MainActor
-enum HostInstaller {
-    static var installRoot: URL { LocalHostConfigFile.installedHostRoot }
-    static var label: String { LocalHostConfigFile.launchAgentLabel }
-    static var plistURL: URL { LocalHostConfigFile.launchAgentPlistURL }
+/// What the Host panel shows about the app-managed install, and what to do
+/// about it. RFC-064: built off the main thread by `probe`, published by
+/// `LocalHostController.refreshStatus`. SwiftUI bodies only read it.
+struct HostServiceStatus: Equatable {
+    var packageInstalled: Bool
+    var plistPresent: Bool
+    var appAgentLoaded: Bool
+    var standaloneAgentLoaded: Bool
 
-    static var isInstalled: Bool {
-        FileManager.default.fileExists(
-            atPath: installRoot.appendingPathComponent("dist/index.js").path
-        )
+    enum Recovery: Equatable {
+        case none
+        /// Package and plist are on disk but launchd has not loaded the agent,
+        /// e.g. the app died between `bootout` and `bootstrap`.
+        case loadAppAgent
     }
 
-    static var launchAgentLoaded: Bool {
-        let pipe = Pipe()
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = ["print", "gui/\(getuid())/\(label)"]
-        p.standardOutput = pipe
-        p.standardError = pipe
-        do {
-            try p.run()
-            p.waitUntilExit()
-            return p.terminationStatus == 0
-        } catch {
-            return false
-        }
+    /// The repo-standalone agent binds the same port, so never load ours over it.
+    var recovery: Recovery {
+        packageInstalled && plistPresent && !appAgentLoaded && !standaloneAgentLoaded
+            ? .loadAppAgent : .none
+    }
+
+    var loadedAgentLabel: String? {
+        if appAgentLoaded { return LocalHostConfigFile.launchAgentLabel }
+        if standaloneAgentLoaded { return HostInstaller.standaloneLabel }
+        return nil
+    }
+
+    /// Runs `isLoaded` (a `launchctl print`) — never call on the main thread.
+    nonisolated static func probe(
+        installRoot: URL = LocalHostConfigFile.installedHostRoot,
+        plistURL: URL = LocalHostConfigFile.launchAgentPlistURL,
+        appLabel: String = LocalHostConfigFile.launchAgentLabel,
+        standaloneLabel: String = HostInstaller.standaloneLabel,
+        isLoaded: (String) -> Bool = HostInstaller.isAgentLoaded
+    ) -> HostServiceStatus {
+        let fm = FileManager.default
+        return HostServiceStatus(
+            packageInstalled: fm.fileExists(atPath: installRoot.appendingPathComponent("dist/index.js").path),
+            plistPresent: fm.fileExists(atPath: plistURL.path),
+            appAgentLoaded: isLoaded(appLabel),
+            standaloneAgentLoaded: isLoaded(standaloneLabel)
+        )
+    }
+}
+
+/// Installs the Node host into Application Support and manages a user LaunchAgent.
+/// Source can be a monorepo `host/` checkout; install root is not a git tree.
+///
+/// RFC-064: every function that runs a subprocess is `nonisolated` and
+/// synchronous, and is only called through `offMain`. `Process.waitUntilExit`
+/// spins the run loop; on the main thread that re-enters SwiftUI mid-update
+/// and crashed the app between `bootout` and `bootstrap`.
+@MainActor
+enum HostInstaller {
+    nonisolated static var installRoot: URL { LocalHostConfigFile.installedHostRoot }
+    nonisolated static var label: String { LocalHostConfigFile.launchAgentLabel }
+    nonisolated static var plistURL: URL { LocalHostConfigFile.launchAgentPlistURL }
+    nonisolated static let standaloneLabel = "com.nightmoose.grok-dispatch-host"
+
+    /// `launchctl print` exit status. Blocks; never call on the main thread.
+    nonisolated static func isAgentLoaded(_ label: String) -> Bool {
+        LocalHostController.launchctl(["print", "gui/\(getuid())/\(label)"]).ok
     }
 
     /// Copy/build host into Application Support and optionally load launchd.
     /// `takeoverStandalone` boots out `com.nightmoose.grok-dispatch-host`
     /// first if it is loaded — required because both agents bind port 8787.
+    /// Reads and saves the source path on the main actor; the build, npm and
+    /// launchctl run off it. `log` may be called from any thread.
     static func install(
         fromSource source: URL?,
         loadLaunchAgent: Bool = true,
         takeoverStandalone: Bool = false,
-        log: (String) -> Void = { _ in }
+        log: @escaping (String) -> Void = { _ in }
+    ) async throws {
+        let src = try resolveSource(source, log: log)
+        try await offMain {
+            try installPackage(
+                from: src,
+                loadLaunchAgent: loadLaunchAgent,
+                takeoverStandalone: takeoverStandalone,
+                log: log
+            )
+        }
+        // RFC-027: remember where we installed FROM. Saving installRoot made the
+        // next update copy the install root onto itself and delete dist/.
+        LocalHostController.shared.savePackagePath(src.path)
+        log("Installed host → \(installRoot.path)")
+    }
+
+    /// Writes the plist and (re)loads the agent, off the main thread.
+    static func loadLaunchAgent(takeoverStandalone: Bool = false, log: @escaping (String) -> Void = { _ in }) async throws {
+        try await offMain { try installLaunchAgent(takeoverStandalone: takeoverStandalone, log: log) }
+    }
+
+    /// RFC-064 recovery: bootstrap the plist already on disk without rewriting it.
+    static func loadExistingLaunchAgent(log: @escaping (String) -> Void = { _ in }) async throws {
+        try await offMain { try bootstrapAgent(log: log) }
+    }
+
+    static func unloadLaunchAgent(log: @escaping (String) -> Void = { _ in }) async throws {
+        try await offMain { try unloadLaunchAgentSync(log: log) }
+    }
+
+    static func uninstall(removeFiles: Bool = false, log: @escaping (String) -> Void = { _ in }) async throws {
+        try await offMain { try uninstallSync(removeFiles: removeFiles, log: log) }
+    }
+
+    /// Runs blocking work on a global queue and resumes the caller with its result.
+    nonisolated static func offMain<T>(_ work: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                cont.resume(with: Result { try work() })
+            }
+        }
+    }
+
+    nonisolated private static func installPackage(
+        from src: URL,
+        loadLaunchAgent: Bool,
+        takeoverStandalone: Bool,
+        log: (String) -> Void
     ) throws {
         let fm = FileManager.default
-        let src = try resolveSource(source, log: log)
         log("Source: \(src.path)")
         // RFC-063: checked again here, before the build or anything is deleted.
         try refuseSelfSource(src, installRoot: installRoot)
@@ -80,15 +166,10 @@ enum HostInstaller {
         if loadLaunchAgent {
             try installLaunchAgent(takeoverStandalone: takeoverStandalone, log: log)
         }
-
-        // RFC-027: remember where we installed FROM. Saving installRoot made the
-        // next update copy the install root onto itself and delete dist/.
-        LocalHostController.shared.savePackagePath(src.path)
-        log("Installed host → \(installRoot.path)")
     }
 
-    static func uninstall(removeFiles: Bool = false, log: (String) -> Void = { _ in }) throws {
-        try unloadLaunchAgent(log: log)
+    nonisolated private static func uninstallSync(removeFiles: Bool, log: (String) -> Void) throws {
+        try unloadLaunchAgentSync(log: log)
         if removeFiles {
             if FileManager.default.fileExists(atPath: installRoot.path) {
                 try FileManager.default.removeItem(at: installRoot)
@@ -97,9 +178,9 @@ enum HostInstaller {
         }
     }
 
-    static func installLaunchAgent(
-        takeoverStandalone: Bool = false,
-        log: (String) -> Void = { _ in }
+    nonisolated private static func installLaunchAgent(
+        takeoverStandalone: Bool,
+        log: (String) -> Void
     ) throws {
         let node = findNode()
         let entry = installRoot.appendingPathComponent("dist/index.js").path
@@ -149,36 +230,84 @@ enum HostInstaller {
         // Both LaunchAgents bind port 8787 — only one can be loaded at a
         // time. If the repo-standalone agent is up, refuse unless the
         // caller (typically the Host panel confirm alert) opted in.
-        let standalone = "com.nightmoose.grok-dispatch-host"
-        let (standaloneLoaded, _) = LocalHostController.launchctl(
-            ["print", "gui/\(uid)/\(standalone)"]
-        )
-        if standaloneLoaded {
+        if isAgentLoaded(standaloneLabel) {
             if !takeoverStandalone {
                 throw InstallError.message(
-                    "\(standalone) is already loaded (repo host at ~/Projects/ClankerSpanker/host). Confirm from the Host panel to replace it, or leave it as your gateway."
+                    "\(standaloneLabel) is already loaded (repo host at ~/Projects/ClankerSpanker/host). Confirm from the Host panel to replace it, or leave it as your gateway."
                 )
             }
-            log("Booting out repo agent \(standalone) so the app-managed one can take the port…")
+            log("Booting out repo agent \(standaloneLabel) so the app-managed one can take the port…")
             _ = try? run(
                 cmd: "/bin/launchctl",
-                args: ["bootout", "gui/\(uid)/\(standalone)"],
+                args: ["bootout", "gui/\(uid)/\(standaloneLabel)"],
                 log: log
             )
         }
 
+        // RFC-064: the new plist is on disk before anything is unloaded, so if
+        // the app dies from here on, the next launch (or login) loads it.
         try plist.write(to: plistURL, atomically: true, encoding: .utf8)
         log("Wrote \(plistURL.path)")
+        try bootstrapAgent(log: log)
+    }
 
-        // bootout any stale copy of the app-managed agent, then bootstrap.
-        _ = try? run(cmd: "/bin/launchctl", args: ["bootout", "gui/\(uid)/\(label)"], log: log)
-        try run(cmd: "/bin/launchctl", args: ["bootstrap", "gui/\(uid)", plistURL.path], log: log)
-        _ = try? run(cmd: "/bin/launchctl", args: ["enable", "gui/\(uid)/\(label)"], log: log)
-        _ = try? run(cmd: "/bin/launchctl", args: ["kickstart", "-k", "gui/\(uid)/\(label)"], log: log)
+    /// bootout any stale copy of the app-managed agent, then bootstrap the
+    /// plist on disk, back to back. `bootout` returns before launchd has
+    /// finished removing the job, so an immediate `bootstrap` can fail with
+    /// "Input/output error"; retry briefly before giving up.
+    nonisolated static func bootstrapAgent(
+        log: (String) -> Void,
+        plistURL: URL = HostInstaller.plistURL,
+        label: String = HostInstaller.label,
+        attempts: Int = 5,
+        retryDelay: TimeInterval = 0.4,
+        runLaunchctl: (([String]) throws -> Void)? = nil
+    ) throws {
+        func launchctl(_ args: [String]) throws {
+            if let runLaunchctl {
+                try runLaunchctl(args)
+            } else {
+                try run(cmd: "/bin/launchctl", args: args, log: log)
+            }
+        }
+        let uid = getuid()
+        guard FileManager.default.fileExists(atPath: plistURL.path) else {
+            throw InstallError.message("No LaunchAgent plist at \(plistURL.path). Use Install / update host.")
+        }
+        try? launchctl(["bootout", "gui/\(uid)/\(label)"])
+        try retrying(attempts: attempts, delay: retryDelay, log: log) {
+            try launchctl(["bootstrap", "gui/\(uid)", plistURL.path])
+        }
+        try? launchctl(["enable", "gui/\(uid)/\(label)"])
+        try? launchctl(["kickstart", "-k", "gui/\(uid)/\(label)"])
         log("LaunchAgent \(label) loaded")
     }
 
-    static func unloadLaunchAgent(log: (String) -> Void = { _ in }) throws {
+    /// Calls `body` up to `attempts` times, sleeping `delay` between tries.
+    /// Rethrows the last error.
+    nonisolated static func retrying(
+        attempts: Int,
+        delay: TimeInterval,
+        log: (String) -> Void = { _ in },
+        _ body: () throws -> Void
+    ) throws {
+        var lastError: Error?
+        for attempt in 1...max(1, attempts) {
+            do {
+                try body()
+                return
+            } catch {
+                lastError = error
+                if attempt < attempts {
+                    log("Retrying (\(attempt)/\(attempts - 1)) after: \(error.localizedDescription)")
+                    Thread.sleep(forTimeInterval: delay)
+                }
+            }
+        }
+        throw lastError!
+    }
+
+    nonisolated private static func unloadLaunchAgentSync(log: (String) -> Void) throws {
         let uid = getuid()
         _ = try? run(cmd: "/bin/launchctl", args: ["bootout", "gui/\(uid)/\(label)"], log: log)
         if FileManager.default.fileExists(atPath: plistURL.path) {
@@ -318,7 +447,7 @@ enum HostInstaller {
         )
     }
 
-    private static func findNode() -> String {
+    nonisolated private static func findNode() -> String {
         for c in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }
         }
@@ -326,7 +455,7 @@ enum HostInstaller {
     }
 
     @discardableResult
-    private static func run(cmd: String, args: [String], log: (String) -> Void) throws -> String {
+    nonisolated static func run(cmd: String, args: [String], log: (String) -> Void) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: cmd)
         p.arguments = args
@@ -347,7 +476,7 @@ enum HostInstaller {
         return stdout
     }
 
-    private static func shellQuote(_ s: String) -> String {
+    nonisolated private static func shellQuote(_ s: String) -> String {
         "'\(s.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 

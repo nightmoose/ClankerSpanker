@@ -156,8 +156,9 @@ final class LocalHostController: ObservableObject {
     private init() {
         // RFC-027: a saved path equal to the install root is the old bug's
         // leftover — fall back to the checkout.
+        // RFC-063: "inside" also catches symlinks, `~`, and subfolders.
         if let saved = UserDefaults.standard.string(forKey: "localHostPackagePath"), !saved.isEmpty,
-           (saved as NSString).standardizingPath != (LocalHostConfigFile.installedHostRoot.path as NSString).standardizingPath {
+           !HostInstaller.isInstallRootPath(saved) {
             hostPackagePath = saved
         } else {
             hostPackagePath = Self.defaultHostPackagePath() ?? ""
@@ -183,9 +184,18 @@ final class LocalHostController: ObservableObject {
         return nil
     }
 
-    func savePackagePath(_ path: String) {
+    /// Saves the install *source*. Returns false (and saves nothing) for a
+    /// path inside the install root — RFC-063.
+    @discardableResult
+    func savePackagePath(_ path: String) -> Bool {
+        if HostInstaller.isInstallRootPath(path) {
+            hostPackagePath = Self.defaultHostPackagePath() ?? ""
+            UserDefaults.standard.removeObject(forKey: "localHostPackagePath")
+            return false
+        }
         hostPackagePath = path
         UserDefaults.standard.set(path, forKey: "localHostPackagePath")
+        return true
     }
 
     func readHostToken() -> String? {

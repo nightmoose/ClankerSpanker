@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Docs — ClankerSpanker</title>
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="https://clankerspanker.tech/">ClankerSpanker</a>
+      <nav aria-label="Site">
+        <a href="https://clankerspanker.tech/">Product</a>
+        <a href="/download/">Download</a>
+        <a href="/docs/" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <h1>Docs</h1>
+    <p class="muted">Local-first control plane. The page is hosted. The gateway, the token, and the agent transcripts stay on your machines, except what the agents themselves send to their providers.</p>
+
+    <h2>Install</h2>
+    <p>Install and connect the gateway from <a href="/download/">Download</a>. The short version: Node 20+, <code>npm install &amp;&amp; npm run build &amp;&amp; npm start</code> inside <code>host/</code>, then paste the token from the host machine's setup page into <a href="https://clankerspanker.tech/">the product</a> in Chrome.</p>
+    <p>Longer notes live in the repository:</p>
+    <ul>
+      <li><a href="https://github.com/nightmoose/ClankerSpanker/blob/main/docs/ARCHITECTURE.md">Architecture</a></li>
+      <li><a href="https://github.com/nightmoose/ClankerSpanker/blob/main/docs/CLIENTS.md">Clients</a></li>
+      <li><a href="https://github.com/nightmoose/ClankerSpanker/blob/main/docs/STANDALONE-INSTALLS.md">Standalone installs</a></li>
+      <li><a href="https://github.com/nightmoose/ClankerSpanker/blob/main/host/README.md">Host gateway</a></li>
+      <li><a href="https://github.com/nightmoose/ClankerSpanker/blob/main/SECURITY.md">Security policy</a></li>
+    </ul>
+
+    <h2>Threat model</h2>
+
+    <h3>Loopback</h3>
+    <p>In Chrome, this site calls <code>http://127.0.0.1:8787</code> on the computer where you opened the page. Chrome asks before it allows that. The gateway then sees a connection from this machine, the same as its own page at <code>http://127.0.0.1:8787/app/</code>. Profile administration that the gateway limits to the local machine still means this machine, because the TCP peer is this machine.</p>
+    <p>Deny the permission, or use a browser other than Chrome, and the page cannot read the gateway. Firefox and Safari should use the gateway's own page. That address is one you open. This site does not send you there. See <a href="/download/">Download</a>.</p>
+
+    <h3>Tailscale</h3>
+    <p>By default the gateway listens on loopback and this machine's Tailscale addresses. A phone or another laptop on your tailnet connects to the gateway directly. This website does not join your tailnet, does not tunnel traffic, and does not relay API calls. Do not expose port 8787 to the public internet.</p>
+
+    <h3>Token</h3>
+    <p>The gateway requires <code>Authorization: Bearer</code> with the host token. An empty token authorizes nobody. The token is shown at <code>http://127.0.0.1:8787/setup</code> on the host machine only. This site cannot read that page. You paste the token. It is stored in <code>localStorage</code> on <code>https://clankerspanker.tech</code>.</p>
+    <p>Live updates trade that token for a single-use ticket (<code>POST /ws/ticket</code>) and open the socket with <code>?ticket=</code>. The long-lived token is not put in the WebSocket URL. The host terminal is not served from this origin. Its link opens the gateway's own terminal page on this computer, and the token is posted there, not here.</p>
+    <p>Clear the token from Settings on a browser you no longer trust. Rotating it is done on the host machine, from the setup page, and then each client is updated.</p>
+
+    <h3>What never gets uploaded</h3>
+    <p>Loading this site contacts the static host. That host sees an ordinary page view: IP address, user agent, and URL. Prompts, transcripts, files, tool output, profile secrets, and the host token are not sent there. Those requests go to your gateway. Agents send to their providers only what they already send when you run them yourself.</p>
+
+    <h3>A script on this origin</h3>
+    <p>Anyone who can change the production bundle, or inject a script into it, can read a pasted token and call the gateway while this page is open and Chrome still allows loopback. Production deploys come from the repository's main branch after review. Do not paste a host token into a <code>*.vercel.app</code> preview. A preview is a different origin: it does not see the production token, and the gateway does not allow that origin to read its API.</p>
+
+    <div class="card">
+      <p>There is no second gateway and no company account on this site. The Mac app, the Linux app, and the phone keep talking to the gateway directly.</p>
+    </div>
+  </div>
+</body>
+</html>

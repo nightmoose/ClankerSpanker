@@ -184,8 +184,21 @@
       const stored = (function () {
         try { return localStorage.getItem("clankerspanker.token") || ""; } catch (e) { return ""; }
       })();
-      if (auto.get("token") || stored || auto.get("autostart") === "1") {
+      if (auto.get("token") || stored) {
         window.startClankerTerminal({ token: auto.get("token") || stored });
+      } else if (auto.get("autostart") === "1") {
+        window.startClankerTerminal({ token: "" });
+      } else {
+        // This file is served by the gateway only. /connect.json is the
+        // same-origin token on this machine and the request carries no
+        // Authorization header. The static site does not publish this page.
+        fetch("/connect.json", { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (c) {
+            if (c && c.hostToken) window.startClankerTerminal({ token: c.hostToken });
+            else setStatus("open /setup on this machine", false);
+          })
+          .catch(function () { setStatus("disconnected", false); });
       }
     })();
   </script>

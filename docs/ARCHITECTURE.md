@@ -5,7 +5,7 @@
 | Piece | Role |
 |-------|------|
 | **Host gateway** (`host/`) | Single Node HTTP + WebSocket server; spawns Grok ACP / Claude processes |
-| **Browser UI** (`host/web`) | Thin control plane at `/app/` — no host lifecycle |
+| **Browser UI** (`host/web`) | Thin control plane. Primary site [https://clankerspanker.tech/](https://clankerspanker.tech/) (Chrome, loopback to the gateway). The gateway still serves the same UI at `/app/` — no host lifecycle |
 | **Mac native app** (`ios/…` → ClankerSpankerMac) | **macOS laptop** command center: sessions + local host manager + menu bar |
 | **Electron app** (`desktop/`) | **Linux laptop** command center: sessions + local host manager + tray |
 | **iOS app** | Phone control plane (same Swift sources; scheme deferred) |

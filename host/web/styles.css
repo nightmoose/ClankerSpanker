@@ -80,6 +80,22 @@ body {
 }
 .tab.active { color: #000; background: var(--accent); border-color: var(--accent); font-weight: 600; }
 
+.site-nav { display: none; gap: 12px; flex-wrap: wrap; align-items: center; }
+.site-nav.on { display: flex; }
+.site-nav a { color: var(--muted); font-size: 13px; text-decoration: none; }
+.site-nav a:hover { color: var(--text); }
+
+.browser-limit {
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #5a4a2a;
+  background: #1c170f;
+  color: var(--warn);
+  border-radius: var(--radius);
+  line-height: 1.45;
+  font-size: 14px;
+}
+
 .actions { display: flex; gap: 8px; justify-content: flex-end; }
 .icon-btn, button.primary, button.secondary, button.danger {
   border-radius: 12px;

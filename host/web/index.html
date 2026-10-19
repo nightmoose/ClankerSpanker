@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ClankerSpanker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260916b" />
+  <link rel="stylesheet" href="./styles.css?v=20261019a" />
 </head>
 <body>
   <div id="app">
@@ -21,12 +21,19 @@
         <button type="button" data-tab="profiles" class="tab">Profiles</button>
       </nav>
       <div class="actions">
+        <nav id="site-nav" class="site-nav" aria-label="Site">
+          <a href="https://clankerspanker.tech/">Product</a>
+          <a href="/docs/">Docs</a>
+          <a href="/download/">Download</a>
+        </nav>
         <button type="button" id="btn-archived" class="icon-btn" title="Toggle archived">📥</button>
         <button type="button" id="btn-refresh" class="icon-btn" title="Refresh">↻</button>
-        <a href="./terminal.html" class="icon-btn" title="Host terminal">⌨</a>
+        <a id="btn-terminal" href="./terminal.html" class="icon-btn" title="Host terminal">⌨</a>
         <button type="button" id="btn-settings" class="icon-btn" title="Connection">⚙</button>
       </div>
     </header>
+
+    <p id="browser-limit" class="browser-limit hidden" role="status"></p>
 
     <main id="main">
       <section id="view-list" class="view"></section>
@@ -38,6 +45,6 @@
 
     <p id="banner" class="banner hidden"></p>
   </div>
-  <script src="./app.js?v=20260916c" type="module"></script>
+  <script src="./app.js?v=20261019b" type="module"></script>
 </body>
 </html>

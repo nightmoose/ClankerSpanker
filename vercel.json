@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "node site/build.mjs",
+  "outputDirectory": "site/dist",
+  "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.clankerspanker.tech" }],
+      "destination": "https://clankerspanker.tech/:path*",
+      "permanent": true
+    }
+  ]
+}

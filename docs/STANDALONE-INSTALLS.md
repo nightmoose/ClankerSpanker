@@ -9,6 +9,7 @@ Goal: **same story on every OS** — install the gateway and the agent CLIs with
 | **What** | Node process on port **8787** that runs Grok/Claude and serves REST/WS + `/app/` |
 | **Config** | `~/.grok-dispatch/config.json` (all OSes) |
 | **Dev** | `cd host && npm i && npm run build && npm start` |
+| **Website** | [https://clankerspanker.tech/](https://clankerspanker.tech/) in Chrome talks to `http://127.0.0.1:8787` on that machine. Other browsers open `http://127.0.0.1:8787/app/` on the host. |
 
 ### Managed by desktop apps (preferred for laptops)
 

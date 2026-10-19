@@ -2,6 +2,7 @@
 
 | Doc | What it covers |
 |---|---|
+| [clankerspanker.tech](https://clankerspanker.tech/) | Primary website: the control plane, plus [install](https://clankerspanker.tech/download/) and the [threat model](https://clankerspanker.tech/docs/) |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Host gateway, clients, data and config layout |
 | [CLIENTS.md](CLIENTS.md) | Which client owns what (macOS, iOS, Linux Electron, browser) and how to deploy them |
 | [STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md) | Installing the host and agent CLIs on macOS / Linux |

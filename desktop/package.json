@@ -23,7 +23,7 @@
     "dist:linux": "electron-builder --linux AppImage deb"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "electron": "^35.1.2",

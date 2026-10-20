@@ -69,6 +69,8 @@ npm install
 npm start
 ```
 
+Electron 42+ no longer downloads its binary during `npm install`; the first `npm start` fetches it (needs network once). `npm run smoke` checks syntax, the hardened `webPreferences` and IPC wiring without a display or the Electron binary; CI runs it.
+
 On first managed launch:
 
 1. Ensures `~/.grok-dispatch/config.json`
@@ -115,6 +117,8 @@ desktop/
 
 - **Notification action buttons**: macOS notifications carry inline Approve/Reject buttons. On Linux, Electron's `Notification` API doesn't surface libnotify actions, so notifications click through to the session detail (which has keyboard shortcuts + rich approval bar). The body carries the approval kind + path so you can decide before opening.
 - **Deep linking** (`clankerspanker://` URLs): not wired. Tray + notification click covers focus.
+- **Wayland**: since Electron 38 the app runs as a native Wayland client in a Wayland session. Pass `--ozone-platform=x11` to force XWayland if the tray or window decorations misbehave (`ELECTRON_OZONE_PLATFORM_HINT` is gone).
+- **64-bit only**: Electron 44 ships no 32-bit ARM (armv7l) build.
 - **File viewer** only reads this machine's disk (same as Mac). Remote hosts: path must exist locally.
 
 Keyboard (when focus is not in an input): **Ctrl+N** compose, **Ctrl+Shift+P** projects, **Ctrl+Shift+T** tasks, **Ctrl+Alt+I** file viewer.

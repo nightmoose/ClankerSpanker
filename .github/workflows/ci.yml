@@ -3,6 +3,7 @@
 # Jobs:
 #   house-style  — RFC index, TEST-EXCEPTIONS, heavy-diff RFC+log, LAN-IP, test ratchet
 #   host         — typecheck + build (tests already ran inside house-style)
+#   desktop      — Electron shell smoke check (RFC-066); no install, electron is mocked
 #
 # Docs-only changes still run house-style (index integrity) but skip host build.
 
@@ -78,3 +79,18 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  desktop:
+    name: Desktop — smoke
+    needs: [changes]
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Smoke (syntax, hardened webPreferences, IPC channels)
+        run: node desktop/scripts/smoke.js

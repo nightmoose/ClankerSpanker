@@ -700,6 +700,11 @@ export interface ApnsConfig {
 }
 
 export interface HostConfigFile {
+  /**
+   * RFC-068: rotate this gateway's own stdout/stderr log files once they pass
+   * this many bytes (copy to .1–.3, then truncate). Default 10 MB; 0 disables.
+   */
+  logMaxBytes?: number;
   /** Extra folders "Import from disk" scans (2 levels), e.g. ["~/work"] (RFC-037). */
   discoverRoots?: string[];
   /**

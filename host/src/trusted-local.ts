@@ -173,3 +173,22 @@ export function nativeOnlyRefusal(req: Pick<IncomingMessage, "headers">): string
   if (host && origin === `http://${host}`) return null;
   return "Only the native apps and the gateway's own web UI can call this route.";
 }
+
+/**
+ * RFC-065: true when a browser page on another website sent this request.
+ *
+ * The TCP peer of a loopback call from https://clankerspanker.tech in Chrome
+ * is this machine, but the caller is a public origin that holds the token in
+ * localStorage. Such a request must not count as "this machine": no profile
+ * secrets (`?admin=1`), no profile edits, no MCP catalog apply or sign-in.
+ *
+ * Not foreign: no `Origin` (native clients), `Origin: null` (the Electron
+ * renderer loads from file://), and the gateway's own page, whose `Origin`
+ * is `http://<Host header>`.
+ */
+export function isForeignBrowserOrigin(req: Pick<IncomingMessage, "headers">): boolean {
+  const origin = firstHeader(req.headers.origin)?.trim().toLowerCase();
+  if (origin === undefined || origin === "" || origin === "null") return false;
+  const host = firstHeader(req.headers.host)?.trim().toLowerCase();
+  return !(host && origin === `http://${host}`);
+}

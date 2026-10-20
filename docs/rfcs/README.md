@@ -52,11 +52,11 @@ repository, so numbering has gaps; numbers 000-057 are reserved. Start a new RFC
 | 055 | [Split Grok ACP inbound handling](055-grok-events-split.md) | Shipped |
 | 056 | [Claude tool rows finish and show output](056-claude-tool-results.md) | Shipped |
 | 058 | [Host the product at clankerspanker.tech](058-hosted-product-site.md) | Accepted |
-| 059 | [Host updates itself from the git checkout](059-host-self-update.md) | Accepted |
-| 060 | [Inline shell execution from chat code blocks](060-inline-exec.md) | Accepted |
-| 061 | [Project database binding, sealed-input secrets, `sql_execute` (absorbs 062)](061-project-sql.md) | Draft |
-| 063 | [Mac host installer stages, then swaps](063-installer-staged-swap.md) | Draft |
-| 064 | [Mac Host panel: no subprocess on the main thread; recover an interrupted LaunchAgent load](064-mac-host-panel-async-status.md) | Draft |
-| 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Accepted |
-| 066 | [Linux desktop on Electron 44](066-electron-44.md) | Draft |
-| 067 | [The hosted site explains itself and has a read-only demo](067-hosted-demo-explainer.md) | Draft |
+| 059 | [Host updates itself from the git checkout](059-host-self-update.md) | Shipped |
+| 060 | [Inline shell execution from chat code blocks](060-inline-exec.md) | Shipped |
+| 061 | [Project database binding, sealed-input secrets, `sql_execute` (absorbs 062)](061-project-sql.md) | Shipped |
+| 063 | [Mac host installer stages, then swaps](063-installer-staged-swap.md) | Shipped |
+| 064 | [Mac Host panel: no subprocess on the main thread; recover an interrupted LaunchAgent load](064-mac-host-panel-async-status.md) | Shipped |
+| 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Shipped |
+| 066 | [Linux desktop on Electron 44](066-electron-44.md) | Accepted |
+| 067 | [The hosted site explains itself and has a read-only demo](067-hosted-demo-explainer.md) | Shipped |

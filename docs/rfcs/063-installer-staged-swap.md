@@ -1,6 +1,6 @@
 # RFC-063 — Mac host installer: stage, then swap; never delete the live install first
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-10-19
 **Branch:** rfc-063-installer-staged-swap
 **Severity:** P1

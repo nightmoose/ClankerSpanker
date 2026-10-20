@@ -1,6 +1,6 @@
 # RFC-065 — The hosted site gets no shell and no profile secrets
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-10-20
 **Branch:** rfc-065-browser-origin-hardening
 **Severity:** P1

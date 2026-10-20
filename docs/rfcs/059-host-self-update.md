@@ -1,6 +1,6 @@
 # RFC-059 — Host updates itself from the git checkout
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-10-06
 **Branch:** nightly-maintenance-2026-10-02-rfc058-inline-exec
 **Severity:** P1

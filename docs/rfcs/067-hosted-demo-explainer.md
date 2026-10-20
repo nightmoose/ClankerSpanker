@@ -1,6 +1,6 @@
 # RFC-067 — The hosted site explains itself and has a read-only demo
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-10-20
 **Branch:** rfc-067-hosted-demo-explainer
 **Severity:** P1 — .tech No Excuses Fund judges visit https://clankerspanker.tech without a gateway (submissions close 2026-12-15, internal target 2026-12-09)

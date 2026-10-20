@@ -1,6 +1,6 @@
 # RFC-066 — Linux desktop on Electron 44
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-10-20
 **Branch:** rfc-066-electron-44
 **Severity:** P1

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nightmoose/ClankerSpanker/actions/workflows/ci.yml/badge.svg)](https://github.com/nightmoose/ClankerSpanker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
+![Node 22+](https://img.shields.io/badge/node-22%2B-339933)
 ![Platforms](https://img.shields.io/badge/clients-macOS%20%7C%20iOS%20%7C%20Linux%20%7C%20web-lightgrey)
 
 **Local-first control plane for [Grok Build](https://x.ai) and [Claude Code](https://www.anthropic.com/claude-code).**
@@ -29,7 +29,7 @@ The primary website is [https://clankerspanker.tech/](https://clankerspanker.tec
 In Chrome, with the gateway already running on that computer, paste `http://127.0.0.1:8787` and the token from the host machine's setup page.
 Firefox and Safari use the on-machine page instead: `http://127.0.0.1:8787/app/`. That address is one you open; the site does not redirect you there.
 
-Requires Node 20+ and the agent CLI(s) you want to drive (`grok`, `claude`).
+Requires Node 22+ and the agent CLI(s) you want to drive (`grok`, `claude`).
 
 ```bash
 git clone https://github.com/nightmoose/ClankerSpanker.git

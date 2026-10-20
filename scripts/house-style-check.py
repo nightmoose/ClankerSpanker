@@ -104,6 +104,27 @@ def check_rfcs() -> list[str]:
     dupes = sorted({n for n in nums if nums.count(n) > 1})
     if dupes:
         errors.append("duplicate RFC numbers: " + ", ".join(f"{n:03d}" for n in dupes))
+    if index.exists():
+        errors += check_rfc_index_links(index, {p.name for p in files})
+    return errors
+
+
+def check_rfc_index_links(index: Path, files: set[str]) -> list[str]:
+    """Every index row links to an RFC file that exists, once."""
+    errors: list[str] = []
+    linked: list[str] = []
+    for line in index.read_text().splitlines():
+        m = re.match(r"^\|\s*(\d{3})\s*\|.*\]\(([^)]+\.md)\)", line)
+        if not m:
+            continue
+        num, target = m.group(1), m.group(2)
+        linked.append(target)
+        if target not in files:
+            errors.append(f"RFC index row {num} links to missing file {target}")
+        elif not target.startswith(num + "-"):
+            errors.append(f"RFC index row {num} links to {target}, which has a different number")
+    for name in sorted({t for t in linked if linked.count(t) > 1}):
+        errors.append(f"RFC index lists {name} more than once")
     return errors
 
 

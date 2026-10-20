@@ -1,6 +1,6 @@
 # RFC-058 — Host the product at clankerspanker.tech
 
-**Status:** Draft
+**Status:** Accepted (phases 1 and 2 in production since 2026-10-19; phases 3 and 4 open)
 **Date:** 2026-10-19
 **Branch:** cursor/rfc-058-hosted-web-61b2
 **Severity:** P1 — the public product has to live on this origin before the company submits to the .tech No Excuses Fund (internal target 2026-12-09, submissions close 2026-12-15)

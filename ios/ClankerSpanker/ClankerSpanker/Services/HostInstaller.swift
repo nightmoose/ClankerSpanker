@@ -252,15 +252,19 @@ enum HostInstaller {
     }
 
     /// bootout any stale copy of the app-managed agent, then bootstrap the
-    /// plist on disk, back to back. `bootout` returns before launchd has
-    /// finished removing the job, so an immediate `bootstrap` can fail with
-    /// "Input/output error"; retry briefly before giving up.
+    /// plist on disk. `bootout` returns before launchd has finished removing
+    /// the job, and the gateway shuts down gracefully on SIGTERM, which can
+    /// take several seconds. A `bootstrap` sent before the old job is gone
+    /// fails with "Input/output error". So wait until `launchctl print` no
+    /// longer finds the job, then retry `bootstrap` for a while before giving up.
     nonisolated static func bootstrapAgent(
         log: (String) -> Void,
         plistURL: URL = HostInstaller.plistURL,
         label: String = HostInstaller.label,
-        attempts: Int = 5,
-        retryDelay: TimeInterval = 0.4,
+        attempts: Int = 10,
+        retryDelay: TimeInterval = 1.0,
+        unloadWait: TimeInterval = 30,
+        unloadPollInterval: TimeInterval = 0.5,
         runLaunchctl: (([String]) throws -> Void)? = nil
     ) throws {
         func launchctl(_ args: [String]) throws {
@@ -275,6 +279,23 @@ enum HostInstaller {
             throw InstallError.message("No LaunchAgent plist at \(plistURL.path). Use Install / update host.")
         }
         try? launchctl(["bootout", "gui/\(uid)/\(label)"])
+        func stillLoaded() -> Bool {
+            if let runLaunchctl {
+                return (try? runLaunchctl(["print", "gui/\(uid)/\(label)"])) != nil
+            }
+            return isAgentLoaded(label)
+        }
+        let deadline = Date().addingTimeInterval(unloadWait)
+        var loaded = stillLoaded()
+        if loaded { log("Waiting for the old gateway to stop…") }
+        while loaded {
+            guard Date() < deadline else {
+                log("Old \(label) still loaded after \(Int(unloadWait))s; trying bootstrap anyway")
+                break
+            }
+            Thread.sleep(forTimeInterval: unloadPollInterval)
+            loaded = stillLoaded()
+        }
         try retrying(attempts: attempts, delay: retryDelay, log: log) {
             try launchctl(["bootstrap", "gui/\(uid)", plistURL.path])
         }

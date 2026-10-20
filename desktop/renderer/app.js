@@ -4062,6 +4062,10 @@ function wireChrome() {
   });
 
   window.clanker.onWsStatus(({ status }) => setWsPill(status));
+  window.clanker
+    .getWsStatus()
+    .then(({ status }) => setWsPill(status))
+    .catch(() => {});
   window.clanker.onHostEvent(({ event, hostId }) => applyEvent(event, { hostId }));
   window.clanker.onHostLog(({ line }) => {
     if (state.nav === "host") {

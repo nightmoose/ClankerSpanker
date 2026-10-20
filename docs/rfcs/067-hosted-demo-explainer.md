@@ -52,7 +52,7 @@ Everything added is same-origin script modules and CSS. No inline `<script>`, no
 - [x] `host/web/landing.test.js`: no token → explainer, token → app, demo only when chosen, `?demo` parsing, `demoHref`.
 - [x] `host/web/hosted-headers.test.js`: title, description, OG/Twitter tags, icon files exist.
 - [x] Manual at 375×812 in OS light and dark: explainer, demo list, detail with approval, Approve notice, Profiles, Compose, Connect scroll.
-- [ ] Vercel preview screenshots in the PR.
+- [x] Vercel preview screenshots: `docs/rfcs/assets/067/` (headless Chrome against the protected preview, OIDC header).
 
 ## Rollout
 

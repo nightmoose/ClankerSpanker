@@ -53,6 +53,23 @@ const connStatusByHost = new Map();
 /** @type {HostWsPool | null} */
 let wsPool = null;
 const hostProc = new HostProcessManager();
+/**
+ * RFC-066: Electron 43+ opens file dialogs in ~/Downloads unless `defaultPath`
+ * is set, and the OS no longer remembers the last folder. Track it ourselves,
+ * starting from home (project folders rarely live in Downloads).
+ */
+let lastDialogDir = os.homedir();
+
+/** Open dialog that starts where the last one finished. */
+async function showOpenDialogTracked(win, options) {
+  const res = await dialog.showOpenDialog(win, { defaultPath: lastDialogDir, ...options });
+  const first = res.filePaths?.[0];
+  if (!res.canceled && first) {
+    // Parent of the pick, so the next project folder is usually a sibling one click away.
+    lastDialogDir = path.dirname(first);
+  }
+  return res;
+}
 
 const isLinux = process.platform === "linux";
 const isMac = process.platform === "darwin";
@@ -537,7 +554,7 @@ function registerIpc() {
 
   ipcMain.handle("dialog:pick-directory", async () => {
     const win = BrowserWindow.getFocusedWindow() || mainWindow;
-    const res = await dialog.showOpenDialog(win, {
+    const res = await showOpenDialogTracked(win, {
       properties: ["openDirectory", "createDirectory"],
     });
     if (res.canceled || !res.filePaths[0]) return null;
@@ -546,7 +563,7 @@ function registerIpc() {
 
   ipcMain.handle("dialog:pick-directories", async () => {
     const win = BrowserWindow.getFocusedWindow() || mainWindow;
-    const res = await dialog.showOpenDialog(win, {
+    const res = await showOpenDialogTracked(win, {
       properties: ["openDirectory", "createDirectory", "multiSelections"],
     });
     if (res.canceled || !res.filePaths.length) return [];
@@ -558,7 +575,7 @@ function registerIpc() {
     const filters = opts?.images
       ? [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }]
       : undefined;
-    const res = await dialog.showOpenDialog(win, {
+    const res = await showOpenDialogTracked(win, {
       properties: ["openFile", "multiSelections"],
       filters,
     });

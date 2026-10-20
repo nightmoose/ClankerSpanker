@@ -58,3 +58,4 @@ repository, so numbering has gaps; numbers 000-057 are reserved. Start a new RFC
 | 063 | [Mac host installer stages, then swaps](063-installer-staged-swap.md) | Draft |
 | 064 | [Mac Host panel: no subprocess on the main thread; recover an interrupted LaunchAgent load](064-mac-host-panel-async-status.md) | Draft |
 | 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Accepted |
+| 066 | [Linux desktop on Electron 44](066-electron-44.md) | Draft |

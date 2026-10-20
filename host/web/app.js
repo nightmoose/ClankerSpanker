@@ -17,6 +17,8 @@ import {
   publicPageNotice,
   websocketOptions,
 } from "./gateway-client.js";
+import { DEMO_NOTICE, demoApi } from "./demo.js";
+import { demoHref, demoRequested, landingView } from "./landing.js";
 
 const STORAGE_TOKEN = "clankerspanker.token";
 const STORAGE_URL = "clankerspanker.hostURL";
@@ -32,7 +34,8 @@ const state = {
   profiles: [],
   profileId: null,
   detail: null,
-  token: localStorage.getItem(STORAGE_TOKEN) || "",
+  // The demo never reads the saved token, so it cannot send it anywhere.
+  token: demoRequested(location.search) ? "" : localStorage.getItem(STORAGE_TOKEN) || "",
   // On the gateway, same origin is the host. On the public site, the gateway
   // is loopback on this computer until the operator saves another URL.
   baseURL: defaultGatewayURL({ hostname: location.hostname, stored: localStorage.getItem(STORAGE_URL) || "" }) || window.location.origin,
@@ -44,6 +47,9 @@ const state = {
   adminProfiles: [],
   profileEditor: null,
   mcpCatalog: null,
+  // RFC-067: read-only demo. Chosen with ?demo=1 only; api() then answers
+  // from demo.js and nothing reaches the network.
+  demo: demoRequested(location.search),
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -52,10 +58,12 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 function banner(msg, isError = false) {
   const el = $("#banner");
   el.textContent = msg;
-  el.classList.toggle("error", isError);
+  // A demo action that would change something is a notice, not a failure.
+  const demoNotice = state.demo && String(msg).startsWith(DEMO_NOTICE);
+  el.classList.toggle("error", isError && !demoNotice);
   el.classList.remove("hidden");
   clearTimeout(banner._t);
-  banner._t = setTimeout(() => el.classList.add("hidden"), isError ? 10000 : 3500);
+  banner._t = setTimeout(() => el.classList.add("hidden"), isError && !demoNotice ? 10000 : demoNotice ? 8000 : 3500);
 }
 
 function authHeaders() {
@@ -110,6 +118,7 @@ async function refreshTokenFromHost(usedToken) {
 }
 
 async function api(path, opts = {}, retried = false) {
+  if (state.demo) return demoApi(path, opts);
   const url = new URL(path, state.baseURL.replace(/\/$/, "") + "/");
   const usedToken = state.token;
   let res;
@@ -145,9 +154,46 @@ async function api(path, opts = {}, retried = false) {
 function setConn(ok) {
   state.connected = ok;
   const el = $("#conn");
-  el.textContent = ok ? "live" : "offline";
-  el.classList.toggle("ok", ok);
-  el.classList.toggle("muted", !ok);
+  el.textContent = state.demo ? "demo" : ok ? "live" : "offline";
+  el.classList.toggle("ok", ok && !state.demo);
+  el.classList.toggle("warn", state.demo);
+  el.classList.toggle("muted", !ok && !state.demo);
+}
+
+/** Empty state for a tab that needs a gateway (RFC-067). */
+function notConnectedHtml(what) {
+  return `<div class="list-empty">Connect your gateway to load ${escapeHtml(what)}.
+    <div class="hero-actions centered">
+      <button type="button" class="primary" data-try-demo>Try the demo</button>
+      <button type="button" class="secondary" data-connect>Connect your gateway</button>
+    </div></div>`;
+}
+
+function wireLandingButtons(root) {
+  root.querySelectorAll("[data-try-demo]").forEach((el) => el.addEventListener("click", enterDemo));
+  root.querySelectorAll("[data-connect]").forEach((el) =>
+    el.addEventListener("click", () => {
+      if (state.demo) {
+        location.assign(demoHref(location, false));
+        return;
+      }
+      if (!$("#s-url") || $("#view-settings").classList.contains("hidden")) renderSettings();
+      $("#connect-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      $("#s-url")?.focus({ preventScroll: true });
+    }),
+  );
+}
+
+function enterDemo() {
+  history.pushState(null, "", demoHref(location, true));
+  state.demo = true;
+  state.detail = null;
+  state.tab = "active";
+  syncTabs();
+  showProductChrome();
+  setConn(true);
+  window.scrollTo(0, 0);
+  refresh();
 }
 
 function showView(name) {
@@ -179,8 +225,10 @@ function creditBadge(s) {
 
 function renderList() {
   const root = $("#view-list");
-  if (!state.token) {
-    root.innerHTML = `<div class="list-empty">Connect in Settings to load sessions.</div>`;
+  if (!state.token && !state.demo) {
+    showView("list");
+    root.innerHTML = notConnectedHtml("sessions");
+    wireLandingButtons(root);
     return;
   }
 
@@ -747,8 +795,9 @@ function renderProfiles() {
   showView("profiles");
   const root = $("#view-profiles");
 
-  if (!state.token) {
-    root.innerHTML = `<div class="list-empty">Connect in Settings to load profiles.</div>`;
+  if (!state.token && !state.demo) {
+    root.innerHTML = notConnectedHtml("profiles");
+    wireLandingButtons(root);
     return;
   }
   if (!state.admin) {
@@ -756,11 +805,17 @@ function renderProfiles() {
     root.innerHTML = `
       <div class="card">
         <h3>Profiles manager</h3>
-        <p class="preview">You're connected from another device, so create/edit is locked
+        ${
+          state.demo
+            ? `<p class="preview">A profile is one agent account: Grok, Claude Code, or Gemini, each with its own
+          login, model, and MCP servers. You add and edit them on the machine running the gateway,
+          so API keys never leave it. These are the demo's profiles:</p>`
+            : `<p class="preview">You're connected from another device, so create/edit is locked
           (API keys must stay on the host). On the Mac running the gateway, open the
           <strong>Host</strong> toolbar panel or this page locally:</p>
         <p class="preview"><a href="${escapeAttr(localApp)}">${escapeHtml(localApp)}</a></p>
-        <p class="preview">Read-only view of configured profiles:</p>
+        <p class="preview">Read-only view of configured profiles:</p>`
+        }
         <div class="profile-list">${(state.profiles || [])
           .map(
             (p) => `
@@ -1361,6 +1416,31 @@ function envFromText(text) {
   return out;
 }
 
+/** What the product is, for a visitor with no host configured (RFC-067). */
+function explainerHtml() {
+  return `
+    <section class="card hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Drive your coding agents from anywhere. They stay on your machine.</h1>
+      <p class="lede">ClankerSpanker runs Grok Build and Claude Code agents on your own computer and lets you
+        dispatch, watch, and steer them from your phone, your laptop, or this page.</p>
+      <ul class="points">
+        <li><strong>Dispatch and watch.</strong> Start a task in any project folder and follow the transcript and tool output live.</li>
+        <li><strong>Approve what runs.</strong> Edits and shell commands wait for your Approve, with the diff or command in front of you.</li>
+        <li><strong>Local-first.</strong> A small gateway runs on your machine. This page talks straight to it. Your prompts, code, transcripts, and token never pass through our servers.</li>
+      </ul>
+      <div class="hero-actions">
+        <button type="button" class="primary" data-try-demo>Try the demo</button>
+        <button type="button" class="secondary" data-connect>Connect your gateway</button>
+      </div>
+      <h2>Two ways to connect</h2>
+      <ol class="ways">
+        <li><strong>On the same computer</strong> (Chrome): Host URL <code>${escapeHtml(LOOPBACK_GATEWAY)}</code>.</li>
+        <li><strong>From any device on your tailnet</strong> (any browser): run <code>tailscale serve</code> on the gateway machine and use the <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> address it prints.</li>
+      </ol>
+      <p class="meta">No gateway yet? <a href="/download/">Download</a> has the install steps. <a href="/docs/">Docs</a> has the threat model.</p>
+    </section>`;
+}
+
 function connectionHint() {
   if (productSiteKind(location.hostname)) {
     return `Host URL is <code>${escapeHtml(LOOPBACK_GATEWAY)}</code> for a gateway on this computer (Chrome), or the <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> address <code>tailscale serve</code> prints for one on your tailnet (any browser, see <a href="/download/">Download</a>). Paste the host token from <code>${escapeHtml(LOOPBACK_SETUP)}</code> on the gateway machine. The token is not fetched from this website.`;
@@ -1370,6 +1450,7 @@ function connectionHint() {
 
 /** `/host/update` answers only native apps and the gateway's own page (RFC-059). */
 function canUpdateHost() {
+  if (state.demo) return false;
   return hostUpdateAvailable({
     pageOrigin: location.origin,
     baseURL: state.baseURL,
@@ -1381,6 +1462,7 @@ function renderSettings() {
   showView("settings");
   // Keep a socket refresh from painting the session list over this page.
   state.tab = "settings";
+  syncTabs();
   const root = $("#view-settings");
   const siteLinks = productSiteKind(location.hostname)
     ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
@@ -1398,8 +1480,9 @@ function renderSettings() {
       <p class="preview">Ships with the host, so a machine that only has the host can use it. Fast-forwards that machine’s git checkout, rebuilds, and restarts. Dirty or diverged branches are left alone.</p>
     </div>`
     : "";
-  root.innerHTML = `${updateCard}
-    <div class="card">
+  const explainer = landingView({ token: state.token, demo: state.demo }) === "explainer" ? explainerHtml() : "";
+  root.innerHTML = `${explainer}${updateCard}
+    <div class="card" id="connect-card">
       <h3>Connection</h3>
       ${siteLinks}
       <p class="preview">${connectionHint()}</p>
@@ -1410,7 +1493,13 @@ function renderSettings() {
       <button type="button" class="primary" id="s-save" style="width:100%;margin-top:12px">Save &amp; connect</button>
       <button type="button" class="secondary" id="s-clear" style="width:100%;margin-top:8px">Clear token</button>
     </div>`;
+  wireLandingButtons(root);
   $("#s-save")?.addEventListener("click", async () => {
+    if (state.demo) {
+      // Leave the demo before the token is used for anything.
+      state.demo = false;
+      history.replaceState(null, "", demoHref(location, false));
+    }
     state.baseURL = normalizeHostURL($("#s-url").value) || window.location.origin;
     state.token = $("#s-token").value.trim();
     localStorage.setItem(STORAGE_URL, state.baseURL);
@@ -1488,7 +1577,7 @@ async function applyHostUpdate() {
 // ——— Data / WS ———
 
 async function refresh() {
-  if (!state.token) return;
+  if (!state.token && !state.demo) return;
   try {
     const [sessions, projects, profiles, catalog] = await Promise.all([
       api("/sessions"),
@@ -1506,7 +1595,8 @@ async function refresh() {
     state.admin = profiles.admin === true;
     state.adminProfiles = profiles.adminProfiles || [];
     if (catalog?.servers) state.mcpCatalog = catalog;
-    if (!state.profileId && state.profiles[0]) state.profileId = state.profiles[0].id;
+    // The demo lists every profile's chats; there is no profile picker here.
+    if (!state.profileId && state.profiles[0] && !state.demo) state.profileId = state.profiles[0].id;
     setConn(true);
     // WS / ↻ used to call renderList() whenever no session detail was open,
     // which yanked Profiles (and the editor) back to the session list.
@@ -1538,7 +1628,7 @@ async function connectWs() {
       /* */
     }
   }
-  if (!state.token) return;
+  if (!state.token || state.demo) return;
   try {
     // RFC-029: never put the host token in the WebSocket URL — trade it for
     // a single-use ticket first.
@@ -1665,6 +1755,22 @@ function boot() {
     renderList();
   });
 
+  $("#demo-exit")?.addEventListener("click", () => location.assign(demoHref(location, false)));
+  wireLandingButtons($("#demo-strip"));
+  // Back/forward across ?demo=1 must not leave a gateway page showing demo data, or the reverse.
+  window.addEventListener("popstate", () => {
+    if (demoRequested(location.search) !== state.demo) location.reload();
+  });
+
+  showProductChrome();
+
+  if (state.demo) {
+    // Never read ?token=, localStorage's token, or /connect.json here.
+    setConn(true);
+    refresh();
+    return;
+  }
+
   // Prefer token from ?token= once (setup flow)
   const q = new URLSearchParams(location.search);
   const openUpdate = q.get("update") === "1";
@@ -1685,8 +1791,6 @@ function boot() {
       refresh().then(() => renderList());
     }
   };
-
-  showProductChrome();
 
   if (state.token || productSiteKind(location.hostname)) {
     start();
@@ -1717,8 +1821,9 @@ function showProductChrome() {
     baseURL: state.baseURL,
   });
   const limit = $("#browser-limit");
+  $("#demo-strip")?.classList.toggle("hidden", !state.demo);
   if (limit) {
-    if (notice) {
+    if (notice && !state.demo) {
       limit.textContent = notice;
       limit.classList.remove("hidden");
     } else {
@@ -1733,6 +1838,7 @@ function showProductChrome() {
 function syncTerminalLink() {
   const link = $("#btn-terminal");
   if (!link) return;
+  link.classList.toggle("hidden", state.demo);
   // On the gateway, ./terminal.html is this origin and its relative
   // /ws/ticket stays on the gateway. On the public site that relative
   // page is not published; the icon opens the gateway's own terminal.

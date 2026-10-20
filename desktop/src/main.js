@@ -408,6 +408,13 @@ function registerIpc() {
     return next;
   });
 
+  // The socket can go live before the window subscribes to host:ws-status,
+  // so the renderer asks for the current status once on load.
+  ipcMain.handle("host:ws-status", () => ({
+    status: connStatus,
+    perHost: Object.fromEntries(connStatusByHost),
+  }));
+
   ipcMain.handle("host:process-status", async () => {
     const desktop = loadConfig();
     const active = getActiveHost(desktop);

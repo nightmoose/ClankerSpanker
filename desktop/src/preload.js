@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("clanker", {
     ipcRenderer.on("host:event", handler);
     return () => ipcRenderer.removeListener("host:event", handler);
   },
+  getWsStatus: () => ipcRenderer.invoke("host:ws-status"),
   onWsStatus: (cb) => {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("host:ws-status", handler);

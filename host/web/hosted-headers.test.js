@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -68,5 +68,29 @@ describe("hosted site security headers", () => {
       }
       expect(html, `${page}: inline event handler`).not.toMatch(/\son[a-z]+\s*=/i);
     }
+  });
+});
+
+// RFC-067: a shared link and a browser tab show what the product is.
+describe("index.html share and icon metadata", () => {
+  const html = readFileSync(join(here, "index.html"), "utf8");
+  const meta = (attr, name) =>
+    html.match(new RegExp(`<meta ${attr}="${name}" content="([^"]+)"`))?.[1] ?? "";
+
+  it("has a real title and description", () => {
+    expect(html).toMatch(/<title>ClankerSpanker: [^<]+<\/title>/);
+    expect(meta("name", "description").length).toBeGreaterThan(60);
+  });
+
+  it("has Open Graph and Twitter cards with an absolute image on the product origin", () => {
+    for (const p of ["og:title", "og:description", "og:url", "og:image"]) expect(meta("property", p)).not.toBe("");
+    expect(meta("property", "og:image")).toBe("https://clankerspanker.tech/og.png");
+    expect(meta("name", "twitter:card")).toBe("summary_large_image");
+  });
+
+  it("links icons that ship in the bundle", () => {
+    const hrefs = [...html.matchAll(/<link rel="(?:icon|apple-touch-icon)" href="\.\/([^"]+)"/g)].map((m) => m[1]);
+    expect(hrefs).toEqual(expect.arrayContaining(["favicon.ico", "icons/apple-touch-icon.png"]));
+    for (const h of [...hrefs, "og.png"]) expect(statSync(join(here, h)).size).toBeGreaterThan(0);
   });
 });

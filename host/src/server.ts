@@ -65,6 +65,7 @@ import {
   NATIVE_ONLY_PATHS,
   corsHeadersFor,
   isTrustedLocalPageRequest,
+  isForeignBrowserOrigin,
   nativeOnlyRefusal,
 } from "./trusted-local.js";
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
@@ -92,7 +93,7 @@ export function wsUpgradeAuthorized(
   const url = new URL(req.url ?? "", "http://localhost");
   if (tickets.consume(url.searchParams.get("ticket"))) return true;
   const legacy = url.searchParams.get("token");
-  if (legacy && isLocalMachineRequest(req)) {
+  if (legacy && isLocalMachineRequest(req) && !isForeignBrowserOrigin(req)) {
     return tokensMatch(legacy, config.hostToken);
   }
   return false;
@@ -129,7 +130,8 @@ type WsClient = WebSocket & { isAlive?: boolean };
  * `Tailscale-User-Login` is never local, on any listener (RFC-058 phase 2).
  */
 function isLocalMachineReq(req: IncomingMessage): boolean {
-  return isLocalMachineRequest(req);
+  // RFC-065: a page on another website reaching loopback is not this machine.
+  return isLocalMachineRequest(req) && !isForeignBrowserOrigin(req);
 }
 
 export function startServer(config: HostConfigFile, manager: SessionManager, bots?: BotRuntime) {
@@ -171,6 +173,14 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname;
     if (pathname === "/ws/terminal") {
+      // RFC-065: a login shell is native-only, like POST /exec (RFC-060).
+      // Every client opens it from the gateway's own /app/terminal.html, so
+      // a token-holding page on another origin (the hosted site included)
+      // or a tailscale serve caller is refused before the upgrade.
+      if (nativeOnlyRefusal(req)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
       termWss.handleUpgrade(req, socket, head, (ws) => {
         termWss.emit("connection", ws, req);
       });

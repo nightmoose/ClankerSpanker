@@ -93,13 +93,14 @@ final class HostServiceStatusTests: XCTestCase {
             runLaunchctl: { args in
                 calls.append(args[0])
                 if args[0] == "bootout" { throw LaunchctlFailed() } // not loaded: ignored
+                if args[0] == "print" { throw LaunchctlFailed() } // already gone
                 if args[0] == "bootstrap", bootstrapFailures > 0 {
                     bootstrapFailures -= 1
                     throw LaunchctlFailed() // launchd still tearing down the old job
                 }
             }
         )
-        XCTAssertEqual(calls, ["bootout", "bootstrap", "bootstrap", "bootstrap", "enable", "kickstart"])
+        XCTAssertEqual(calls, ["bootout", "print", "bootstrap", "bootstrap", "bootstrap", "enable", "kickstart"])
     }
 
     func testBootstrapGivesUpAfterAttempts() throws {
@@ -108,10 +109,48 @@ final class HostServiceStatusTests: XCTestCase {
         XCTAssertThrowsError(try HostInstaller.bootstrapAgent(
             log: { _ in }, plistURL: plist, label: appLabel, attempts: 3, retryDelay: 0,
             runLaunchctl: { args in
+                if args[0] == "print" { throw LaunchctlFailed() }
                 if args[0] == "bootstrap" { bootstraps += 1; throw LaunchctlFailed() }
             }
         ))
         XCTAssertEqual(bootstraps, 3)
+    }
+
+    func testBootstrapWaitsForTheOldJobToUnload() throws {
+        // The gateway shuts down gracefully, so launchd still lists the old job
+        // for a while after bootout. Bootstrap only once print stops finding it.
+        try "<plist/>".write(to: plist, atomically: true, encoding: .utf8)
+        var calls: [String] = []
+        var stillLoaded = 3
+        try HostInstaller.bootstrapAgent(
+            log: { _ in }, plistURL: plist, label: appLabel, retryDelay: 0,
+            unloadPollInterval: 0,
+            runLaunchctl: { args in
+                calls.append(args[0])
+                if args[0] == "print" {
+                    if stillLoaded > 0 { stillLoaded -= 1; return }
+                    throw LaunchctlFailed()
+                }
+            }
+        )
+        XCTAssertEqual(calls.filter { $0 == "bootstrap" }.count, 1)
+        XCTAssertEqual(calls.firstIndex(of: "bootstrap"), calls.lastIndex(of: "print")! + 1)
+        XCTAssertEqual(calls.filter { $0 == "print" }.count, 4)
+    }
+
+    func testBootstrapStillTriesAfterUnloadWaitRunsOut() throws {
+        try "<plist/>".write(to: plist, atomically: true, encoding: .utf8)
+        var logs: [String] = []
+        var bootstraps = 0
+        try HostInstaller.bootstrapAgent(
+            log: { logs.append($0) }, plistURL: plist, label: appLabel, retryDelay: 0,
+            unloadWait: 0, unloadPollInterval: 0,
+            runLaunchctl: { args in
+                if args[0] == "bootstrap" { bootstraps += 1 }
+            }
+        )
+        XCTAssertEqual(bootstraps, 1)
+        XCTAssertTrue(logs.contains { $0.contains("still loaded") })
     }
 
     func testBootstrapRefusesWithoutPlistAndNeverBootsOut() {

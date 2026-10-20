@@ -66,11 +66,18 @@ the panel) also ran `launchctl kickstart` synchronously on the main thread.
   `uninstall`). The wrappers run the work on a global queue (`offMain`).
   `install` still reads and saves the source path on the main actor.
 - `installLaunchAgent` writes the new plist before unloading anything, then
-  calls `bootstrapAgent`. That function runs `bootout` and `bootstrap` back to
-  back, then `enable` and `kickstart`. `bootstrap` is retried up to 5 times,
-  0.4 s apart, because `bootout` returns before launchd finishes removing the
-  job and an immediate `bootstrap` can fail with "Input/output error". If the
+  calls `bootstrapAgent`. That function runs `bootout`, waits until
+  `launchctl print` no longer finds the old job (polling every 0.5 s, up to
+  30 s), then runs `bootstrap`, `enable` and `kickstart`. `bootstrap` is
+  retried up to 10 times, 1 s apart. `bootout` returns before launchd
+  finishes removing the job, and the gateway shuts down gracefully on SIGTERM,
+  so a `bootstrap` sent too early fails with "Input/output error". If the
   plist is missing, `bootstrapAgent` throws without booting anything out.
+
+  Follow-up, 2026-10-20: the first version retried `bootstrap` 5 times, 0.4 s
+  apart, with no wait. On the owner's Mac that gave up before the old gateway
+  had exited. The install finished on disk, but the LaunchAgent was left
+  unloaded until it was bootstrapped by hand. That is why the wait was added.
 
 `ios/ClankerSpanker/ClankerSpanker/Services/LocalHostController.swift`:
 
@@ -101,13 +108,14 @@ only. It runs no subprocess in the app, so it is unchanged.
 
 ## Testing
 
-- [x] `Tests/HostServiceStatusTests.swift` (11 cases): recovery decision for
+- [x] `Tests/HostServiceStatusTests.swift` (13 cases): recovery decision for
   interrupted install / loaded / standalone loaded / no plist / no package;
   `loadedAgentLabel` preference; `probe` against temp dirs with a fake
-  `launchctl`; `bootstrapAgent` order and retry (bootout, bootstrap ×3,
-  enable, kickstart), gives up after N attempts, refuses without a plist and
+  `launchctl`; `bootstrapAgent` order and retry (bootout, print, bootstrap ×3,
+  enable, kickstart), waits for the old job to unload before bootstrapping,
+  still tries bootstrap once the unload wait runs out, gives up after N attempts, refuses without a plist and
   never boots out; `offMain` runs off the main thread.
-- [x] `make test-swift`: 31 passed, 0 failed.
+- [x] `make test-swift`: 33 passed, 0 failed.
 - [ ] Manual: Install / update host from a `/tmp` build; `launchctl bootout`
   the agent with the plist left in place, relaunch the app, and confirm the
   agent is loaded again.

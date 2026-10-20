@@ -302,12 +302,12 @@ actor APIClient {
     /// Soft-archive by default; pass `hard: true` for permanent delete
     /// (includes on-disk attachments).
     func deleteProject(id: String, hard: Bool = false, host: HostEndpoint) async throws {
-        let path = hard ? "/projects/\(id)?hard=1" : "/projects/\(id)"
         _ = try await request(
             method: "DELETE",
-            path: path,
+            path: "/projects/\(id)",
             body: EmptyBody(),
-            host: host
+            host: host,
+            queryItems: hard ? [URLQueryItem(name: "hard", value: "1")] : nil
         ) as EmptyResponse
     }
 
@@ -419,9 +419,10 @@ actor APIClient {
         method: String,
         path: String,
         body: B,
-        host: HostEndpoint
+        host: HostEndpoint,
+        queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
-        var req = try makeRequest(path: path, method: method, host: host, authorized: true)
+        var req = try makeRequest(path: path, method: method, host: host, authorized: true, queryItems: queryItems)
         if !(body is EmptyBody) {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try encoder.encode(body)
@@ -501,7 +502,11 @@ actor APIClient {
         seq: Int,
         host: HostEndpoint
     ) async throws -> Data {
-        try await getRaw(path: "/sessions/\(sessionId)/events?since=\(seq)", host: host)
+        try await getRaw(
+            path: "/sessions/\(sessionId)/events",
+            host: host,
+            queryItems: [URLQueryItem(name: "since", value: String(seq))]
+        )
     }
 
     func diff(id: String, host: HostEndpoint) async throws -> DiffResponse {
@@ -854,8 +859,8 @@ actor APIClient {
         return try await send(req)
     }
 
-    private func getRaw(path: String, host: HostEndpoint) async throws -> Data {
-        let req = try makeRequest(path: path, method: "GET", host: host, authorized: true)
+    private func getRaw(path: String, host: HostEndpoint, queryItems: [URLQueryItem]? = nil) async throws -> Data {
+        let req = try makeRequest(path: path, method: "GET", host: host, authorized: true, queryItems: queryItems)
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport(URLError(.badServerResponse))
@@ -881,7 +886,7 @@ actor APIClient {
         queryItems: [URLQueryItem]? = nil
     ) throws -> URLRequest {
         let auth = try HostAuth(host: host)
-        let url = try joinURL(base: auth.baseURL, path: path, queryItems: queryItems)
+        let url = try Self.joinURL(base: auth.baseURL, path: path, queryItems: queryItems)
         var req = URLRequest(url: url)
         req.httpMethod = method
         if authorized {
@@ -891,11 +896,25 @@ actor APIClient {
         return req
     }
 
-    private func joinURL(base: URL, path: String, queryItems: [URLQueryItem]? = nil) throws -> URL {
+    /// Appends `path` to `base`. A `?query` inside `path` is split off and
+    /// merged with `queryItems` (explicit `queryItems` win on name clashes);
+    /// putting it in `URLComponents.path` would encode `?` as `%3F` and 404.
+    static func joinURL(base: URL, path: String, queryItems: [URLQueryItem]? = nil) throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
         }
-        let cleanPath = path.hasPrefix("/") ? path : "/" + path
+        var pathOnly = path
+        var merged: [URLQueryItem] = []
+        if let q = path.firstIndex(of: "?") {
+            pathOnly = String(path[..<q])
+            let rawQuery = String(path[path.index(after: q)...])
+            merged = URLComponents(string: "?" + rawQuery)?.queryItems ?? []
+        }
+        if let queryItems, !queryItems.isEmpty {
+            let explicit = Set(queryItems.map(\.name))
+            merged = merged.filter { !explicit.contains($0.name) } + queryItems
+        }
+        let cleanPath = pathOnly.hasPrefix("/") ? pathOnly : "/" + pathOnly
         let basePath = components.path
         if basePath.isEmpty || basePath == "/" {
             components.path = cleanPath
@@ -903,8 +922,8 @@ actor APIClient {
             let trimmed = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
             components.path = trimmed + cleanPath
         }
-        if let queryItems, !queryItems.isEmpty {
-            components.queryItems = queryItems
+        if !merged.isEmpty {
+            components.queryItems = merged
         }
         guard let url = components.url else { throw APIError.invalidURL }
         return url

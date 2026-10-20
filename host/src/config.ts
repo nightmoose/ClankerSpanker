@@ -180,10 +180,26 @@ export function tightenConfigPermissions(configPath: string): void {
   }
 }
 
+/**
+ * A test that triggers a save without setting GROK_DISPATCH_CONFIG would
+ * overwrite the operator's real gateway config (it happened on 2026-10-20).
+ * vitest.setup.ts points every worker at a temp file; this is the backstop.
+ */
+export function refusesRealConfigUnderTest(
+  configPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(env.VITEST) && resolve(configPath) === resolve(DEFAULT_CONFIG_PATH);
+}
+
 export function saveConfig(
   config: HostConfigFile,
   configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFAULT_CONFIG_PATH,
 ): boolean {
+  if (refusesRealConfigUnderTest(configPath)) {
+    console.warn(`[config] saveConfig refused: tests must not write ${DEFAULT_CONFIG_PATH}`);
+    return false;
+  }
   try {
     mkdirSync(dirname(configPath), { recursive: true });
     // Normalize projects so `path` always mirrors `paths[0]` on the wire

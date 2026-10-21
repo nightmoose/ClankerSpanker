@@ -821,6 +821,38 @@ export interface PublicSessionSummary {
   creditsUsedAt?: string;
 }
 
+/**
+ * Slim shape returned by GET /sessions?view=summary (RFC-069).
+ * Contains only the fields rendered by list views (web, desktop, iOS).
+ * Full detail stays on GET /sessions/:id.
+ * prompt is truncated to 160 chars (fallback preview when transcriptPreview absent).
+ */
+export interface PublicSessionListItem {
+  id: string;
+  title: string;
+  status: SessionStatus;
+  model: string;
+  cwd: string;
+  projectId?: string;
+  planMode: boolean;
+  archived?: boolean;
+  archivedAt?: string;
+  isLive?: boolean;
+  backend?: SessionBackend;
+  profileId?: string;
+  profileName?: string;
+  profileColor?: string;
+  grokHomeLabel?: string;
+  transcriptPreview?: string;
+  /** Truncated to 160 chars — fallback when transcriptPreview is absent. */
+  prompt: string;
+  updatedAt: string;
+  createdAt: string;
+  toolCallCount: number;
+  creditsUsedDeltaPct?: number;
+  creditsUsedAt?: string;
+}
+
 export interface SessionFileEntry {
   path: string;
   kind: "file" | "folder" | "attachment";

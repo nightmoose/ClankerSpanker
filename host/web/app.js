@@ -1580,7 +1580,7 @@ async function refresh() {
   if (!state.token && !state.demo) return;
   try {
     const [sessions, projects, profiles, catalog] = await Promise.all([
-      api("/sessions"),
+      api("/sessions?view=summary"),
       api("/projects").catch(() => ({ projects: [] })),
       // Ask for admin payload; server ignores it for non-loopback callers.
       api("/profiles?admin=1").catch(() => ({ profiles: [], admin: false })),

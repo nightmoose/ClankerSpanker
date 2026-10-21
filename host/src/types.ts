@@ -111,6 +111,11 @@ export interface DispatchRequest {
    * paths honor allowCustomPaths).
    */
   extraDirs?: string[];
+  /**
+   * RFC-070. Only boolean true jails this job. Absent and false keep today's
+   * host process, environment, and tools.
+   */
+  sandbox?: boolean;
 }
 
 export type SessionBackend = "grok" | "claude" | "antigravity" | "bot";
@@ -318,6 +323,8 @@ export interface Bot {
   maxTurnsPerRun: number;
   lastRunAt?: string;
   lastSessionId?: string;
+  /** RFC-070. Copied onto each run this bot starts. Only boolean true. */
+  sandbox?: boolean;
 }
 
 export interface DispatchSession {
@@ -346,6 +353,8 @@ export interface DispatchSession {
   cwd: string;
   /** Extra workspace folders besides cwd (Claude/Antigravity `--add-dir`). */
   extraDirs?: string[];
+  /** RFC-070. Present only when this job opted into the sandbox. */
+  sandbox?: boolean;
   projectId?: string;
   model: string;
   planMode: boolean;
@@ -819,6 +828,8 @@ export interface PublicSessionSummary {
   /** RFC-021 Grok credit meter delta (weekly % this session has burned). */
   creditsUsedDeltaPct?: number;
   creditsUsedAt?: string;
+  /** RFC-070. Omitted unless this job opted into the sandbox. */
+  sandbox?: boolean;
 }
 
 /**
@@ -851,6 +862,8 @@ export interface PublicSessionListItem {
   toolCallCount: number;
   creditsUsedDeltaPct?: number;
   creditsUsedAt?: string;
+  /** RFC-070. Omitted unless this job opted into the sandbox. */
+  sandbox?: boolean;
 }
 
 export interface SessionFileEntry {

@@ -106,6 +106,7 @@ export class SessionStore {
       antigravityConversationId: s.antigravityConversationId,
       creditsUsedDeltaPct: s.creditsUsedDeltaPct,
       creditsUsedAt: s.creditsUsedAt,
+      ...(s.sandbox === true ? { sandbox: true as const } : {}),
     };
   }
 
@@ -178,6 +179,7 @@ export class SessionStore {
       toolCallCount: s.toolCalls.length,
       creditsUsedDeltaPct: s.creditsUsedDeltaPct,
       creditsUsedAt: s.creditsUsedAt,
+      ...(s.sandbox === true ? { sandbox: true as const } : {}),
     };
   }
 }

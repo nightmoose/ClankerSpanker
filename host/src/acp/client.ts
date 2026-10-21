@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnSandboxed } from "../sandbox.js";
 import { createInterface, type Interface } from "node:readline";
 import { EventEmitter } from "node:events";
 import { agentPathEnv } from "../platform.js";
@@ -108,6 +109,9 @@ export class AcpClient extends EventEmitter {
     private readonly defaults: {
       promptIdleTimeoutMs?: number;
       promptMaxMs?: number;
+      sandbox?: boolean;
+      cwd?: string;
+      extraDirs?: string[];
     } = {},
   ) {
     super();
@@ -127,15 +131,28 @@ export class AcpClient extends EventEmitter {
     // Correct: grok agent [OPTIONS] stdio
     const args = ["agent", ...this.agentArgs, "stdio"];
     console.log(`[acp] spawn ${this.grokBinary} ${args.join(" ")}`);
-    this.proc = spawn(this.grokBinary, args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ...this.extraEnv,
-        // Agent binaries + common install locations for tools Grok may shell out to
-        PATH: agentPathEnv(),
-      },
-    });
+    if (this.defaults.sandbox === true) {
+      const cwd = this.defaults.cwd;
+      if (!cwd) throw new Error("a sandboxed session needs a workspace directory");
+      this.proc = spawnSandboxed({
+        bin: this.grokBinary,
+        args,
+        cwd,
+        extraDirs: this.defaults.extraDirs,
+        env: this.extraEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams;
+    } else {
+      this.proc = spawn(this.grokBinary, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          ...this.extraEnv,
+          // Agent binaries + common install locations for tools Grok may shell out to
+          PATH: agentPathEnv(),
+        },
+      });
+    }
 
     this.rl = createInterface({ input: this.proc.stdout });
     this.rl.on("line", (line) => this.onLine(line));

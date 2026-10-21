@@ -453,6 +453,7 @@ export class SessionManager extends EventEmitter {
       prompt: promptText,
       cwd,
       extraDirs: normalizeExtraDirs(this.config, cwd, req.extraDirs),
+      ...(req.sandbox === true ? { sandbox: true as const } : {}),
       projectId,
       model,
       planMode,
@@ -2636,6 +2637,9 @@ export class SessionManager extends EventEmitter {
       {
         promptIdleTimeoutMs: this.config.promptIdleTimeoutMs,
         promptMaxMs: this.config.promptMaxMs,
+        sandbox: session.sandbox === true,
+        cwd: session.cwd,
+        extraDirs: session.extraDirs,
       },
     );
   }
@@ -2774,6 +2778,7 @@ export class SessionManager extends EventEmitter {
       botId: bot.id,
       maxTurns: bot.maxTurnsPerRun,
       botTools: bot.tools,
+      ...(bot.sandbox === true ? { sandbox: true as const } : {}),
     });
   }
 

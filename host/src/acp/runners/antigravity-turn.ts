@@ -74,6 +74,7 @@ export async function antigravityTurn(
     profileEnv,
     systemPrompt: profile?.systemPrompt,
     toolAllowlist: profile?.toolAllowlist,
+    sandbox: session.sandbox === true,
   });
   ctx.cliRunners.set(sessionId, runner);
 

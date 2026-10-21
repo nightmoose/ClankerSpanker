@@ -53,6 +53,7 @@ export class BotStore {
       maxTurnsPerRun: input.maxTurnsPerRun,
       lastRunAt: input.lastRunAt,
       lastSessionId: input.lastSessionId,
+      sandbox: input.sandbox,
     });
     if (!bot) throw new Error("Invalid bot");
     if (this.bots.some((b) => b.id === bot.id)) throw new Error(`Bot id already exists: ${bot.id}`);
@@ -113,6 +114,7 @@ export function normalizeBot(raw: Partial<Bot> | null | undefined): Bot | null {
     maxTurnsPerRun: Number.isFinite(maxTurns) && maxTurns > 0 ? Math.floor(maxTurns) : 20,
     lastRunAt: raw.lastRunAt,
     lastSessionId: raw.lastSessionId,
+    ...(raw.sandbox === true ? { sandbox: true as const } : {}),
   };
 }
 

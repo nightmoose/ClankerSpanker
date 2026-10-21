@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { spawnSandboxed } from "../sandbox.js";
 import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
@@ -47,6 +48,8 @@ export interface ClaudeRunnerOptions {
   toolAllowlist?: string[];
   /** Per-profile MCP JSON path (`--mcp-config`). */
   mcpConfigPath?: string;
+  /** RFC-070. Only boolean true jails this turn. */
+  sandbox?: boolean;
 }
 
 export interface ClaudeUsageDelta {
@@ -134,20 +137,33 @@ export class ClaudeRunner extends EventEmitter {
       args.push("--add-dir", dir);
     }
 
-    this.proc = spawn(claudeBin, args, {
-      cwd: this.opts.cwd,
-      env: {
-        ...process.env,
-        ...(this.opts.profileEnv ?? {}),
-        PATH: agentPathEnv(),
-        CLAUDE_DISPATCH_SESSION_ID: this.opts.dispatchSessionId,
-        CLAUDE_DISPATCH_HOST: this.opts.hostBaseUrl,
-        CLAUDE_DISPATCH_TOKEN: this.opts.hostToken,
-        // Avoid interactive prompts
-        CI: "1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    if (this.opts.sandbox === true) {
+      // No host token and no copy of the host environment. Phone-approval
+      // hooks need that token, so they do not fire inside the jail.
+      this.proc = spawnSandboxed({
+        bin: claudeBin,
+        args,
+        cwd: this.opts.cwd,
+        extraDirs: this.opts.extraDirs,
+        env: { ...(this.opts.profileEnv ?? {}), CI: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } else {
+      this.proc = spawn(claudeBin, args, {
+        cwd: this.opts.cwd,
+        env: {
+          ...process.env,
+          ...(this.opts.profileEnv ?? {}),
+          PATH: agentPathEnv(),
+          CLAUDE_DISPATCH_SESSION_ID: this.opts.dispatchSessionId,
+          CLAUDE_DISPATCH_HOST: this.opts.hostBaseUrl,
+          CLAUDE_DISPATCH_TOKEN: this.opts.hostToken,
+          // Avoid interactive prompts
+          CI: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    }
 
     const proc = this.proc;
     proc.stderr?.on("data", (buf: Buffer) => {

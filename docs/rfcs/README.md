@@ -3,7 +3,7 @@
 Design notes for non-trivial changes. **Shipped** = on `main`; **Accepted** = signed off;
 **Draft** = under review; **Superseded** = the number is kept and the work lives in another RFC.
 
-066 stays Accepted because its Linux desktop soak is still open. 006 and 017 stay Draft.
+017 stays Draft. 006 and 066 are Shipped; the allowlist check and the Linux desktop soak are follow-ups in those files.
 
 Start a new RFC with `make rfc SLUG=short-kebab` (template: [`_template.md`](_template.md)) and add a row below.
 That command fetches `origin`, takes the next integer above every number already used in this
@@ -34,7 +34,7 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 003 | [Create and run bots from the iPhone app](003-phone-bots.md) | Shipped |
 | 004 | [Host terminal from the phone](004-host-terminal.md) | Shipped |
 | 005 | [Attach Antigravity / Gemini CLI conversations](005-attach-agy.md) | Shipped |
-| 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](006-backend-parity.md) | Draft |
+| 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](006-backend-parity.md) | Shipped |
 | 007 | [Phone copy/paste: Term paste + session message selection](007-ios-term-copy-paste.md) | Shipped |
 | 008 | [Per-profile MCP servers (payer isolation)](008-profile-mcp.md) | Shipped |
 | 009 | [Remote MCP OAuth (PKCE)](009-mcp-oauth.md) | Shipped |
@@ -94,7 +94,7 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 063 | [Mac host installer stages, then swaps](063-installer-staged-swap.md) | Shipped |
 | 064 | [Mac Host panel: no subprocess on the main thread; recover an interrupted LaunchAgent load](064-mac-host-panel-async-status.md) | Shipped |
 | 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Shipped |
-| 066 | [Linux desktop on Electron 44](066-electron-44.md) | Accepted |
+| 066 | [Linux desktop on Electron 44](066-electron-44.md) | Shipped |
 | 067 | [The hosted site explains itself and has a read-only demo](067-hosted-demo-explainer.md) | Shipped |
 | 068 | [The gateway keeps its own log files bounded](068-gateway-log-rotation.md) | Shipped |
 | 069 | [Cheap session-list: slim shape, ETag, paging](069-sessions-list-summary.md) | Shipped |

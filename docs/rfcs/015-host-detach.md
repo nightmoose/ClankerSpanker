@@ -1,6 +1,6 @@
 # RFC-015 — Detach the Mac app from the host process
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-09-09
 **Branch:** nightly-maintenance-2026-09-09-rfc015-host-detach
 **Severity:** P1
@@ -84,8 +84,7 @@ APNs delivery.
 
 1. Implement.
 2. `make check`
-3. Update `docs/STATUS.md` → Accepted (Shipped after merge to main).
-4. Append `MAINTENANCE_LOG.md`.
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

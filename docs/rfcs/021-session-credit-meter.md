@@ -1,6 +1,6 @@
 # RFC-021 — Per-session Grok credit meter
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-17
 **Branch:** nightly-maintenance-2026-09-17-rfc021-session-credit-meter
 **Severity:** P2 — no functional break, but the maintainer hit 40% of the weekly
@@ -132,8 +132,7 @@ Snapshot it per session and the meter falls out.
 2. `make check`
 3. Kick LaunchAgent so `host/dist` loads
 4. Rebuild ClankerSpanker Mac + install on your iPhone (RFC-020 style)
-5. `docs/STATUS.md` → Shipped on merge
-6. Append `MAINTENANCE_LOG.md`
+5. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

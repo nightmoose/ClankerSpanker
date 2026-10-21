@@ -1,6 +1,6 @@
 # RFC-007 — Phone copy/paste: Term paste + session message selection
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-29
 **Branch:** nightly-maintenance-2026-08-29-rfc007-ios-term-copy-paste
 **Severity:** P1 — cannot run a copied host command from the phone without
@@ -59,8 +59,7 @@ No host API changes.
 
 1. Rebuild the iPhone (and Mac) app from `project.yml` sources.
 2. `make check`
-3. `docs/STATUS.md` → Shipped on merge
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

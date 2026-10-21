@@ -1,6 +1,6 @@
 # RFC-010 — iOS app icon badge for sessions that need you
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-02
 **Branch:** nightly-maintenance-2026-09-09-rfc011-apns
 **Severity:** P2 — phone already banners for approvals; the SpringBoard
@@ -80,8 +80,7 @@ backgrounded) client. That matches today’s local-notification model.
 1. Rebuild the iPhone app (scheme **ClankerSpankerPhone**). Mac rebuild
    picks up the Dock badge from the same sources.
 2. `make check`
-3. `docs/STATUS.md` → Shipped on merge
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

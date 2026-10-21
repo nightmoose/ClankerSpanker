@@ -1,7 +1,7 @@
 # ClankerSpanker CI — RFC-000 house style.
 #
 # Jobs:
-#   house-style  — RFC index, TEST-EXCEPTIONS, heavy-diff RFC+log, LAN-IP, test ratchet
+#   house-style  — RFC index, RFC citations, TEST-EXCEPTIONS, LAN-IP, test ratchet
 #   host         — typecheck + build (tests already ran inside house-style)
 #   desktop      — Electron shell smoke check (RFC-066); no install, electron is mocked
 #

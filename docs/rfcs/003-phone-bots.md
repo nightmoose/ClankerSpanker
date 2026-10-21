@@ -1,6 +1,6 @@
 # RFC-003 — Create and run bots from the iPhone app
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-24
 **Branch:** nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders
 **Severity:** P1 — daily-driver phone UX
@@ -52,8 +52,7 @@ This is a missing surface, not missing backend.
 
 1. Land with the named branch.
 2. `make check`
-3. `docs/STATUS.md` → Shipped when merged
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 5. Rebuild the iOS / iPhone scheme.
 
 ## Follow-ups

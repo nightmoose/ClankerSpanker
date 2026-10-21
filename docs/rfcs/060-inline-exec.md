@@ -108,8 +108,7 @@ is called:
 
 1. `make check`
 2. Build + install `ClankerSpankerPhone` on your iPhone
-3. Update `docs/STATUS.md` → Shipped
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

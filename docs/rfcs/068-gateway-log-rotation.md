@@ -1,6 +1,6 @@
 # RFC-068 — The gateway keeps its own log files bounded
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-10-20
 **Branch:** rfc-068-gateway-log-rotation
 **Severity:** P3

@@ -54,7 +54,7 @@
 ## Rollout
 
 1. Build the Mac app; run the manual checks above.
-2. `docs/STATUS.md` → Shipped; `MAINTENANCE_LOG.md`.
+2. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

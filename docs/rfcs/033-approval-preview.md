@@ -49,4 +49,4 @@ render — the one thing needed to decide was missing. The Diff tab ran
 ## Rollout
 
 1. `make check`; Install / update host; rebuild Mac + phone.
-2. `docs/STATUS.md` → Shipped; `MAINTENANCE_LOG.md`.
+2. Record the status on the row in `docs/rfcs/README.md` (RFC-000).

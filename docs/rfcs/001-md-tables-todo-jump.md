@@ -65,8 +65,7 @@ in-session “Jump to message” is also flaky on long transcripts.
 ## Rollout
 
 1. Land on the named branch; `make check`.
-2. `docs/STATUS.md` → Shipped.
-3. Append `MAINTENANCE_LOG.md`.
+2. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

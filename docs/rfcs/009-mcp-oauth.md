@@ -1,6 +1,6 @@
 # RFC-009 — Remote MCP OAuth (PKCE)
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-30
 **Branch:** nightly-maintenance-2026-08-30-rfc009-mcp-oauth
 **Severity:** P1 — RFC-008 HTTP MCP servers still need a static bearer in
@@ -74,8 +74,7 @@ must not ride the public profile API.
 2. Kick LaunchAgent so `host/dist` loads
 3. On the Mac, `/app/` → Profiles (this machine) → HTTP MCP server →
    **Sign in** → finish the browser window
-4. `docs/STATUS.md` → Shipped on merge
-5. Append `MAINTENANCE_LOG.md`
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

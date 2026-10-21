@@ -1,6 +1,6 @@
 # RFC-013 — Profile MCP catalog (who gets which connector)
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-03
 **Branch:** nightly-maintenance-2026-09-09-rfc013-profile-mcp-catalog
 **Severity:** P1 — RFC-008/009 shipped the *mechanism*; every profile still

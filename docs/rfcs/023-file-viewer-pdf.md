@@ -1,6 +1,6 @@
 # RFC-023 — In-app PDF preview + share on the session file viewer
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-21
 **Branch:** nightly-maintenance-2026-09-21-rfc023-file-viewer-pdf
 **Severity:** P2 — session 22530a89 ("Florida chicken coop design")
@@ -85,8 +85,7 @@ written.
 1. `make check`
 2. Kick LaunchAgent — host has real code changes this time.
 3. Rebuild `ClankerSpankerPhone` and install to your iPhone + your iPad.
-4. `docs/STATUS.md` → Shipped on merge.
-5. Append `MAINTENANCE_LOG.md`.
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

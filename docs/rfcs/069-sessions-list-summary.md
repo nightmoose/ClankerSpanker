@@ -1,6 +1,6 @@
 # RFC-069 — Cheap session-list: slim shape, ETag, paging
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-10-20
 **Branch:** rfc-069-sessions-list-summary
 **Severity:** P1

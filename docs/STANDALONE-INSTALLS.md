@@ -122,8 +122,9 @@ git -C ~/Projects/GrokDispatch-main checkout -B host-install --track origin/main
 a diverged branch are left alone. If the build fails, run it again; the
 log is `~/.grok-dispatch/self-update.log`.
 
-`scripts/update-mac-host.sh` is still the way to install this the first
-time on a Mac you can sit at.
+`scripts/update-mac-host.sh` is the command for a Mac you can sit at, including
+the first install when no user service is loaded yet. It fast-forwards only a
+checkout that tracks `origin/main` (RFC-034).
 
 ## 5. Security
 

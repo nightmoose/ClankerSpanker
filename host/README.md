@@ -94,11 +94,18 @@ Add your own with `"discoverRoots": ["~/work"]` in `config.json`.
 
 ### Updating a Mac host
 
-From the checkout on that Mac: `git pull`, `cd host && npm ci && npm run build`,
-then restart the service (`launchctl kickstart -k gui/$(id -u)/com.nightmoose.grok-dispatch-host`
-for the LaunchAgent install, or `systemctl --user restart clankerspanker-host` on Linux).
-To bind to loopback + Tailscale set `bindHost` accordingly (see the table above), and to
-mint a new token see "Rotating the token" below. Re-pair clients from `/setup` afterwards.
+From a checkout whose branch tracks `origin/main` (RFC-034, the same rule as RFC-059):
+
+```bash
+./scripts/update-mac-host.sh
+./scripts/update-mac-host.sh --bind-auto --rotate-token
+```
+
+The script fast-forwards that branch, runs `npm ci` and `npm run build` in `host/`,
+and restarts the LaunchAgent or the systemd user service. `--bind-auto` sets
+`bindHost` to `auto`. `--rotate-token` deletes `hostToken` so the next start
+mints a new one; re-pair clients from `/setup` afterwards. A feature branch or a
+dirty tree is left alone.
 
 ### Rotating the token
 

@@ -5,6 +5,7 @@ check: house-style typecheck build
 
 house-style:
 	python3 scripts/rfc_alloc_test.py
+	python3 scripts/update-mac-host_test.py
 	python3 scripts/house-style-check.py
 
 test:

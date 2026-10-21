@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 import { hostname as osHostname } from "node:os";
 import { WebSocketServer, type WebSocket } from "ws";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync as fsReadFileSync, unlinkSync, writeFileSync } from "node:fs";
-import type { AgentProfile, HostConfigFile, ProfileMcpServer, SessionBackend } from "./types.js";
+import type { AgentProfile, HostConfigFile, ProfileMcpServer, PublicSessionListItem, PublicSessionSummary, SessionBackend } from "./types.js";
 import type {
   AnswerQuestionsRequest,
   ApproveRequest,
@@ -71,6 +71,7 @@ import {
 import { formatAddr, isAutoBind, isWildcardBind, resolveBindAddresses } from "./bind-addresses.js";
 import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
+import { computeSessionListETag, pageItems } from "./sessions/store.js";
 import { runCommand } from "./exec.js";
 import * as projectSecrets from "./project-secrets.js";
 
@@ -1430,6 +1431,7 @@ async function handleHttp(
   // Pass ?includeArchived=1 to put everything in `sessions` (legacy / debugging).
   if (method === "GET" && path === "/sessions") {
     const includeArchived = url.searchParams.get("includeArchived") === "1";
+    const viewSummary = url.searchParams.get("view") === "summary";
     const contentQuery = (url.searchParams.get("q") ?? "").trim().toLowerCase();
     // Mirror Grok Build TUI: pull any on-disk sessions not yet in the Dispatch store
     // (cheap metadata import — agent process only starts on first attach/follow-up).
@@ -1516,6 +1518,67 @@ async function handleHttp(
           d.id.toLowerCase().includes(contentQuery),
       );
     }
+    if (viewSummary) {
+      // RFC-069: slim list items — only what list views render.
+      const limit = Math.min(500, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "200", 10) || 200));
+      const cursor = url.searchParams.get("cursor") ?? null;
+      const archivedCursor = url.searchParams.get("archivedCursor") ?? null;
+
+      // Map full summaries to slim list items, preserving the augmentations above.
+      const toItem = (s: PublicSessionSummary & { claudeSessionId?: string; antigravityConversationId?: string }): PublicSessionListItem => ({
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        model: s.model,
+        cwd: s.cwd,
+        projectId: s.projectId,
+        planMode: s.planMode,
+        archived: s.archived,
+        archivedAt: s.archivedAt,
+        isLive: s.isLive,
+        backend: s.backend,
+        profileId: s.profileId,
+        profileName: s.profileName,
+        profileColor: s.profileColor,
+        grokHomeLabel: s.grokHomeLabel,
+        transcriptPreview: s.transcriptPreview,
+        prompt: (s.prompt ?? "").slice(0, 160),
+        updatedAt: s.updatedAt,
+        createdAt: s.createdAt,
+        toolCallCount: s.toolCallCount,
+        creditsUsedDeltaPct: s.creditsUsedDeltaPct,
+        creditsUsedAt: s.creditsUsedAt,
+      });
+
+      const { page: activePage, nextCursor } = pageItems(active.map(toItem), limit, cursor);
+      const { page: archivedPage, nextCursor: archivedNextCursor } = pageItems(archived.map(toItem), limit, archivedCursor);
+
+      const body = JSON.stringify({
+        sessions: activePage,
+        archivedSessions: archivedPage,
+        diskSessions: disk,
+        claudeSessions: claude,
+        agySessions: agy,
+        ...(nextCursor !== undefined ? { nextCursor } : {}),
+        ...(archivedNextCursor !== undefined ? { archivedNextCursor } : {}),
+        ...(contentQuery ? { query: contentQuery } : {}),
+      });
+
+      const etag = computeSessionListETag(body);
+      res.setHeader("ETag", etag);
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304);
+        res.end();
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": Buffer.byteLength(body),
+      });
+      res.end(body);
+      return;
+    }
+
     json(res, 200, {
       sessions: includeArchived ? all : active,
       archivedSessions: archived,

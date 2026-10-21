@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DispatchSession, PublicSessionDetail, PublicSessionSummary, PendingApproval, ToolCallRecord } from "../types.js";
+import type { DispatchSession, PublicSessionDetail, PublicSessionListItem, PublicSessionSummary, PendingApproval, ToolCallRecord } from "../types.js";
 
 /** Cap for persisted tool rawInput/content JSON (chars). */
 export const MAX_TOOL_BLOB_CHARS = 4000;
@@ -69,7 +70,12 @@ export class SessionStore {
   }
 
   toSummary(s: DispatchSession, isLive = false): PublicSessionSummary {
-    const lastAssistant = [...s.transcript].reverse().find((t) => t.role === "assistant");
+    // Scan from the end — avoids spreading and reversing up to 120 entries per session.
+    let lastAssistant: (typeof s.transcript)[number] | undefined;
+    for (let i = s.transcript.length - 1; i >= 0; i--) {
+      const t = s.transcript[i]!;
+      if (t.role === "assistant") { lastAssistant = t; break; }
+    }
     return {
       id: s.id,
       grokSessionId: s.grokSessionId,
@@ -136,6 +142,81 @@ export class SessionStore {
       usage: slim.usage,
     };
   }
+
+  /**
+   * RFC-069: slim shape for GET /sessions?view=summary.
+   * Drops fields not rendered in any list view (error, completedAt, botId,
+   * claudeSessionId, antigravityConversationId, pendingApprovalId,
+   * grokSessionId) and caps prompt at 160 chars.
+   */
+  toListItem(s: DispatchSession, isLive = false): PublicSessionListItem {
+    let transcriptPreview: string | undefined;
+    for (let i = s.transcript.length - 1; i >= 0; i--) {
+      const t = s.transcript[i]!;
+      if (t.role === "assistant" && t.text) { transcriptPreview = t.text.slice(0, 240); break; }
+    }
+    return {
+      id: s.id,
+      title: s.title,
+      status: s.status,
+      model: s.model,
+      cwd: s.cwd,
+      projectId: s.projectId,
+      planMode: s.planMode,
+      archived: s.archived === true,
+      archivedAt: s.archivedAt,
+      isLive,
+      backend: s.backend,
+      profileId: s.profileId,
+      profileName: s.profileName,
+      profileColor: s.profileColor,
+      grokHomeLabel: s.grokHomeLabel,
+      transcriptPreview,
+      prompt: s.prompt.slice(0, 160),
+      updatedAt: s.updatedAt,
+      createdAt: s.createdAt,
+      toolCallCount: s.toolCalls.length,
+      creditsUsedDeltaPct: s.creditsUsedDeltaPct,
+      creditsUsedAt: s.creditsUsedAt,
+    };
+  }
+}
+
+/**
+ * RFC-069: page an already-sorted array using an opaque base64url cursor
+ * (encodes the id of the last returned item).  Returns the page and the
+ * next cursor (undefined when the caller has reached the end).
+ */
+export function pageItems<T extends { id: string }>(
+  items: T[],
+  limit: number,
+  cursor: string | null,
+): { page: T[]; nextCursor: string | undefined } {
+  let start = 0;
+  if (cursor) {
+    try {
+      const { id } = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { id: string };
+      const idx = items.findIndex((s) => s.id === id);
+      if (idx >= 0) start = idx + 1;
+    } catch {
+      // Ignore malformed cursor — start from the beginning.
+    }
+  }
+  const page = items.slice(start, start + limit);
+  const hasMore = start + limit < items.length;
+  const nextCursor =
+    hasMore && page.length > 0
+      ? Buffer.from(JSON.stringify({ id: page[page.length - 1]!.id })).toString("base64url")
+      : undefined;
+  return { page, nextCursor };
+}
+
+/**
+ * RFC-069: compute a short ETag from the serialised response body.
+ * Returns a quoted hex string (as required by RFC 7232 for strong ETags).
+ */
+export function computeSessionListETag(body: string): string {
+  return `"${createHash("sha1").update(body).digest("hex").slice(0, 16)}"`;
 }
 
 /** Drop bulky fields so session JSON stays phone-friendly. */

@@ -116,7 +116,7 @@ const Api = (() => {
 
     sessions: (query, hostConn) => {
       const q = String(query || "").trim();
-      return request(q ? `/sessions?q=${encodeURIComponent(q)}` : "/sessions", {}, hostConn);
+      return request(q ? `/sessions?view=summary&q=${encodeURIComponent(q)}` : "/sessions?view=summary", {}, hostConn);
     },
     session: (id, hostConn) => request(`/sessions/${enc(id)}`, {}, hostConn),
     events: (id, since = 0, hostConn) =>

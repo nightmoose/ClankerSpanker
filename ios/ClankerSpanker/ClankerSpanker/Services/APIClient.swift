@@ -479,14 +479,16 @@ actor APIClient {
 
     func sessions(host: HostEndpoint, query: String? = nil) async throws -> SessionsResponse {
         let q = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // RFC-069: always request the slim summary shape.
         if q.isEmpty {
-            return try await get("/sessions", host: host)
+            return try await get("/sessions", host: host,
+                                 queryItems: [URLQueryItem(name: "view", value: "summary")])
         }
         // Content search: host scans titles + full transcript bodies
         return try await get(
             "/sessions",
             host: host,
-            queryItems: [URLQueryItem(name: "q", value: q)]
+            queryItems: [URLQueryItem(name: "view", value: "summary"), URLQueryItem(name: "q", value: q)]
         )
     }
 

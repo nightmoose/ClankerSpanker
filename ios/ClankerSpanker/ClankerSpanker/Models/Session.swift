@@ -577,6 +577,10 @@ struct SessionsResponse: Codable, Sendable {
     var agySessions: [DiskSessionHint]?
     /// Echo of `?q=` when the host ran a content search.
     var query: String?
+    /// RFC-069: opaque cursor for the next page of active sessions (absent when at end).
+    var nextCursor: String?
+    /// RFC-069: opaque cursor for the next page of archived sessions (absent when at end).
+    var archivedNextCursor: String?
 }
 
 struct ProfilesResponse: Codable, Sendable {

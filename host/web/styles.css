@@ -140,6 +140,17 @@ pre.preview {
   justify-content: space-between;
 }
 .row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+#btn-hosts.active { color: #000; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+.host-list { display: flex; flex-direction: column; gap: 12px; }
+.host-card.selected { border-color: var(--accent); }
+.host-facts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.host-fact { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+.host-fact .k { color: var(--muted); min-width: 4.75rem; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; padding-top: 3px; }
+.host-fact .v { flex: 1; min-width: 0; }
+.usage-list { margin: 0; padding-left: 1.1rem; }
+.usage-list li { margin: 2px 0; }
+.credit-row { display: flex; gap: 8px; align-items: center; margin: 2px 0; }
 
 .status {
   font-size: 11px;

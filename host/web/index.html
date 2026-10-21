@@ -23,7 +23,7 @@
   <link rel="icon" href="./favicon.ico" sizes="32x32" />
   <link rel="icon" href="./icons/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20261020a" />
+  <link rel="stylesheet" href="./styles.css?v=20261021a" />
 </head>
 <body>
   <div id="app">
@@ -42,6 +42,7 @@
       <div class="actions">
         <nav id="site-nav" class="site-nav" aria-label="Site">
           <a href="https://clankerspanker.tech/">Product</a>
+          <a href="/admin/">Admin</a>
           <a href="/docs/">Docs</a>
           <a href="/download/">Download</a>
         </nav>
@@ -49,6 +50,7 @@
         <button type="button" id="btn-archived" class="icon-btn" title="Toggle archived">📥</button>
         <button type="button" id="btn-refresh" class="icon-btn" title="Refresh">↻</button>
         <a id="btn-terminal" href="./terminal.html" class="icon-btn" title="Host terminal">⌨</a>
+        <button type="button" id="btn-hosts" class="secondary" title="Paired gateways">Hosts</button>
         <button type="button" id="btn-settings" class="icon-btn" title="Connection">⚙</button>
       </div>
     </header>
@@ -68,10 +70,11 @@
       <section id="view-compose" class="view hidden"></section>
       <section id="view-profiles" class="view hidden"></section>
       <section id="view-settings" class="view hidden"></section>
+      <section id="view-admin" class="view hidden"></section>
     </main>
 
     <p id="banner" class="banner hidden"></p>
   </div>
-  <script src="./app.js?v=20261020a" type="module"></script>
+  <script src="./app.js?v=20261021a" type="module"></script>
 </body>
 </html>

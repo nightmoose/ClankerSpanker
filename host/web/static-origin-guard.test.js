@@ -40,6 +40,10 @@ describe("relative credential sends", () => {
     expect(existsSync(join(out, "app", "terminal.html"))).toBe(false);
     expect(existsSync(join(out, "app.js"))).toBe(true);
     expect(existsSync(join(out, "app", "app.js"))).toBe(true);
+    expect(existsSync(join(out, "admin", "index.html"))).toBe(true);
+    expect(existsSync(join(out, "admin", "app.js"))).toBe(true);
+    expect(existsSync(join(out, "admin", "terminal.html"))).toBe(false);
+    expect(readFileSync(join(out, "admin", "app.js"), "utf8")).toBe(readFileSync(join(out, "app.js"), "utf8"));
     expect(existsSync(join(out, "docs", "index.html"))).toBe(true);
     expect(scanTree(out)).toEqual([]);
     const published = readFileSync(join(out, "app.js"), "utf8");

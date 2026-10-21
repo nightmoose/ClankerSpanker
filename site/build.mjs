@@ -1,8 +1,10 @@
 /**
  * Build the static product site.
  *
- * Copies the browser control plane from host/web into both / and /app/
- * so the script is not forked. The host terminal page is left out: it
+ * Copies the browser control plane from host/web into /, /app/, and /admin/
+ * so the script is not forked. /admin is the paired-gateway console (RFC-058
+ * phase 3); it is the same bundle, and app.js opens that view from the path.
+ * The host terminal page is left out: it
  * posts the bearer token to a relative /ws/ticket, which is correct only
  * when the page itself is served by the gateway. Authored pages under
  * site/docs and site/download are copied beside the control plane.
@@ -34,11 +36,12 @@ export function buildSite(out) {
 
   cpSync(webRoot, out, { recursive: true, filter: skipTerminal });
   cpSync(webRoot, join(out, "app"), { recursive: true, filter: skipTerminal });
+  cpSync(webRoot, join(out, "admin"), { recursive: true, filter: skipTerminal });
   cpSync(join(siteDir, "docs"), join(out, "docs"), { recursive: true });
   cpSync(join(siteDir, "download"), join(out, "download"), { recursive: true });
   cpSync(join(siteDir, "site.css"), join(out, "site.css"));
 
-  for (const rel of ["terminal.html", join("app", "terminal.html")]) {
+  for (const rel of ["terminal.html", join("app", "terminal.html"), join("admin", "terminal.html")]) {
     if (existsSync(join(out, rel))) {
       throw new Error(`site build: ${rel} must not be published (it posts the host token to a relative URL)`);
     }

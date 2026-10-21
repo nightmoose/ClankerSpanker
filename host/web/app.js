@@ -19,12 +19,36 @@ import {
 } from "./gateway-client.js";
 import { DEMO_NOTICE, demoApi } from "./demo.js";
 import { demoHref, demoRequested, landingView } from "./landing.js";
+import { creditBadge } from "./credit-badge.js";
+import {
+  activeRecord,
+  clearHostToken,
+  hostSwitchDropsSessions,
+  isAdminConsolePath,
+  loadPairedHosts,
+  persistPairedHosts,
+  recordKey,
+  upsertHost,
+} from "./paired-hosts.js";
+import {
+  adminConsoleHtml,
+  controlPlanePaths,
+  creditRows,
+  pairPaths,
+  publicCatalog,
+  publicPushStatus,
+  usageLine,
+} from "./admin-console.js";
 
-const STORAGE_TOKEN = "clankerspanker.token";
-const STORAGE_URL = "clankerspanker.hostURL";
+const demoOn = demoRequested(location.search);
+const onAdminPath = isAdminConsolePath(location.pathname);
+const bootHosts = demoOn
+  ? { hosts: [], activeHostId: "", changed: false }
+  : loadPairedHosts(localStorage);
+const bootActive = demoOn ? null : activeRecord(bootHosts.hosts, bootHosts.activeHostId);
 
 const state = {
-  tab: "active",
+  tab: onAdminPath ? "admin" : "active",
   showArchived: false,
   sessions: [],
   archived: [],
@@ -35,10 +59,19 @@ const state = {
   profileId: null,
   detail: null,
   // The demo never reads the saved token, so it cannot send it anywhere.
-  token: demoRequested(location.search) ? "" : localStorage.getItem(STORAGE_TOKEN) || "",
+  token: demoOn ? "" : bootActive?.token || "",
   // On the gateway, same origin is the host. On the public site, the gateway
   // is loopback on this computer until the operator saves another URL.
-  baseURL: defaultGatewayURL({ hostname: location.hostname, stored: localStorage.getItem(STORAGE_URL) || "" }) || window.location.origin,
+  baseURL:
+    defaultGatewayURL({
+      hostname: location.hostname,
+      stored: demoOn ? "" : bootActive?.baseURL || "",
+    }) || window.location.origin,
+  // RFC-058 phase 3: every gateway this browser has saved, and which one is selected.
+  hosts: bootHosts.hosts,
+  activeHostId: bootHosts.activeHostId,
+  adminFacts: null,
+  refreshGen: 0,
   ws: null,
   connected: false,
   // Profiles admin (Profiles tab). Populated by GET /profiles?admin=1
@@ -49,8 +82,22 @@ const state = {
   mcpCatalog: null,
   // RFC-067: read-only demo. Chosen with ?demo=1 only; api() then answers
   // from demo.js and nothing reaches the network.
-  demo: demoRequested(location.search),
+  demo: demoOn,
 };
+
+if (!demoOn && bootActive && !bootActive.baseURL && state.baseURL) {
+  state.hosts = state.hosts.map((h) =>
+    recordKey(h) === state.activeHostId ? { ...h, baseURL: state.baseURL } : h,
+  );
+  bootHosts.changed = true;
+}
+if (!demoOn && bootHosts.changed) {
+  try {
+    persistPairedHosts(localStorage, { hosts: state.hosts, activeHostId: state.activeHostId });
+  } catch {
+    /* private mode */
+  }
+}
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -102,7 +149,8 @@ async function refreshTokenFromHost(usedToken) {
         const c = await r.json();
         if (c?.hostToken && c.hostToken !== state.token) {
           state.token = c.hostToken;
-          try { localStorage.setItem(STORAGE_TOKEN, state.token); } catch { /* private mode */ }
+          rememberActive();
+          commitHosts();
           connectWs();
         }
         return c?.hostToken ?? null;
@@ -197,28 +245,13 @@ function enterDemo() {
 }
 
 function showView(name) {
-  ["list", "detail", "compose", "profiles", "settings"].forEach((v) => {
+  ["list", "detail", "compose", "profiles", "settings", "admin"].forEach((v) => {
     $(`#view-${v}`)?.classList.toggle("hidden", v !== name);
   });
 }
 
 function statusClass(s) {
   return `status ${String(s || "").replace(/[^a-z_]/g, "")}`;
-}
-
-// RFC-021: per-session Grok credit meter badge. Grok-only; other backends
-// (Claude / Antigravity / Bot) never surface a delta. Green < 5%, amber ≥ 5%,
-// red ≥ 10%. Tooltip nudges reincarnation once the chat has grown expensive.
-function creditBadge(s) {
-  const delta = typeof s?.creditsUsedDeltaPct === "number" ? s.creditsUsedDeltaPct : null;
-  if (delta == null || !Number.isFinite(delta)) return "";
-  const tier = delta >= 10 ? "red" : delta >= 5 ? "amber" : "green";
-  const rounded = delta < 1 ? delta.toFixed(1) : Math.round(delta).toString();
-  const title =
-    tier === "green"
-      ? `This chat has burned ${rounded}% of the weekly Grok plan.`
-      : `This chat has burned ${rounded}% of the weekly Grok plan. Consider reincarnating.`;
-  return `<span class="credit-badge credit-${tier}" title="${escapeAttr(title)}">wk +${rounded}%</span>`;
 }
 
 // ——— Renderers ———
@@ -1465,7 +1498,7 @@ function renderSettings() {
   syncTabs();
   const root = $("#view-settings");
   const siteLinks = productSiteKind(location.hostname)
-    ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
+    ? `<p class="preview"><a href="https://clankerspanker.tech/">Product</a> · <a href="/admin/">Admin</a> · <a href="/docs/">Docs</a> · <a href="/download/">Download</a></p>`
     : "";
   const updateCard = canUpdateHost()
     ? `
@@ -1500,13 +1533,40 @@ function renderSettings() {
       state.demo = false;
       history.replaceState(null, "", demoHref(location, false));
     }
-    state.baseURL = normalizeHostURL($("#s-url").value) || window.location.origin;
-    state.token = $("#s-token").value.trim();
-    localStorage.setItem(STORAGE_URL, state.baseURL);
-    localStorage.setItem(STORAGE_TOKEN, state.token);
+    const prevKey = state.activeHostId;
+    const prevURL = state.baseURL;
+    const prevToken = state.token;
+    const url = normalizeHostURL($("#s-url").value) || window.location.origin;
+    const token = $("#s-token").value.trim();
+    state.baseURL = url;
+    state.token = token;
     showProductChrome();
+    let saved = false;
     try {
       await api("/auth/validate", { method: "POST", body: "{}" });
+      let self = null;
+      try {
+        self = await api("/host/self");
+      } catch {
+        /* The token worked. Identity can fill in on the next refresh. */
+      }
+      const hostId = self?.hostId ? String(self.hostId) : "";
+      const current = activeRecord(state.hosts, prevKey);
+      const sameGateway = hostId ? current?.hostId === hostId : url === prevURL;
+      if (sameGateway) {
+        rememberActive({ hostId, label: current?.label || self?.name || "" });
+      } else {
+        state.hosts = upsertHost(state.hosts, {
+          hostId,
+          label: self?.name || "",
+          baseURL: url,
+          token,
+        });
+        state.activeHostId = recordKey({ hostId, baseURL: url });
+      }
+      if (hostSwitchDropsSessions(prevKey, state.activeHostId) || prevURL !== url) dropSessionState();
+      commitHosts();
+      saved = true;
       banner("Connected");
       connectWs();
       await refresh();
@@ -1515,16 +1575,19 @@ function renderSettings() {
       showView("list");
       renderList();
     } catch (e) {
+      if (!saved) {
+        state.baseURL = prevURL;
+        state.token = prevToken;
+        showProductChrome();
+      }
       setConn(false);
       banner(e.message, true);
     }
   });
   $("#s-clear")?.addEventListener("click", () => {
-    state.token = "";
-    localStorage.removeItem(STORAGE_TOKEN);
-    $("#s-token").value = "";
-    setConn(false);
-    banner("Token cleared");
+    clearSavedHost(state.activeHostId);
+    const input = $("#s-token");
+    if (input) input.value = "";
   });
   $("#host-update-check")?.addEventListener("click", () => loadHostUpdate());
   $("#host-update-apply")?.addEventListener("click", () => applyHostUpdate());
@@ -1574,18 +1637,275 @@ async function applyHostUpdate() {
   }
 }
 
+// ——— Paired hosts (RFC-058 phase 3) ———
+
+function commitHosts() {
+  if (state.demo) return;
+  try {
+    persistPairedHosts(localStorage, { hosts: state.hosts, activeHostId: state.activeHostId });
+  } catch {
+    /* private mode */
+  }
+}
+
+/** Write the current URL and token onto the selected record. Returns true when the selected id changed. */
+function rememberActive({ hostId = "", label = "" } = {}) {
+  const current = activeRecord(state.hosts, state.activeHostId);
+  const next = {
+    hostId: hostId || current?.hostId || "",
+    label: label || current?.label || "",
+    baseURL: state.baseURL,
+    token: state.token,
+  };
+  if (!next.hostId) {
+    const known = state.hosts.find((h) => h.hostId && h.baseURL === next.baseURL);
+    if (known) {
+      next.hostId = known.hostId;
+      if (!next.label) next.label = known.label;
+    }
+  }
+  const prevKey = state.activeHostId;
+  state.hosts = upsertHost(state.hosts, next);
+  state.activeHostId = recordKey({ hostId: next.hostId, baseURL: next.baseURL });
+  return hostSwitchDropsSessions(prevKey, state.activeHostId);
+}
+
+/** Attach the current token to the gateway at state.baseURL, without retargeting a different saved host. */
+function saveTokenForCurrentURL() {
+  const existing = state.hosts.find((h) => h.baseURL === state.baseURL);
+  if (existing?.hostId) {
+    state.hosts = upsertHost(state.hosts, { ...existing, token: state.token, baseURL: state.baseURL });
+    state.activeHostId = existing.hostId;
+  } else {
+    state.hosts = upsertHost(state.hosts, {
+      hostId: "",
+      label: existing?.label || "",
+      baseURL: state.baseURL,
+      token: state.token,
+    });
+    state.activeHostId = recordKey({ hostId: "", baseURL: state.baseURL });
+  }
+  commitHosts();
+}
+
+function adoptHostIdentity(self) {
+  if (!self?.hostId || state.demo) return;
+  const current = activeRecord(state.hosts, state.activeHostId);
+  state.hosts = upsertHost(state.hosts, {
+    hostId: String(self.hostId),
+    label: current?.label || self.name || "",
+    baseURL: state.baseURL,
+    token: state.token,
+  });
+  state.activeHostId = String(self.hostId);
+  commitHosts();
+}
+
+function dropSessionState() {
+  state.refreshGen += 1;
+  state.sessions = [];
+  state.archived = [];
+  state.disk = [];
+  state.claude = [];
+  state.detail = null;
+  state.projects = [];
+  state.profiles = [];
+  state.admin = false;
+  state.adminProfiles = [];
+  state.profileId = null;
+  state.mcpCatalog = null;
+  state.adminFacts = null;
+  state.profileEditor = null;
+  if (state.ws) {
+    const old = state.ws;
+    state.ws = null;
+    old.onmessage = null;
+    old.onopen = null;
+    old.onclose = null;
+    try {
+      old.close();
+    } catch {
+      /* already closed */
+    }
+  }
+  setConn(false);
+}
+
+function clearSavedHost(key) {
+  state.hosts = clearHostToken(state.hosts, key);
+  if (key === state.activeHostId) {
+    state.token = "";
+    dropSessionState();
+  }
+  commitHosts();
+  banner("Token cleared");
+  if (state.tab === "admin") renderAdmin();
+}
+
+async function selectSavedHost(key) {
+  const rec = state.hosts.find((h) => recordKey(h) === key);
+  if (!rec) return;
+  const same = key === state.activeHostId && rec.baseURL === state.baseURL && rec.token === state.token;
+  state.tab = "admin";
+  syncTabs();
+  if (!same) {
+    state.activeHostId = key;
+    state.baseURL = rec.baseURL || state.baseURL;
+    state.token = rec.token;
+    dropSessionState();
+    commitHosts();
+    showProductChrome();
+  }
+  if (!state.token) {
+    setConn(false);
+    renderAdmin();
+    return;
+  }
+  connectWs();
+  await refresh();
+}
+
+async function pairGateway({ baseURL, token, label }) {
+  const url = normalizeHostURL(baseURL);
+  const trimmed = String(token || "").trim();
+  if (!url || !trimmed) {
+    banner("Host URL and token are both needed", true);
+    return;
+  }
+  const headers = {
+    Authorization: `Bearer ${trimmed}`,
+    "Content-Type": "application/json",
+  };
+  const call = async (path, opts = {}) => {
+    const target = new URL(path, `${url.replace(/\/$/, "")}/`);
+    let res;
+    try {
+      res = await fetch(target, {
+        ...opts,
+        ...loopbackFetchInit(target),
+        headers: { ...headers, ...(opts.headers || {}) },
+      });
+    } catch (err) {
+      throw fetchFailure(err);
+    }
+    const text = await res.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = { error: text };
+    }
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+    return body;
+  };
+  try {
+    const [validatePath, selfPath] = pairPaths();
+    await call(validatePath, { method: "POST", body: "{}" });
+    const self = await call(selfPath);
+    if (!self?.hostId) throw new Error("The gateway did not return a host id");
+    const prevKey = state.activeHostId;
+    const prevURL = state.baseURL;
+    state.hosts = upsertHost(state.hosts, {
+      hostId: String(self.hostId),
+      label: String(label || "").trim() || self.name || "",
+      baseURL: url,
+      token: trimmed,
+    });
+    state.activeHostId = String(self.hostId);
+    state.baseURL = url;
+    state.token = trimmed;
+    state.tab = "admin";
+    if (hostSwitchDropsSessions(prevKey, state.activeHostId) || prevURL !== url) dropSessionState();
+    commitHosts();
+    showProductChrome();
+    banner("Gateway saved");
+    connectWs();
+    await refresh();
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+
+function renderAdmin() {
+  showView("admin");
+  state.tab = "admin";
+  syncTabs();
+  const root = $("#view-admin");
+  if (!root) return;
+  const active = activeRecord(state.hosts, state.activeHostId);
+  const facts = state.adminFacts || {};
+  root.innerHTML = adminConsoleHtml({
+    demo: state.demo,
+    hasToken: state.demo || Boolean(active?.token),
+    admin: state.admin === true,
+    wsOpen: Boolean(state.connected) && !state.demo,
+    health: facts.health || null,
+    healthError: facts.healthError || "",
+    push: facts.push || null,
+    pushError: facts.pushError || "",
+    profiles: (state.profiles || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      usageLabel: usageLine(p),
+    })),
+    catalog: publicCatalog(state.mcpCatalog?.servers),
+    credits: creditRows(state.sessions),
+    hosts: state.hosts.map((h) => ({
+      key: recordKey(h),
+      hostId: h.hostId,
+      label: h.label,
+      baseURL: h.baseURL,
+      tokenSaved: Boolean(h.token),
+      selected: recordKey(h) === state.activeHostId,
+    })),
+  });
+  root.querySelectorAll("[data-select-host]").forEach((btn) => {
+    btn.addEventListener("click", () => selectSavedHost(btn.getAttribute("data-select-host")));
+  });
+  root.querySelectorAll("[data-clear-host]").forEach((btn) => {
+    btn.addEventListener("click", () => clearSavedHost(btn.getAttribute("data-clear-host")));
+  });
+  $("#host-add-save")?.addEventListener("click", () => {
+    if (state.demo) {
+      banner(`${DEMO_NOTICE} Connect your gateway to save it for real.`);
+      return;
+    }
+    pairGateway({
+      label: $("#host-add-label")?.value || "",
+      baseURL: $("#host-add-url")?.value || "",
+      token: $("#host-add-token")?.value || "",
+    });
+  });
+}
+
+function failedBody(body) {
+  return Boolean(body && typeof body === "object" && typeof body.__failed === "string");
+}
+
 // ——— Data / WS ———
 
 async function refresh() {
   if (!state.token && !state.demo) return;
+  const gen = (state.refreshGen += 1);
+  const hostKey = state.activeHostId;
+  const adminView = state.tab === "admin" && !state.demo;
   try {
-    const [sessions, projects, profiles, catalog] = await Promise.all([
-      api("/sessions?view=summary"),
-      api("/projects").catch(() => ({ projects: [] })),
-      // Ask for admin payload; server ignores it for non-loopback callers.
-      api("/profiles?admin=1").catch(() => ({ profiles: [], admin: false })),
-      api("/mcp/catalog").catch(() => null),
-    ]);
+    const paths = controlPlanePaths({ adminView });
+    const bodies = await Promise.all(
+      paths.map((path, i) => {
+        const call = api(path);
+        // Sessions still fail the whole refresh. The other reads are optional.
+        if (i === 0) return call;
+        return call.catch((e) => ({ __failed: e.message }));
+      }),
+    );
+    if (gen !== state.refreshGen || hostKey !== state.activeHostId) return;
+    const byPath = Object.fromEntries(paths.map((path, i) => [path, bodies[i]]));
+    const sessions = byPath["/sessions?view=summary"];
+    const projects = failedBody(byPath["/projects"]) ? { projects: [] } : byPath["/projects"];
+    const profilePath = paths.find((path) => path.startsWith("/profiles"));
+    const profiles = failedBody(byPath[profilePath]) ? { profiles: [], admin: false } : byPath[profilePath];
+    const catalog = failedBody(byPath["/mcp/catalog"]) ? null : byPath["/mcp/catalog"];
     state.sessions = sessions.sessions || [];
     state.archived = sessions.archivedSessions || [];
     state.disk = sessions.diskSessions || [];
@@ -1595,11 +1915,36 @@ async function refresh() {
     state.admin = profiles.admin === true;
     state.adminProfiles = profiles.adminProfiles || [];
     if (catalog?.servers) state.mcpCatalog = catalog;
+    if (adminView) {
+      const healthBody = byPath["/health"];
+      const pushBody = byPath["/push/status"];
+      state.adminFacts = {
+        health: !failedBody(healthBody) && healthBody?.ok ? healthBody : null,
+        healthError: failedBody(healthBody) ? healthBody.__failed : "",
+        push: failedBody(pushBody) ? null : publicPushStatus(pushBody),
+        pushError: failedBody(pushBody) ? pushBody.__failed : "",
+      };
+    }
+    const current = activeRecord(state.hosts, state.activeHostId);
+    if (!state.demo && current && !current.hostId) {
+      try {
+        const self = await api("/host/self");
+        if (gen !== state.refreshGen || hostKey !== state.activeHostId) return;
+        adoptHostIdentity(self);
+      } catch {
+        /* The list keeps the token. The id fills in on a later refresh. */
+      }
+    }
+    if (gen !== state.refreshGen) return;
     // The demo lists every profile's chats; there is no profile picker here.
     if (!state.profileId && state.profiles[0] && !state.demo) state.profileId = state.profiles[0].id;
     setConn(true);
     // WS / ↻ used to call renderList() whenever no session detail was open,
     // which yanked Profiles (and the editor) back to the session list.
+    if (state.tab === "admin") {
+      renderAdmin();
+      return;
+    }
     if (state.tab === "profiles") {
       if (!state.profileEditor) renderProfiles();
       return;
@@ -1609,12 +1954,14 @@ async function refresh() {
     else if (state.detail?.id) {
       try {
         state.detail = await api(`/sessions/${state.detail.id}`);
+        if (gen !== state.refreshGen || hostKey !== state.activeHostId) return;
         if (!$("#view-detail").classList.contains("hidden")) renderDetail();
       } catch {
         /* keep list */
       }
     }
   } catch (e) {
+    if (gen !== state.refreshGen || hostKey !== state.activeHostId) return;
     setConn(false);
     banner(e.message, true);
   }
@@ -1663,6 +2010,7 @@ async function connectWs() {
 function syncTabs() {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === state.tab));
   $("#btn-archived")?.classList.toggle("active", state.showArchived);
+  $("#btn-hosts")?.classList.toggle("active", state.tab === "admin");
 }
 
 /** Recent tool calls with output tail + exit code (RFC-040/050). Newest first. */
@@ -1746,6 +2094,13 @@ function boot() {
     });
   });
   $("#btn-refresh")?.addEventListener("click", () => refresh());
+  $("#btn-hosts")?.addEventListener("click", () => {
+    state.detail = null;
+    state.tab = "admin";
+    syncTabs();
+    if (state.token || state.demo) refresh();
+    else renderAdmin();
+  });
   $("#btn-settings")?.addEventListener("click", () => renderSettings());
   $("#btn-host-update")?.addEventListener("click", () => renderSettings());
   $("#btn-archived")?.addEventListener("click", () => {
@@ -1776,11 +2131,20 @@ function boot() {
   const openUpdate = q.get("update") === "1";
   if (q.get("token")) {
     state.token = q.get("token");
-    localStorage.setItem(STORAGE_TOKEN, state.token);
+    saveTokenForCurrentURL();
     history.replaceState({}, "", location.pathname);
   }
 
   const start = () => {
+    if (onAdminPath || state.tab === "admin") {
+      if (state.token) {
+        connectWs();
+        refresh();
+      } else {
+        renderAdmin();
+      }
+      return;
+    }
     if (!state.token) {
       renderSettings();
     } else if (openUpdate) {
@@ -1804,9 +2168,8 @@ function boot() {
     .then((c) => {
       if (c?.hostToken) {
         state.token = c.hostToken;
-        localStorage.setItem(STORAGE_TOKEN, state.token);
         state.baseURL = window.location.origin;
-        localStorage.setItem(STORAGE_URL, state.baseURL);
+        saveTokenForCurrentURL();
       }
     })
     .catch(() => {})

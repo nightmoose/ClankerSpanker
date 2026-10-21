@@ -12,6 +12,7 @@
       <a class="logo" href="https://clankerspanker.tech/">ClankerSpanker</a>
       <nav aria-label="Site">
         <a href="https://clankerspanker.tech/">Product</a>
+        <a href="/admin/">Admin</a>
         <a href="/download/" aria-current="page">Download</a>
         <a href="/docs/">Docs</a>
       </nav>
@@ -35,7 +36,7 @@ npm install &amp;&amp; npm run build &amp;&amp; npm start</code></pre>
       <li>In Settings, leave Host URL as <code>http://127.0.0.1:8787</code> (or the port you set) and paste the token. For a gateway on another machine, see <a href="#tailnet">the tailnet steps</a> below.</li>
       <li>Allow Chrome's loopback permission when it asks. The session list then loads from your gateway, not from this website.</li>
     </ol>
-    <p>The token is stored in this browser only. WebSocket updates use a single-use ticket. The token is not placed in the socket URL.</p>
+    <p>The token is stored in this browser only. WebSocket updates use a single-use ticket. The token is not placed in the socket URL. A second gateway is added on <a href="/admin/">Admin</a>. Each saved gateway keeps its own token. Clearing one leaves the others.</p>
 
     <div class="callout">
       <p>Only Chrome can reach a gateway on this computer (<code>http://127.0.0.1</code>) from this site. In Firefox and Safari, connect over your tailnet instead (next section), or on the computer running the gateway open <a href="http://127.0.0.1:8787/app/">http://127.0.0.1:8787/app/</a> yourself. This site does not redirect you there.</p>

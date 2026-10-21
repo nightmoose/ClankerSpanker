@@ -1,6 +1,6 @@
 # RFC-058 — Host the product at clankerspanker.tech
 
-**Status:** Accepted (phases 1 and 2 in production since 2026-10-19; phases 3 and 4 open)
+**Status:** Accepted (phases 1 and 2 in production since 2026-10-19; phase 3 implemented, tester pass open; phase 4 open)
 **Date:** 2026-10-19
 **Branch:** cursor/rfc-058-hosted-web-61b2
 **Severity:** P1 — the public product has to live on this origin before the company submits to the .tech No Excuses Fund (internal target 2026-12-09, submissions close 2026-12-15)
@@ -123,6 +123,12 @@ It is the place a person manages the gateways this browser already knows. The so
 
 The paired-host record in `localStorage` is `{ hostId, label, baseURL, token }`, one entry per `hostId`. Replacing today's single `clankerspanker.token` / `clankerspanker.hostURL` pair is the whole "accounts" model: this browser, this profile. Two browsers do not sync. That is acceptable. The fund slice has one operator per machine, and the native apps keep their own stores.
 
+**As implemented** (phase 3):
+
+- `host/web/paired-hosts.js` stores the list under `clankerspanker.hosts`, one entry per `hostId`. A saved host whose id is not known yet is kept under its base URL until `GET /host/self` fills the id in. The selected host's token and URL are mirrored to `clankerspanker.token` and `clankerspanker.hostURL` so the gateway terminal page, which reads the token key, keeps working.
+- `/admin` is that same control-plane bundle. `site/build.mjs` copies it next to `/` and `/app/`. The page lists every saved gateway. Health (`GET /health` version and the WebSocket pill), push (`GET /push/status`: configured, device count, bundle id), profile usage (`GET /profiles?usage=1`), catalog names, and the existing Grok credit badge load for the selected gateway. Adding a gateway contacts that gateway (`POST /auth/validate`, `GET /host/self`) and then selects it. Selecting another host drops the in-memory session list before the next read, so each host's sessions stay with that host. Clearing a token clears that host and leaves every other saved host in place.
+- Profile create and edit stay on the Profiles tab, and only while the gateway reports `admin: true` (this machine, over loopback). The admin page says so. It has no create button. No new gateway route.
+
 **Why there is no backend.** A Supabase project would exist to identify a person and to store something about their gateways. Storing the host token there copies the credential that can run code on the user's machine onto company infrastructure. That breaks the promise in §Problem. Syncing only labels and URLs, with the token staying in `localStorage`, is a convenience and is not required for the site to be the product.
 
 If a later RFC wants that sync, the smallest backend is one Supabase project: [Supabase Auth](https://supabase.com/docs/guides/auth) (email magic link is enough; no social providers), one table of non-secret bookmarks (`user_id`, `host_id`, `label`, `base_url`), and row level security so a user can read only their rows (the Auth guide's RLS section). The token column does not exist. No such project is created by this RFC. Supabase is available to the company; it is not part of the fund slice.
@@ -144,7 +150,7 @@ Vercel documents the pieces we depend on:
 |---|---|
 | `/` | The control plane. Same UI as `host/web/index.html`. This is the product, which is what FAQ 03 requires in place of a brochure. |
 | `/app/` | The same UI, so existing `/app/` links keep working once they point at this origin. |
-| `/admin` | The console in §2. Phase 3. Until then `/admin` can be the Profiles + Settings views of the same bundle. |
+| `/admin` | The console in §2. Paired gateways saved in this browser, with health, push status, and usage for the selected gateway. |
 | `/docs/` | Install, threat model (one page: loopback, Tailscale, token, what never gets uploaded), and links to the in-repo docs. Written for this origin. |
 | `/download/` | How to run the gateway (`host/` quickstart and `scripts/install-service.sh`) and how to connect this page to it. Mac and Linux client pointers stay as secondary links. The fallback sentence for Firefox and Safari is on this page: open `http://127.0.0.1:8787/app/` on the host machine. |
 
@@ -214,6 +220,7 @@ The tester is a different person from the implementer. Each phase is accepted on
 
 ### Phase 3
 
+- [x] Vitest (`host/web/paired-hosts.test.js`, `host/web/admin-console.test.js`): two saved hosts stay distinct across reload; clearing one token leaves the other; switching hosts is marked as dropping in-memory sessions; push status keeps configured, device count, and bundle id; the admin page shows the `/health` version, the usage label, the existing credit badge, and the profile-lock copy; poll URLs stay on the selected gateway. The site build publishes `/admin` as a copy of the same bundle.
 - [ ] Two gateways, two tokens, both saved. Switching hosts does not bleed sessions. Reload keeps the list. Clear token on one host leaves the other.
 - [ ] Health shows version from `/health`. Push row matches `GET /push/status` (count only, no device token). Usage row matches `?usage=1`. A Grok session with a credit delta shows the existing badge.
 - [ ] From the tailnet URL (phase 2), profile create is refused. From loopback, profile create still works.

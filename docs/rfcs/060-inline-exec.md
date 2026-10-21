@@ -1,6 +1,6 @@
 # RFC-060 — Inline shell execution from chat code blocks
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-10-02
 **Branch:** nightly-maintenance-2026-10-02-rfc058-inline-exec
 **Severity:** P2

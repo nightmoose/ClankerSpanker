@@ -24,7 +24,12 @@ xcodebuild \
   build \
   -quiet
 
-APP="$DD/Build/Products/Debug/ClankerSpankerMac.app"
+# The project sets CONFIGURATION_BUILD_DIR (today ~/Applications), so ask
+# Xcode where the app went instead of assuming the derived-data folder.
+PRODUCTS="$(xcodebuild -project ClankerSpanker.xcodeproj -scheme ClankerSpanker \
+  -destination 'platform=macOS' -configuration Debug -derivedDataPath "$DD" \
+  -showBuildSettings 2>/dev/null | awk -F' = ' '/^ *BUILT_PRODUCTS_DIR = /{print $2; exit}')"
+APP="${PRODUCTS:-$DD/Build/Products/Debug}/ClankerSpankerMac.app"
 if [[ ! -x "$APP/Contents/MacOS/ClankerSpankerMac" ]]; then
   echo "Build succeeded but executable missing at $APP" >&2
   exit 1

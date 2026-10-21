@@ -1,6 +1,6 @@
 # RFC-061 — Project database binding, sealed-input secrets, and `sql_execute`
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-10-13 (revised 2026-10-19)
 **Branch:** nightly-maintenance-2026-10-13-rfc058-project-sql
 **Severity:** P2

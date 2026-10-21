@@ -1,6 +1,6 @@
 # RFC-064 — Mac Host panel: no subprocess on the main thread; recover an interrupted LaunchAgent load
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-10-19
 **Branch:** rfc-064-mac-host-panel-async-status
 **Severity:** P1

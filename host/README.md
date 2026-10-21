@@ -71,6 +71,13 @@ What the serve listener does:
 
 Do not point `tailscale serve` (or Funnel) at `8787`: its peer is loopback, which `8787` treats as the host machine.
 
+### Logs
+
+On macOS the LaunchAgent writes to `~/Library/Logs/clankerspanker-host.log` and
+`clankerspanker-host.err.log`. The gateway rotates its own log files once they pass
+10 MB, keeping three old copies (`.1`–`.3`). Change the limit with `"logMaxBytes"` in
+`config.json`, or set it to `0` to turn rotation off (RFC-068).
+
 ### Import from disk
 
 `POST /projects/discover` (the apps' **Import from disk…**) lists git repos

@@ -3,6 +3,7 @@ import { SessionManager } from "./acp/session-manager.js";
 import { startBotRuntime } from "./bot/index.js";
 import { startServer } from "./server.js";
 import { isApnsConfigured } from "./notify/apns.js";
+import { startLogRotation } from "./log-rotate.js";
 
 async function main() {
   const config = loadConfig();
@@ -17,6 +18,9 @@ async function main() {
   console.log(`[boot] Host token (first 8): ${config.hostToken.slice(0, 8)}…`);
   console.log(`[boot] APNs: ${isApnsConfigured(config) ? "configured" : "not configured"}`);
 
+  // RFC-068: launchd-written logs grew without bound; cap them.
+  const stopLogRotation = startLogRotation({ maxBytes: config.logMaxBytes });
+
   const manager = new SessionManager(config);
   const bots = startBotRuntime(config, manager);
   const { shutdown } = startServer(config, manager, bots);
@@ -24,6 +28,7 @@ async function main() {
   const onSignal = async (sig: string) => {
     console.log(`\n[boot] ${sig} — shutting down…`);
     bots.stop();
+    stopLogRotation();
     await shutdown();
     process.exit(0);
   };

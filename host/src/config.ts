@@ -378,6 +378,10 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   // After the port override, so the "must differ from bindPort" check sees the real port.
   const serveBindPort = normalizeServeBindPort(raw.serveBindPort, merged.bindPort);
   if (serveBindPort !== undefined) merged.serveBindPort = serveBindPort;
+  // RFC-068: log rotation threshold; 0 disables, anything invalid uses the default.
+  if (typeof raw.logMaxBytes === "number" && Number.isFinite(raw.logMaxBytes) && raw.logMaxBytes >= 0) {
+    merged.logMaxBytes = Math.floor(raw.logMaxBytes);
+  }
   if (process.env.GROK_DISPATCH_TOKEN) merged.hostToken = process.env.GROK_DISPATCH_TOKEN;
   if (process.env.GROK_BINARY) merged.grokBinary = process.env.GROK_BINARY;
   if (process.env.GROK_DISPATCH_PROMPT_IDLE_MS) {

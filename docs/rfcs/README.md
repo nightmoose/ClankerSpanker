@@ -60,3 +60,4 @@ repository, so numbering has gaps; numbers 000-057 are reserved. Start a new RFC
 | 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Shipped |
 | 066 | [Linux desktop on Electron 44](066-electron-44.md) | Accepted |
 | 067 | [The hosted site explains itself and has a read-only demo](067-hosted-demo-explainer.md) | Shipped |
+| 068 | [The gateway keeps its own log files bounded](068-gateway-log-rotation.md) | Accepted |

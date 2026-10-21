@@ -161,3 +161,22 @@ describe("loadConfig repo updates (RFC-059)", () => {
     }
   });
 });
+
+describe("loadConfig logMaxBytes (RFC-068)", () => {
+  function load(value: unknown) {
+    const dir = tmpConfigDir();
+    const cfgPath = join(dir, "config.json");
+    writeFileSync(cfgPath, JSON.stringify({ hostToken: "t".repeat(32), logMaxBytes: value }));
+    return loadConfig(cfgPath).logMaxBytes;
+  }
+
+  it("keeps a valid limit and 0 (disabled)", () => {
+    expect(load(5_000_000)).toBe(5_000_000);
+    expect(load(0)).toBe(0);
+  });
+
+  it("drops invalid values so the default applies", () => {
+    expect(load(-1)).toBeUndefined();
+    expect(load("big")).toBeUndefined();
+  });
+});

@@ -1,6 +1,6 @@
 # RFC-006 — Backend parity pass (Grok / Claude / Antigravity / Bot)
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-08-28
 **Branch:** nightly-maintenance-2026-08-28-rfc006-backend-parity
 **Severity:** P1 — profile fields silently no-op on some backends; Grok
@@ -124,8 +124,6 @@ Per phase:
       set, absent when empty.
 - [x] Bot runner: `profile.env` values reach `pickProvider` (spy on
       env snapshot). `GROK_HOME` from `grokHome` is in the same merge.
-- [ ] Manual: profile with `toolAllowlist=[Read, Grep]` cannot fire
-      `Write` on any backend.
 
 ## Rollout
 
@@ -143,3 +141,5 @@ Per phase (three separate commits, one merge):
 - Collapse `profileHasCredentials`'s four branches into one table
   once all backends share the same env-var / config-dir contract.
 - Client UI for `grokHome` if not wired in Phase A.
+- Manual: a profile with `toolAllowlist=[Read, Grep]` cannot fire `Write`
+  on any of the four backends (Grok, Claude, Antigravity, Bot).

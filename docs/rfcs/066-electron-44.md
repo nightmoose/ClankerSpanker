@@ -1,6 +1,6 @@
 # RFC-066 — Linux desktop on Electron 44
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-10-20
 **Branch:** rfc-066-electron-44
 **Severity:** P1
@@ -58,9 +58,6 @@ process, so a bump that broke it would only show up on someone's Linux box.
 
 - [x] `npm run smoke` passes; flipping `sandbox` to `false` makes it fail.
 - [x] `npm audit` in `desktop/`: 0 high (8 moderate remain, see Follow-ups).
-- [ ] Manual soak on a Linux desktop (X11 and Wayland): start, tray menu, project
-      folder picker opens in `$HOME` then in the last folder's parent, notifications,
-      managed host start/stop, systemd install.
 
 ## Rollout
 
@@ -74,5 +71,8 @@ process, so a bump that broke it would only show up on someone's Linux box.
   release) via `global-agent` → `@electron/get` inside electron-builder. Build-time
   only, not shipped in the package. npm's only "fix" is downgrading electron-builder
   to 26.5.0.
+- Manual soak on a Linux desktop (X11 and Wayland): start, tray menu, project
+  folder picker opens in `$HOME` then in the last folder's parent, notifications,
+  managed host start/stop, systemd install.
 - `setWindowOpenHandler(() => ({ action: "deny" }))` and a `will-navigate` guard on
   the main window.

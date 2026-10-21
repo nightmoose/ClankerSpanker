@@ -1,6 +1,6 @@
 # RFC-034 — One command to update a Mac host
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-25
 **Branch:** main
 **Severity:** P2
@@ -15,29 +15,33 @@ The design note was not in the tree. The number was not reassigned.
 Updating the gateway on a Mac was a sequence of git, npm, and launchctl commands.
 The change that took this number documented one script and did not add the script.
 
-## What was specified
+## What shipped
 
-From a checkout on that Mac:
+`scripts/update-mac-host.sh`, restored from the command the original change
+described and never committed.
 
 ```bash
+./scripts/update-mac-host.sh
 ./scripts/update-mac-host.sh --bind-auto --rotate-token
 ```
 
-The script pulls, builds, restarts the LaunchAgent, and with those flags switches
-the bind to loopback + Tailscale and mints a new token. Drop the flags for a code
-update only. Clients re-pair from `/setup` after a rotation.
+- The checkout must track `origin/main`. Any other upstream, including a missing
+  one, exits before fetch. This is the RFC-059 rule: a feature branch is not a
+  host update.
+- A dirty tree exits before fetch.
+- Otherwise: `git fetch`, `git pull --ff-only`, `npm ci`, `npm run build` in `host/`.
+- `--bind-auto` sets `bindHost` to `auto` in the gateway config. `--rotate-token`
+  deletes `hostToken`. The file stays mode `0600`.
+- A loaded LaunchAgent (`com.nightmoose.clankerspanker-host` or
+  `com.nightmoose.grok-dispatch-host`) is kickstarted. Otherwise a running
+  systemd user unit is restarted. If neither is loaded, `host/scripts/install-service.sh`
+  installs one.
 
-## What is actually in the repo
-
-`scripts/update-mac-host.sh` was never committed. The OSS cleanup replaced the
-host README recipe with the manual commands. `docs/STANDALONE-INSTALLS.md` still
-names the script, which is wrong until the file exists.
-
-RFC-059 later added a gateway button that fast-forwards only a checkout whose
-upstream is `origin/main`. A restored script has to follow that rule. It must
-not fast-forward a feature branch.
+`--plan` prints those steps and does not touch the checkout. Clients re-pair
+from `/setup` after a rotation.
 
 ## Testing
 
-None until the script exists. Do not mark this Shipped on the strength of the
-README paragraph.
+- `python3 scripts/update-mac-host_test.py`
+- Not run on a Mac: LaunchAgent kickstart. The Linux path is the install-service
+  fallback, and the tests stop at `--plan` so they do not install a service.

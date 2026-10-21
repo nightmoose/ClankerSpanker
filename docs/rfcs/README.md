@@ -22,7 +22,7 @@ change had no file, the file was restored on 2026-10-21 and the number stayed.
 
 Restored in place, not renumbered: 000, 011, 016, 024, 026, 028, 029, 030, 031, 034, 036, 037, 043, 045, 049, 057.
 Each of those already had one meaning in a merged commit and in the code. The design note was missing.
-034 is Accepted because `scripts/update-mac-host.sh` was specified and never committed.
+034's script was missing when the note was restored and is in the tree now.
 
 | RFC | Title | Status |
 |---|---|---|
@@ -60,7 +60,7 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 031 | [Keep push payloads under the APNs limit](031-apns-payload-size.md) | Shipped |
 | 032 | [Projects follow the folder: ~ expansion, inference, overlap warnings](032-project-resolution.md) | Shipped |
 | 033 | [Approval cards show the diff or command; Diff tab shows new files](033-approval-preview.md) | Shipped |
-| 034 | [One command to update a Mac host](034-update-mac-host.md) | Accepted |
+| 034 | [One command to update a Mac host](034-update-mac-host.md) | Shipped |
 | 035 | [iPhone opens sessions on their own host](035-phone-cross-host-open.md) | Shipped |
 | 036 | [A host with no projects can import from disk](036-import-from-disk.md) | Shipped |
 | 037 | [Discover roots, including GitHub Desktop clones](037-discover-roots.md) | Shipped |

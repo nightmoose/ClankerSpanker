@@ -17,6 +17,7 @@ export type UpdateState =
   | "dirty"
   | "missing"
   | "no-upstream"
+  | "wrong-upstream"
   | "error";
 
 export interface UpdateStatus {
@@ -109,6 +110,13 @@ export function appInstallRoot(argv1: string): string | null {
   return null;
 }
 
+/**
+ * RFC-059 follow-up: the only branch a host updates itself from. A checkout
+ * that agents also work in may sit on a feature branch with its own upstream;
+ * fast-forwarding that would install unreviewed work into the gateway.
+ */
+export const UPDATE_UPSTREAM = "origin/main";
+
 export function classifyUpdate(input: {
   repoDir: string | null;
   branch?: string | null;
@@ -149,6 +157,13 @@ export function classifyUpdate(input: {
       ...base,
       state: "no-upstream",
       summary: `Branch ${input.branch || "(unknown)"} has no upstream. Set one, or check out a branch that tracks origin.`,
+    };
+  }
+  if (input.upstream !== UPDATE_UPSTREAM) {
+    return {
+      ...base,
+      state: "wrong-upstream",
+      summary: `${input.branch || "This branch"} tracks ${input.upstream}, not ${UPDATE_UPSTREAM}. Hosts only update from ${UPDATE_UPSTREAM}; point repoDir at a checkout that tracks it.`,
     };
   }
   const ahead = input.ahead ?? 0;

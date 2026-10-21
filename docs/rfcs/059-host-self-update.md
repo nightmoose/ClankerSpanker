@@ -110,4 +110,8 @@ an origin that is not a `*.ts.net` serve name.
 ## Follow-ups
 
 - Electron Host panel button.
-- A configured branch (always track `main`) instead of the checkout's current upstream.
+- ~~A configured branch (always track `main`) instead of the checkout's current upstream.~~
+  Done 2026-10-21: `classifyUpdate` returns `wrong-upstream` (never `canApply`) unless the
+  checkout's upstream is `origin/main` (`UPDATE_UPSTREAM`). On the owner's Mac, `repoDir`
+  had defaulted to the checkout agents work in, which was sitting on an agent's feature
+  branch. With `autoUpdate` on, that branch would have been built into the gateway.

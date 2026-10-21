@@ -47,7 +47,7 @@ export const MCP_CATALOG: readonly McpCatalogServer[] = [
     transport: "http",
     url: "https://mcp.vercel.com",
     auth: "OAuth",
-    notes: "Smolder, Drea, ContractGate, Mercenary, Dirt Work, BlessingBox",
+    notes: "Smolder, Drea, DataContractGate, Mercenary, Dirt Work, BlessingBox",
   },
   {
     id: "supabase",

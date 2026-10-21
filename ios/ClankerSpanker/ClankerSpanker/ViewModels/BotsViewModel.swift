@@ -195,7 +195,7 @@ final class BotsViewModel: ObservableObject {
     }
 
     /// Returns the new run's session id on success.
-    /// A host that seeded this hunter without a ContractGate project answers
+    /// A host that seeded this hunter without a DataContractGate project answers
     /// `Unknown projectId`. Try the other paired copies before showing that.
     @discardableResult
     func run(_ bot: Bot, appState: AppState) async -> String? {

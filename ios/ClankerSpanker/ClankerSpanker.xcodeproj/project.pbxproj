@@ -151,6 +151,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		5A1C0F1E00000000000000C2 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		0002496E542362AFB67CE276 /* Bot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bot.swift; sourceTree = "<group>"; };
 		0084C66F82620EB22AB05099 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		018C76B530B090C59ED61AB9 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
@@ -229,6 +230,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		5A1C0F1E00000000000000C1 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				5A1C0F1E00000000000000C2 /* Signing.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		1661EB076FB912A2DA5D1474 /* HostTray */ = {
 			isa = PBXGroup;
 			children = (
@@ -389,6 +398,7 @@
 		B18F0CB154B64D3E47BC7222 = {
 			isa = PBXGroup;
 			children = (
+				5A1C0F1E00000000000000C1 /* Config */,
 				E4087D1718FB7466E0B5416A /* ClankerSpanker */,
 				1661EB076FB912A2DA5D1474 /* HostTray */,
 				3C242443587564DDA563A1FD /* Tests */,
@@ -555,19 +565,15 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					34126F9E5312E2A223C3BCEB = {
-						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
 					};
 					455F64796E6F14A09E40F2D2 = {
-						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
 					};
 					4ED1CC7DF28415C7D1E03B62 = {
-						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
 					};
 					A6B4A573A20EC1496505B1EF = {
-						DevelopmentTeam = XHS7K665C9;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -791,6 +797,7 @@
 /* Begin XCBuildConfiguration section */
 		615A02A1602959254BE92A95 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5A1C0F1E00000000000000C2 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -826,7 +833,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -856,7 +862,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "HostTray/Info-HostTray.plist";
@@ -880,7 +885,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "HostTray/Info-HostTray.plist";
@@ -904,7 +908,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -927,7 +930,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -947,7 +949,6 @@
 				CODE_SIGN_ENTITLEMENTS = "ClankerSpanker/ClankerSpanker-Release.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClankerSpanker/Info.plist;
@@ -972,7 +973,6 @@
 				CODE_SIGN_ENTITLEMENTS = "ClankerSpanker/ClankerSpanker-Debug.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClankerSpanker/Info.plist;
@@ -996,7 +996,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1011,6 +1010,7 @@
 		};
 		C7825A0954AAC8D80F1E34AD /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5A1C0F1E00000000000000C2 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1046,7 +1046,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1083,7 +1082,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XHS7K665C9;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;

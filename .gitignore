@@ -73,3 +73,6 @@ Screenshot*.png
 __pycache__/
 *.pyc
 .mcp.json
+
+# Local signing (Apple team ID); see ios/ClankerSpanker/Config/Local.xcconfig.sample
+ios/ClankerSpanker/Config/Local.xcconfig

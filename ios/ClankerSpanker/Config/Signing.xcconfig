@@ -1,0 +1,9 @@
+// Signing settings shared by every target.
+//
+// DEVELOPMENT_TEAM is not committed. Copy Local.xcconfig.sample to
+// Local.xcconfig (git-ignored) and set your own Apple team ID there.
+// Without it, Xcode builds unsigned / asks you to pick a team.
+
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

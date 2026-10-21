@@ -3,7 +3,7 @@
 Design notes for non-trivial changes. **Shipped** = on `main`; **Accepted** = signed off;
 **Draft** = under review; **Superseded** = the number is kept and the work lives in another RFC.
 
-017 stays Draft. 006 and 066 are Shipped; the allowlist check and the Linux desktop soak are follow-ups in those files.
+017, 006, and 066 are Shipped. Follow-ups still open: the 017 two-Read soak on an affected chat, the 006 allowlist check, and the 066 Linux desktop soak.
 
 Start a new RFC with `make rfc SLUG=short-kebab` (template: [`_template.md`](_template.md)) and add a row below.
 That command fetches `origin`, takes the next integer above every number already used in this
@@ -45,7 +45,7 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 014 | [Close as done sticks; hide Grok helper sessions](014-close-done-hide-helpers.md) | Shipped |
 | 015 | [Detach the Mac app from the host process](015-host-detach.md) | Shipped |
 | 016 | [Menu-bar host tray](016-mac-host-tray.md) | Shipped |
-| 017 | [Duplicate Grok assistant messages](017-grok-dupe.md) | Draft |
+| 017 | [Duplicate Grok assistant messages](017-grok-dupe.md) | Shipped |
 | 018 | [Markdown link resolver with cwd context](018-mdlink.md) | Shipped |
 | 019 | [Stuck "Running" + phantom pending questions](019-stuck-running.md) | Shipped |
 | 020 | [Apply the MCP catalog per profile](020-mcp-catalog-apply.md) | Shipped |

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DispatchSession } from "../../types.js";
 import type { LiveSession } from "../session-helpers.js";
 import { fakeContext, fakeSession } from "./fake-context.test.js";
-import { flushAssistant, handleGrokAgentMessage } from "./grok-events.js";
+import { flushAssistant, handleGrokAgentMessage, mergeGrokAssistantChunk } from "./grok-events.js";
 
 function fakeLive(session: DispatchSession) {
   const responses: Array<{ id: number | string; result?: unknown; error?: { code: number; message: string } }> = [];
@@ -154,5 +154,100 @@ describe("flushAssistant", () => {
     expect(s.transcript).toEqual([]);
     expect(events).toEqual([]);
     expect(live.assistantBuffer).toBe("");
+  });
+});
+
+const FULL =
+  "There is one new doc, and it is an **overview only**. Closing paragraph stays on the first bubble.";
+const SLICE = "new doc, and it is an **overview only**.";
+
+describe("duplicate Grok assistant bubbles (RFC-017)", () => {
+  it("does not persist a mid-sentence slice replayed after the tool-call flush", async () => {
+    const s = fakeSession({ backend: "grok" } as Partial<DispatchSession>);
+    const { ctx, events } = fakeContext(s);
+    const { live } = fakeLive(s);
+
+    await handleGrokAgentMessage(ctx, live, update({ sessionUpdate: "agent_message_chunk", content: { text: FULL } }));
+    await handleGrokAgentMessage(
+      ctx,
+      live,
+      update({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read docs/rfcs/017-grok-dupe.md", kind: "read" }),
+    );
+    await handleGrokAgentMessage(ctx, live, update({ sessionUpdate: "agent_message_chunk", content: { text: SLICE } }));
+    flushAssistant(ctx, live);
+
+    expect(s.transcript.map((t) => t.text)).toEqual([FULL]);
+    expect(live.assistantBuffer).toBe("");
+    expect(events.filter((e) => e.type === "transcript").map((e) => (e.payload as { text?: string }).text)).toEqual([
+      FULL,
+      FULL,
+    ]);
+  });
+
+  it("still persists a later sentence that is not a slice of the flushed text", async () => {
+    const first = "I'll read the doc.";
+    const second = "The doc is an overview only, with a short closing note.";
+    const s = fakeSession({ backend: "grok" } as Partial<DispatchSession>);
+    const { ctx } = fakeContext(s);
+    const { live } = fakeLive(s);
+
+    await handleGrokAgentMessage(ctx, live, update({ sessionUpdate: "agent_message_chunk", content: { text: first } }));
+    await handleGrokAgentMessage(
+      ctx,
+      live,
+      update({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read README.md", kind: "read" }),
+    );
+    await handleGrokAgentMessage(ctx, live, update({ sessionUpdate: "agent_message_chunk", content: { text: second } }));
+    flushAssistant(ctx, live);
+
+    expect(s.transcript.map((t) => t.text)).toEqual([first, second]);
+  });
+
+  it("drops a replay that arrives as small pieces and only matches once they are joined", async () => {
+    const s = fakeSession({ backend: "grok" } as Partial<DispatchSession>);
+    const { ctx } = fakeContext(s);
+    const { live } = fakeLive(s);
+
+    await handleGrokAgentMessage(ctx, live, update({ sessionUpdate: "agent_message_chunk", content: { text: FULL } }));
+    await handleGrokAgentMessage(
+      ctx,
+      live,
+      update({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read README.md", kind: "read" }),
+    );
+    await handleGrokAgentMessage(
+      ctx,
+      live,
+      update({ sessionUpdate: "agent_message_chunk", content: { text: "new doc, and it " } }),
+    );
+    await handleGrokAgentMessage(
+      ctx,
+      live,
+      update({ sessionUpdate: "agent_message_chunk", content: { text: "is an **overview only**." } }),
+    );
+    flushAssistant(ctx, live);
+
+    expect(s.transcript.map((t) => t.text)).toEqual([FULL]);
+    expect(live.assistantBuffer).toBe("");
+  });
+
+  it("composes a sliding window into one buffer without repeating the overlap", () => {
+    expect(mergeGrokAssistantChunk("There is one new doc, ", "new doc, and it is an **overview only**.", "")).toEqual({
+      buffer: "There is one new doc, and it is an **overview only**.",
+      delta: "and it is an **overview only**.",
+    });
+  });
+
+  it("treats a cumulative snapshot as the same message", () => {
+    expect(mergeGrokAssistantChunk("There is one", "There is one new doc", "")).toEqual({
+      buffer: "There is one new doc",
+      delta: " new doc",
+    });
+  });
+
+  it("keeps a short follow-up that happens to occur inside the previous text", () => {
+    expect(mergeGrokAssistantChunk("", "Yes.", "There is one new doc. Yes. Done.")).toEqual({
+      buffer: "Yes.",
+      delta: "Yes.",
+    });
   });
 });

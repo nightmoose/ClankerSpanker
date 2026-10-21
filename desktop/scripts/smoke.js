@@ -73,11 +73,23 @@ const windows = [];
 const handled = new Set();
 const exposed = {};
 const invoked = new Set();
+const openedExternal = [];
 
 class FakeBrowserWindow {
   constructor(options) {
     this.options = options;
-    this.webContents = stub();
+    const contents = stub();
+    contents.getURL = () => "file:///tmp/renderer/index.html";
+    contents.setWindowOpenHandler = (fn) => {
+      contents.openHandler = fn;
+    };
+    contents.navigateHandlers = [];
+    contents.on = (event, fn) => {
+      if (event === "will-navigate") contents.navigateHandlers.push(fn);
+    };
+    contents.once = () => {};
+    contents.send = () => {};
+    this.webContents = contents;
     windows.push(this);
   }
   static getFocusedWindow() {
@@ -117,7 +129,12 @@ const electronMock = {
     handle: (channel) => handled.add(channel),
     on: (channel) => handled.add(channel),
   },
-  shell: stub(),
+  shell: Object.assign(stub(), {
+    openExternal: (url) => {
+      openedExternal.push(url);
+      return Promise.resolve();
+    },
+  }),
   dialog: stub(),
   contextBridge: {
     exposeInMainWorld: (key, api) => {
@@ -154,6 +171,57 @@ async function main() {
   assert.equal(prefs.sandbox, true, "sandbox must stay on");
   assert.ok(prefs.preload && fs.existsSync(prefs.preload), "preload path missing");
   console.log("[smoke] main window: contextIsolation on, nodeIntegration off, sandbox on");
+
+  const { classifyNavigation } = require(path.join(root, "src", "navigation-guard.js"));
+  const page = "file:///tmp/renderer/index.html";
+  assert.deepEqual(classifyNavigation(page, "file:///tmp/renderer/app.js"), { inApp: true, openExternal: false });
+  assert.deepEqual(classifyNavigation(page, "file:///tmp/renderer/index.html#settings"), {
+    inApp: true,
+    openExternal: false,
+  });
+  assert.deepEqual(classifyNavigation(page, "file:///etc/passwd"), { inApp: false, openExternal: false });
+  assert.deepEqual(classifyNavigation(page, "file:///tmp/renderer/../etc/passwd"), {
+    inApp: false,
+    openExternal: false,
+  });
+  assert.deepEqual(classifyNavigation(page, "https://example.com/docs"), { inApp: false, openExternal: true });
+  assert.deepEqual(classifyNavigation(page, "javascript:alert(1)"), { inApp: false, openExternal: false });
+  assert.deepEqual(classifyNavigation("https://app.example/index.html", "https://app.example/settings"), {
+    inApp: true,
+    openExternal: false,
+  });
+  assert.deepEqual(classifyNavigation("https://app.example/index.html", "https://evil.example/"), {
+    inApp: false,
+    openExternal: true,
+  });
+  assert.deepEqual(classifyNavigation("", "file:///tmp/renderer/index.html"), { inApp: true, openExternal: false });
+
+  const wc = windows[0].webContents;
+  assert.equal(typeof wc.openHandler, "function", "setWindowOpenHandler was not installed");
+  assert.equal(wc.navigateHandlers.length, 1, "will-navigate guard was not installed");
+
+  assert.deepEqual(wc.openHandler({ url: "https://example.com/docs" }), { action: "deny" });
+  assert.deepEqual(openedExternal, ["https://example.com/docs"]);
+  openedExternal.length = 0;
+  assert.deepEqual(wc.openHandler({ url: "file:///tmp/renderer/app.js" }), { action: "deny" });
+  assert.deepEqual(openedExternal, [], "same-app popup must not be opened externally");
+
+  const off = { prevented: false, preventDefault() { this.prevented = true; } };
+  wc.navigateHandlers[0](off, "https://evil.example/phish");
+  assert.equal(off.prevented, true, "off-origin navigation must be cancelled");
+  assert.deepEqual(openedExternal, ["https://evil.example/phish"]);
+
+  openedExternal.length = 0;
+  const stay = { prevented: false, preventDefault() { this.prevented = true; } };
+  wc.navigateHandlers[0](stay, "file:///tmp/renderer/index.html#settings");
+  assert.equal(stay.prevented, false, "in-app navigation must be allowed");
+  assert.deepEqual(openedExternal, []);
+
+  const script = { prevented: false, preventDefault() { this.prevented = true; } };
+  wc.navigateHandlers[0](script, "javascript:alert(1)");
+  assert.equal(script.prevented, true);
+  assert.deepEqual(openedExternal, [], "javascript: must not be opened externally");
+  console.log("[smoke] navigation: popups denied, off-origin http(s) opens externally");
 
   assert.ok(exposed.clanker, "preload did not expose window.clanker");
   for (const fn of Object.values(exposed.clanker)) {

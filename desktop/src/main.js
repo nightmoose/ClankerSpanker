@@ -35,6 +35,7 @@ const {
   hostConfigPath,
 } = require("./host-config-io");
 const hostInstaller = require("./host-installer.js");
+const { installNavigationGuards } = require("./navigation-guard");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -167,6 +168,9 @@ function createMainWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  // RFC-066. Popups never open in-app. Off-origin http(s) goes to the browser.
+  installNavigationGuards(mainWindow, shell);
 
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   return mainWindow;

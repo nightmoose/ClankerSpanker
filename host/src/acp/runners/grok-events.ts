@@ -44,10 +44,12 @@ export async function handleGrokAgentMessage(
       case "agent_message_chunk": {
         const content = update.content as { text?: string } | undefined;
         const chunk = content?.text ?? "";
-        live.assistantBuffer += chunk;
+        const merged = mergeGrokAssistantChunk(live.assistantBuffer, chunk, live.turnAssistantText ?? "");
+        live.assistantBuffer = merged.buffer;
+        if (!merged.delta) break;
         ctx.emitEvent(session, "transcript", {
           role: "assistant",
-          text: chunk,
+          text: merged.delta,
           streaming: true,
         });
         break;
@@ -479,19 +481,105 @@ async function handlePermissionRequest(
   ctx.maybeNotify("Approval needed", `${live.session.title}: ${approval.title}`);
 }
 
+/**
+ * Shortest slice we will treat as a replay of text already flushed in this
+ * turn. Token-sized deltas ("the", " file") stay under this and still append.
+ * The duplicate bubble is a mid-sentence clause, well above it.
+ */
+export const GROK_COMMITTED_REPLAY_MIN = 24;
+
+/** Overlap inside the buffer currently being streamed, before the next flush. */
+const IN_BUFFER_REPLAY_MIN = 8;
+
+export interface AssistantChunkMerge {
+  buffer: string;
+  /** Empty when the chunk added nothing new. Callers skip the streaming event. */
+  delta: string;
+}
+
+/**
+ * Fold one Grok `agent_message_chunk` into the in-progress assistant buffer.
+ *
+ * Grok ACP re-sends slices of text it already streamed: a sliding window
+ * while the buffer is open, and a middle slice again after `tool_call`
+ * flushes that buffer (RFC-017). Appending the slice and flushing it writes
+ * a second transcript entry that starts mid-sentence and stops before the
+ * first bubble's last paragraph. A later sentence that is not contained in
+ * text already committed this turn still appends.
+ */
+export function mergeGrokAssistantChunk(
+  buffer: string,
+  chunk: string,
+  committedThisTurn: string,
+): AssistantChunkMerge {
+  if (!chunk) return { buffer, delta: "" };
+
+  if (buffer) {
+    if (chunk.startsWith(buffer)) {
+      return { buffer: chunk, delta: chunk.slice(buffer.length) };
+    }
+    const overlap = sharedEdge(buffer, chunk, IN_BUFFER_REPLAY_MIN);
+    if (overlap > 0) {
+      const delta = chunk.slice(overlap);
+      return { buffer: buffer + delta, delta };
+    }
+    if (chunk.length >= IN_BUFFER_REPLAY_MIN && buffer.includes(chunk)) {
+      return { buffer, delta: "" };
+    }
+    return { buffer: buffer + chunk, delta: chunk };
+  }
+
+  if (isCommittedReplay(committedThisTurn, chunk)) {
+    return { buffer: "", delta: "" };
+  }
+  if (committedThisTurn) {
+    const overlap = sharedEdge(committedThisTurn, chunk, GROK_COMMITTED_REPLAY_MIN);
+    if (overlap > 0) {
+      const delta = chunk.slice(overlap);
+      if (!delta.trim()) return { buffer: "", delta: "" };
+      return { buffer: delta, delta };
+    }
+  }
+  return { buffer: chunk, delta: chunk };
+}
+
+/** True when `text` is a verbatim slice of assistant text already flushed this turn. */
+export function isCommittedReplay(committed: string, text: string): boolean {
+  const trimmed = text.trim();
+  return committed.length > 0 && trimmed.length >= GROK_COMMITTED_REPLAY_MIN && committed.includes(trimmed);
+}
+
+/** Longest suffix of `existing` that is a prefix of `chunk`, or 0 below `min`. */
+function sharedEdge(existing: string, chunk: string, min: number): number {
+  const max = Math.min(existing.length, chunk.length);
+  for (let len = max; len >= min; len--) {
+    if (existing.endsWith(chunk.slice(0, len))) return len;
+  }
+  return 0;
+}
+
 export function flushAssistant(ctx: TurnContext, live: LiveSession): void {
   if (!live.assistantBuffer.trim()) {
+    live.assistantBuffer = "";
+    return;
+  }
+  const text = live.assistantBuffer;
+  const committed = live.turnAssistantText ?? "";
+  // Fragmented replay: each piece was too small to drop on arrival, but the
+  // buffer they built is still only a slice of text this turn already saved.
+  if (isCommittedReplay(committed, text)) {
     live.assistantBuffer = "";
     return;
   }
   const entry: TranscriptEntry = {
     id: randomUUID(),
     role: "assistant",
-    text: live.assistantBuffer,
+    text,
     at: now(),
   };
   live.session.transcript.push(entry);
   live.assistantBuffer = "";
+  live.turnAssistantText = committed ? `${committed}\n${text}` : text;
   live.session.updatedAt = now();
   ctx.persist(live.session);
   ctx.emitEvent(live.session, "transcript", entry);

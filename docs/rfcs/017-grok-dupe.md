@@ -1,6 +1,6 @@
 # RFC-017 — Duplicate Grok assistant messages
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-09-11
 **Branch:** nightly-maintenance-2026-09-11-rfc017-grok-dupe
 **Severity:** P1
@@ -15,47 +15,36 @@ the first — starts mid-sentence ("new doc, and it is an **overview
 only**." instead of "There is one new doc, and…"), cuts off before the
 first bubble's final paragraph.
 
-Read paths involved:
+Read paths (line numbers from the original note drifted when RFC-055
+moved Grok inbound to `host/src/acp/runners/grok-events.ts`):
 
-- `host/src/acp/session-manager.ts:3683-3691` — `agent_message_chunk`
-  events append to `live.assistantBuffer` and emit `transcript`
-  streaming events (event-only, not persisted).
-- `host/src/acp/session-manager.ts:3702` — `tool_call` first calls
-  `flushAssistant(live)`, which persists whatever is in the buffer as
-  a new `TranscriptEntry`.
-- `host/src/acp/session-manager.ts:4106-4121` — `flushAssistant()`
-  writes a fresh `TranscriptEntry` (`randomUUID` id) with the whole
-  buffer and clears it. Also called after `session/prompt` returns
-  (line 3626) and on the error path (3650).
-- `ios/.../SessionDetailViewModel.swift:511-517` — streaming chunks
-  append to `streamingText`; the clear-and-reload happens on the
-  non-streaming `transcript` event (line 556-558).
+- `agent_message_chunk` appends to `live.assistantBuffer` and emits a
+  streaming `transcript` event. The event is not persisted.
+- `tool_call` calls `flushAssistant` first, which writes a new
+  `TranscriptEntry` (`randomUUID` id) for the whole buffer and clears it.
+- `session-manager.ts` `promptTurn` calls `flushAssistant` again when
+  `session/prompt` returns, and on the error path.
+- The web transcript renders one bubble per persisted entry. It has no
+  streaming buffer, so a second saved entry is a second bubble on every
+  client after reload.
+- iOS `isRedundantStreamingChunk` already drops a live streaming chunk
+  of 8+ characters when the last assistant entry contains it. The
+  comment there records the ACP behavior: Grok emits overlapping
+  `agent_message_chunk`s. That guard never runs on the persisted entry,
+  so the second bubble comes back on the next load.
 
-Two plausible root causes:
+Root cause: the second bubble is not a second answer. It is a slice of
+text already flushed in the same turn. Grok streams the full reply, a
+tool call flushes it, then an overlapping `agent_message_chunk` arrives
+whose text starts mid-sentence and stops before the first entry's last
+paragraph. The host appended that slice to the empty buffer and the
+prompt-end flush saved it as its own `TranscriptEntry`. A model that
+really continues after the tool — new text that is not a slice of what
+this turn already saved — still gets its own entry.
 
-1. **Genuine model behavior.** Grok streams text, calls a tool
-   (`flushAssistant` at 3702 persists entry A), does more work,
-   resumes with more text, and `session/prompt` returning triggers
-   `flushAssistant` again to persist entry B. If the model's second
-   text happens to restart its answer (common for smaller models
-   summarizing after a Read), two entries land — both starting with
-   near-identical wording. No host bug; the two entries reflect what
-   the model said. But the transcript renders them as duplicate-
-   looking bubbles because we don't visually distinguish "same turn"
-   from "distinct turns."
-2. **Client-side race on reload.** If a non-streaming `transcript`
-   event arrives while the client is mid-load from an earlier reload,
-   the load might briefly see the pre-flush state, then re-fetch after
-   the flush, layering a duplicate. Less likely — `handleSocketAndReload`
-   cancels the debounced task and awaits `load()` — but plausible
-   during WS reconnects (`replayMissedEvents`).
-
-Neither hypothesis is proven without an on-disk session snapshot for
-one of the affected chats. That's the first step in Rollout.
-
-Impact if we ship without this: the transcript is confusing but
-correct enough to keep working. Users think they're seeing broken
-output; support surface grows over time.
+No affected-session snapshot is in the repo. The shape of the reported
+bubble (a middle slice, not a restart from the first word) matches the
+overlapping-chunk path, and the iOS guard was written for that path.
 
 ## Non-goals
 
@@ -69,59 +58,46 @@ output; support surface grows over time.
 
 ## Fix
 
-Two-step, gated by hypothesis validation:
+`mergeGrokAssistantChunk` in `host/src/acp/runners/grok-events.ts` folds
+each `agent_message_chunk` before it touches the buffer:
 
-### Step 1 — Diagnose (this RFC before landing code)
+- A sliding window or a cumulative snapshot updates the open buffer by
+  the new tail only, so one bubble does not repeat itself.
+- A chunk of 24+ characters that is a verbatim slice of assistant text
+  already flushed in this turn is dropped. No streaming event, no second
+  entry. `promptTurn` clears that committed text at the start of the
+  next turn, so a later turn can repeat an earlier answer.
+- `flushAssistant` applies the same check to the whole buffer. A replay
+  that arrived as pieces shorter than 24 characters is dropped once the
+  pieces join into a slice of text this turn already saved.
 
-- Add `turnId` (UUID per `session/prompt` invocation) to `LiveSession`
-  and stamp it on each `TranscriptEntry` and streaming event via
-  `session-manager.ts`. Cheap and reversible.
-- Log entries at `flushAssistant` with `[turn <turnId>] persist entry
-  {id, chars}` so a live soak shows exactly how many entries a single
-  Grok turn produces.
-- Pull `~/.grok-dispatch/sessions/<sid>.json` for one of the maintainer's
-  affected sessions and eyeball the transcript array.
-
-### Step 2 — Fix by hypothesis
-
-- **If model behavior (multiple entries per turn):** in the client
-  (`TranscriptView`), collapse consecutive assistant entries that share
-  a `turnId` into a single visual bubble. `session.toolCalls` still
-  render as their own rows in the interleaved timeline based on `at`;
-  the assistant text just merges visually. Host stays as-is.
-- **If reload race:** guard `handleSocketAndReload` so a `transcript`
-  event that carries a `turnId` we already have in
-  `detail.transcript` is treated as a no-op (already loaded). No host
-  change.
-- **If both:** land the client dedup helper; it covers both cases with
-  one code path.
+A follow-up sentence that is not contained in the committed text is
+persisted, including when it shares a short phrase with the earlier
+entry. Persisted `TranscriptEntry` fields are unchanged.
 
 ## Testing
 
-- [ ] `host/src/acp/session-manager.turnId.test.ts` — vitest cases:
-      each `session/prompt` produces exactly one `turnId`, propagated
-      through streaming events and persisted entries.
-- [ ] Manual soak — trigger a Grok turn with two Read tools, verify
-      one turnId across all events even though transcript entries may
-      split at flushes.
-- [ ] Regression check on the affected chat: dupe bubble collapses to
-      a single bubble after the client fix lands.
+- [x] `host/src/acp/runners/grok-events.test.ts` — the reported shape
+      (full reply, tool-call flush, mid-sentence slice, prompt-end
+      flush) leaves one transcript entry. A real follow-up sentence
+      still produces a second entry. Sliding-window and cumulative
+      chunks compose into one buffer. A short reply that happens to
+      occur inside the previous text is kept.
+- [ ] Manual soak — a Grok turn with two Read tools on an affected
+      chat. Not run here. See Follow-ups.
 
 ## Rollout
 
-1. Land Step 1 diagnostic instrumentation on this branch (no user-
-   visible change).
-2. Kick the LaunchAgent, tail `~/Library/Logs/grok-dispatch-host.log`,
-   reproduce the dupe.
-3. Land Step 2 based on evidence.
-4. `make check`
-5. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
+1. Land the chunk merge and the flush check.
+2. `make check`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 
-- If step 1 shows Grok CLI itself is re-emitting completed text, file
-  upstream and add a temporary content-hash de-dupe in
-  `flushAssistant` — but only after confirming the ACP contract.
-- Reconsider whether `agent_message_chunk` should also be stamped
-  with `turnId` for the streaming buffer; nice for future
-  observability but not required for the dupe fix.
+- Manual soak: trigger a Grok turn with two Read tools and confirm the
+  affected chat no longer grows a second mid-sentence bubble. This
+  environment has no Grok CLI session and no iOS device.
+- File the overlapping `agent_message_chunk` behavior upstream. The
+  host drop is the guard while that stands.
+- `turnId` on streaming events was the original diagnostic step. It is
+  not required to stop the duplicate entry.

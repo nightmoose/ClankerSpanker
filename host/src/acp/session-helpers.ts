@@ -306,6 +306,12 @@ export interface LiveSession {
   pendingQuestions: Map<string, PendingQuestion & { rpcId?: number | string }>;
   assistantBuffer: string;
   thoughtBuffer: string;
+  /**
+   * Assistant text already persisted earlier in this `session/prompt` (RFC-017).
+   * Cleared at the start of each turn. Used to drop Grok's overlapping replay
+   * of that text so it does not become a second bubble.
+   */
+  turnAssistantText?: string;
 }
 
 export interface ClaudeHookApproval {

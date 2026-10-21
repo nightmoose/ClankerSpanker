@@ -2900,6 +2900,7 @@ export class SessionManager extends EventEmitter {
 
     live.assistantBuffer = "";
     live.thoughtBuffer = "";
+    live.turnAssistantText = "";
     session.status = "running";
     session.updatedAt = now();
     this.persist(session);

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Allocate the next RFC number and copy the template.
+# Refuses to reuse a number that any branch, index row, or promise already owns.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RFC_DIR="$ROOT/docs/rfcs"
@@ -13,28 +14,37 @@ if [[ ! "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
   exit 2
 fi
 
-# Numbers are global across every branch, not just this checkout.
-# Fetch first so a number claimed on someone else's branch is seen.
-git -C "$ROOT" fetch --quiet --prune origin 2>/dev/null \
-  || echo "warning: git fetch origin failed; numbers on unfetched branches are not seen" >&2
-
-next=63   # 000-062 are allocated (some kept in a private repo; 062 is reserved by RFC-061)
-while read -r name; do
-  [[ "$name" =~ ^[0-9]{3}- ]] || continue
-  n=$((10#${name:0:3}))
-  if (( n >= next )); then next=$((n + 1)); fi
-done < <(
-  ls "$RFC_DIR"
-  git -C "$ROOT" for-each-ref --format='%(refname)' refs/heads refs/remotes/origin \
-    | while read -r ref; do git -C "$ROOT" ls-tree --name-only "$ref" docs/rfcs/ 2>/dev/null; done \
-    | xargs -n1 basename 2>/dev/null
-)
-nnn="$(printf '%03d' "$next")"
-dest="$RFC_DIR/${nnn}-${slug}.md"
-if [[ -e "$dest" ]]; then
-  echo "already exists: $dest" >&2
+# Numbers are global. If fetch fails, a taken number on an unfetched branch
+# would be invisible, so refuse rather than guess.
+if ! git -C "$ROOT" fetch --quiet --prune origin; then
+  echo "refusing to allocate: git fetch origin failed, so a number taken on another branch might be reused" >&2
   exit 1
 fi
+
+nnn="$(python3 "$ROOT/scripts/rfc_alloc.py" --root "$ROOT")" || {
+  echo "refusing to allocate an RFC number" >&2
+  exit 1
+}
+if [[ ! "$nnn" =~ ^[0-9]{3}$ ]]; then
+  echo "refusing to allocate: allocator returned '$nnn'" >&2
+  exit 1
+fi
+
+# The number is taken if any file already uses it, whatever the slug is.
+shopt -s nullglob
+existing=( "$RFC_DIR"/${nnn}-*.md )
+shopt -u nullglob
+if (( ${#existing[@]} > 0 )); then
+  echo "refusing to reuse RFC-${nnn}: ${existing[*]}" >&2
+  exit 1
+fi
+
+dest="$RFC_DIR/${nnn}-${slug}.md"
+if [[ -e "$dest" ]]; then
+  echo "refusing to reuse RFC-${nnn}: $dest already exists" >&2
+  exit 1
+fi
+
 today="$(date +%F)"
 branch="rfc-${nnn}-${slug}"
 awk -v nnn="$nnn" -v slug="$slug" -v today="$today" -v branch="$branch" '
@@ -44,6 +54,16 @@ awk -v nnn="$nnn" -v slug="$slug" -v today="$today" -v branch="$branch" '
   /^\*\*Branch:\*\*/ { print "**Branch:** " branch; next }
   { print }
 ' "$RFC_DIR/_template.md" > "$dest"
+
+# Re-check after the write so two allocators cannot both land the same number.
+shopt -s nullglob
+again=( "$RFC_DIR"/${nnn}-*.md )
+shopt -u nullglob
+if (( ${#again[@]} != 1 )); then
+  rm -f "$dest"
+  echo "refusing to reuse RFC-${nnn}: another file appeared (${again[*]})" >&2
+  exit 1
+fi
 
 echo "Wrote $dest"
 echo "Branch: $branch"

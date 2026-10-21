@@ -4,6 +4,7 @@
 check: house-style typecheck build
 
 house-style:
+	python3 scripts/rfc_alloc_test.py
 	python3 scripts/house-style-check.py
 
 test:

@@ -125,6 +125,9 @@ def check_rfc_index_links(index: Path, files: set[str]) -> list[str]:
             errors.append(f"RFC index row {num} links to {target}, which has a different number")
     for name in sorted({t for t in linked if linked.count(t) > 1}):
         errors.append(f"RFC index lists {name} more than once")
+    for name in sorted(files):
+        if name not in set(linked):
+            errors.append(f"RFC file {name} is missing from docs/rfcs/README.md")
     return errors
 
 
@@ -305,11 +308,53 @@ def check_new_lan_ips(files: list[str], base: str | None) -> list[str]:
     return errors
 
 
+CITE = re.compile(r"RFC-(\d{3})")
+SKIP_CITE_DIRS = {".git", "node_modules", "dist", "coverage", ".next"}
+CITE_SUFFIXES = {".md", ".ts", ".js", ".swift", ".py", ".yml", ".yaml", ".txt", ".mjs", ".sh", ".html"}
+
+
+def check_rfc_citations() -> list[str]:
+    """Every RFC-NNN cited in the tree has exactly one design note."""
+    known = {
+        m.group(1)
+        for p in RFC_DIR.glob("*.md")
+        if (m := RFC_NAME.match(p.name))
+    }
+    missing: dict[str, set[str]] = {}
+    for path in ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in SKIP_CITE_DIRS for part in path.parts):
+            continue
+        if path.suffix.lower() not in CITE_SUFFIXES:
+            continue
+        try:
+            if path.stat().st_size > 1_000_000:
+                continue
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        for hit in CITE.finditer(text):
+            num = hit.group(1)
+            if num not in known:
+                missing.setdefault(num, set()).add(rel)
+    errors: list[str] = []
+    for num in sorted(missing):
+        sample = ", ".join(sorted(missing[num])[:6])
+        errors.append(
+            f"RFC-{num} is referenced but docs/rfcs/{num}-*.md does not exist ({sample})"
+        )
+    return errors
+
+
 def main() -> int:
     os.chdir(ROOT)
     errors: list[str] = []
     print("== RFC index ==")
     errors += check_rfcs()
+    print("== RFC citations ==")
+    errors += check_rfc_citations()
     print("== host test exceptions ==")
     errors += check_test_exceptions()
     print("== host test-count ratchet ==")

@@ -73,6 +73,7 @@ import { WsTicketStore } from "./ws-tickets.js";
 import { inferProjectId, nonAbsolutePaths, projectOverlapWarnings } from "./project-resolve.js";
 import { computeSessionListETag, pageItems } from "./sessions/store.js";
 import { runCommand } from "./exec.js";
+import { SandboxUnavailableError, sandboxRequested } from "./sandbox.js";
 import * as projectSecrets from "./project-secrets.js";
 
 /** Single-use WebSocket tickets (RFC-029), shared by /ws and /ws/terminal. */
@@ -1548,6 +1549,7 @@ async function handleHttp(
         toolCallCount: s.toolCallCount,
         creditsUsedDeltaPct: s.creditsUsedDeltaPct,
         creditsUsedAt: s.creditsUsedAt,
+        ...(s.sandbox === true ? { sandbox: true as const } : {}),
       });
 
       const { page: activePage, nextCursor } = pageItems(active.map(toItem), limit, cursor);
@@ -1697,7 +1699,12 @@ async function handleHttp(
 
   // POST /exec — run a shell command, return stdout/stderr/exitCode (RFC-060).
   if (method === "POST" && path === "/exec") {
-    const body = (await readJson(req)) as { command?: unknown; cwd?: unknown; timeoutMs?: unknown };
+    const body = (await readJson(req)) as {
+      command?: unknown;
+      cwd?: unknown;
+      timeoutMs?: unknown;
+      sandbox?: unknown;
+    };
     if (!body.command || typeof body.command !== "string") {
       json(res, 400, { error: "command is required" });
       return;
@@ -1718,8 +1725,21 @@ async function handleHttp(
       }
     }
     const timeoutMs = typeof body.timeoutMs === "number" ? body.timeoutMs : undefined;
-    const result = await runCommand({ command: body.command, cwd: body.cwd as string | undefined, timeoutMs });
-    json(res, 200, result);
+    try {
+      const result = await runCommand({
+        command: body.command,
+        cwd: body.cwd as string | undefined,
+        timeoutMs,
+        sandbox: sandboxRequested(body.sandbox),
+      });
+      json(res, 200, result);
+    } catch (err) {
+      if (err instanceof SandboxUnavailableError) {
+        json(res, 400, { error: err.message });
+        return;
+      }
+      throw err;
+    }
     return;
   }
 

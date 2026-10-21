@@ -142,4 +142,10 @@ describe("web_search", () => {
     expect(out).toMatch(/confluent\.io/);
     expect(out).not.toMatch(/duckduckgo/i);
   });
+
+  it("refuses web_search and web_fetch when the job is sandboxed", async () => {
+    const ctx = { cwd: tmpCwd(), sessionId: "s", fetchImpl: fetch, sandbox: true as const };
+    await expect(tool("web_search").execute({ query: "x" }, ctx)).rejects.toThrow(/sandboxed/);
+    await expect(tool("web_fetch").execute({ url: "https://example.com" }, ctx)).rejects.toThrow(/sandboxed/);
+  });
 });

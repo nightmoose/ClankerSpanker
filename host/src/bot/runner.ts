@@ -21,8 +21,11 @@ export interface BotHostCallbacks {
   isCancelled(): boolean;
 }
 
-function botPreamble(): string {
+function botPreamble(sandbox = false): string {
   const today = new Date().toISOString().slice(0, 10);
+  const jail = sandbox
+    ? "\n- This job is sandboxed. web_fetch and web_search will fail. Stay inside the workspace."
+    : "";
   return `You are an autonomous ClankerSpanker bot. You run inside the host process with a small, owned tool set.
 
 Today's UTC date is ${today}. Use that date on outbox files. Do not invent a different year.
@@ -34,7 +37,7 @@ Rules:
 - Public HTTP only: no cookies, no logins, no private/loopback URLs.
 - Never claim you emailed, posted, or contacted anyone.
 - Keep drafts in the user's voice: short, peer-to-peer, no hype.
-- Empty search results mean the search backend failed, NOT that the market is empty. Follow up with web_fetch on specific URLs.`;
+- Empty search results mean the search backend failed, NOT that the market is empty. Follow up with web_fetch on specific URLs.${jail}`;
 }
 
 export async function runBotSession(opts: {
@@ -70,7 +73,12 @@ export async function runBotSession(opts: {
   callbacks.emit(session, "session.updated", { status: "running", backend: "bot" });
 
   const messages = buildMessages(session, opts.prompt, opts.isFollowUp, profile.systemPrompt);
-  const ctx: ToolContext = { cwd: session.cwd, sessionId: session.id, fetchImpl };
+  const ctx: ToolContext = {
+    cwd: session.cwd,
+    sessionId: session.id,
+    fetchImpl,
+    ...(session.sandbox === true ? { sandbox: true as const } : {}),
+  };
 
   const result = await runBotLoop({
     provider,
@@ -284,7 +292,7 @@ function buildMessages(
   isFollowUp: boolean,
   persona?: string,
 ): ChatMessage[] {
-  const system = [botPreamble(), persona?.trim()].filter(Boolean).join("\n\n");
+  const system = [botPreamble(session.sandbox === true), persona?.trim()].filter(Boolean).join("\n\n");
   const messages: ChatMessage[] = [{ role: "system", content: system }];
   if (isFollowUp) {
     for (const t of session.transcript) {

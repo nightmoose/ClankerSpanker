@@ -85,11 +85,11 @@ paths:
       summary: List autonomous bots
       security: [{ bearerAuth: [] }]
     post:
-      summary: Create a bot
+      summary: Create a bot. Optional sandbox, boolean true only, is copied onto each run (RFC-070).
       security: [{ bearerAuth: [] }]
   /bots/{id}:
     patch:
-      summary: Update a bot
+      summary: Update a bot. sandbox true or false opts that bot's later runs in or out (RFC-070).
       security: [{ bearerAuth: [] }]
     get:
       summary: One bot.
@@ -121,12 +121,13 @@ paths:
     post:
       summary: |
         Run a shell command on the host; returns stdout/stderr/exitCode/durationMs (RFC-060).
+        Optional body field sandbox, boolean true only, runs that command in the per-job jail (RFC-070). Absent or false is the existing host command.
         403 for browsers other than the gateway's own page and for requests
         through tailscale serve.
       security: [{ bearerAuth: [] }]
   /dispatch:
     post:
-      summary: Create and start a task
+      summary: Create and start a task. Optional sandbox, boolean true only, jails that job (RFC-070).
       security: [{ bearerAuth: [] }]
   /sessions/attach-agy:
     post:

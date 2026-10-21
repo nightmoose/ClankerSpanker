@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { spawnSandboxed } from "../sandbox.js";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import { findAgyBinary } from "../platform.js";
@@ -33,6 +34,8 @@ export interface AntigravityRunnerOptions {
    * as an instruction on a fresh conversation (advisory, not enforced).
    */
   toolAllowlist?: string[];
+  /** RFC-070. Only boolean true jails this turn. */
+  sandbox?: boolean;
 }
 
 /**
@@ -112,17 +115,27 @@ export class AntigravityRunner extends EventEmitter {
       toolAllowlist: this.opts.toolAllowlist,
     });
 
-    this.proc = spawn(bin, args, {
-      cwd: this.opts.cwd,
-      env: {
-        ...process.env,
-        ...(this.opts.profileEnv ?? {}),
-        PATH: agentPathEnv(),
-        // Avoid interactive auth hang in headless
-        CI: "1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    if (this.opts.sandbox === true) {
+      this.proc = spawnSandboxed({
+        bin,
+        args,
+        cwd: this.opts.cwd,
+        env: { ...(this.opts.profileEnv ?? {}), CI: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } else {
+      this.proc = spawn(bin, args, {
+        cwd: this.opts.cwd,
+        env: {
+          ...process.env,
+          ...(this.opts.profileEnv ?? {}),
+          PATH: agentPathEnv(),
+          // Avoid interactive auth hang in headless
+          CI: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    }
 
     const proc = this.proc;
     proc.stderr?.on("data", (buf: Buffer) => {

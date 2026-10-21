@@ -1,9 +1,12 @@
 import { exec } from "node:child_process";
+import { runCommandSandboxed } from "./sandbox.js";
 
 export interface ExecRequest {
   command: string;
   cwd?: string;
   timeoutMs?: number;
+  /** RFC-070. Only the boolean true leaves the host path. */
+  sandbox?: boolean;
 }
 
 export interface ExecResult {
@@ -18,6 +21,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 100_000;
 
 export async function runCommand(req: ExecRequest): Promise<ExecResult> {
+  if (req.sandbox === true) return runCommandSandboxed(req);
   const timeoutMs = Math.min(req.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const start = Date.now();
 

@@ -9,6 +9,8 @@ export interface ToolContext {
   cwd: string;
   sessionId: string;
   fetchImpl: FetchLike;
+  /** RFC-070. Network tools refuse when this is true. */
+  sandbox?: boolean;
 }
 
 export interface BotTool {
@@ -203,6 +205,7 @@ const webFetchTool: BotTool = {
     },
   },
   async execute(args, ctx) {
+    if (ctx.sandbox === true) throw new Error("web_fetch is off for a sandboxed job");
     const url = requireString(args, "url");
     const res = await publicFetch(ctx.fetchImpl, url);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -231,6 +234,7 @@ const webSearchTool: BotTool = {
     },
   },
   async execute(args, ctx) {
+    if (ctx.sandbox === true) throw new Error("web_search is off for a sandboxed job");
     const query = requireString(args, "query");
     const sections: string[] = [];
     try {

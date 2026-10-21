@@ -78,6 +78,7 @@ export async function claudeTurn(
     appendSystemPrompt: profile?.systemPrompt,
     extraDirs,
     toolAllowlist: profile?.toolAllowlist,
+    sandbox: session.sandbox === true,
     // RFC-061: a bound project database adds the built-in `sql` server. The
     // config file is per session (never shared across projects) and is
     // removed when the turn ends, so the secret sits on disk only while

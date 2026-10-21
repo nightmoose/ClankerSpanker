@@ -22,8 +22,6 @@ process, so a bump that broke it would only show up on someone's Linux box.
 ## Non-goals
 
 - New features or UI changes in the shell.
-- Adding `setWindowOpenHandler` / `will-navigate` guards. The renderer opens no
-  windows and navigates nowhere today; that hardening is a follow-up.
 - A headless Electron run (xvfb) in CI. The smoke check below runs on plain Node.
 
 ## Fix
@@ -57,6 +55,10 @@ process, so a bump that broke it would only show up on someone's Linux box.
 ## Testing
 
 - [x] `npm run smoke` passes; flipping `sandbox` to `false` makes it fail.
+- [x] `npm run smoke` asserts `setWindowOpenHandler` denies every popup and
+      `will-navigate` cancels off-origin URLs. `http:`/`https:` off-origin
+      is opened with `shell.openExternal`. `javascript:` and a `file:` URL
+      outside the page directory are cancelled and not opened.
 - [x] `npm audit` in `desktop/`: 0 high (8 moderate remain, see Follow-ups).
 
 ## Rollout
@@ -73,6 +75,5 @@ process, so a bump that broke it would only show up on someone's Linux box.
   to 26.5.0.
 - Manual soak on a Linux desktop (X11 and Wayland): start, tray menu, project
   folder picker opens in `$HOME` then in the last folder's parent, notifications,
-  managed host start/stop, systemd install.
-- `setWindowOpenHandler(() => ({ action: "deny" }))` and a `will-navigate` guard on
-  the main window.
+  managed host start/stop, systemd install. Clicking an off-origin link in the
+  shell is part of that soak; the handlers themselves are covered by smoke.

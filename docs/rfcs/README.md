@@ -3,7 +3,7 @@
 Design notes for non-trivial changes. **Shipped** = on `main`; **Accepted** = signed off;
 **Draft** = under review; **Superseded** = the number is kept and the work lives in another RFC.
 
-017 stays Draft. 006 and 066 are Shipped; the allowlist check and the Linux desktop soak are follow-ups in those files.
+017 stays Draft. 006 and 066 are Shipped. Still open: the 066 Linux desktop soak, and a live Antigravity check that `agy` honors the Read/Grep instruction (006).
 
 Start a new RFC with `make rfc SLUG=short-kebab` (template: [`_template.md`](_template.md)) and add a row below.
 That command fetches `origin`, takes the next integer above every number already used in this

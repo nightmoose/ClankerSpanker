@@ -5,12 +5,17 @@ import { describe, expect, it } from "vitest";
 import { BotStore, normalizeBot } from "./bot/store.js";
 import { runCommand } from "./exec.js";
 import { SessionStore } from "./sessions/store.js";
+import { startApprovalBroker } from "./approval-broker.js";
+import { APPROVAL_HOOK_SOURCE } from "./claude/runner.js";
 import {
   LINUX_UNSHARE_ARGS,
+  SANDBOX_APPROVAL_SOCK,
   explicitChildEnv,
   hostConfigRoot,
+  sandboxNodeFiles,
   sandboxRequested,
   seatbeltProfile,
+  spawnSandboxed,
 } from "./sandbox.js";
 import type { DispatchSession } from "./types.js";
 
@@ -31,10 +36,12 @@ describe("sandbox flag", () => {
         CS_SANDBOX_HOST_ONLY: "ambient-marker",
         ANTHROPIC_API_KEY: "sk-test",
         CLAUDE_DISPATCH_TOKEN: "host-token",
+        CLAUDE_APPROVAL_SOCK: "/tmp/cs-approval.sock",
         PROFILE_ONLY: "yes",
       });
       expect(env.CS_SANDBOX_HOST_ONLY).toBeUndefined();
       expect(env.CLAUDE_DISPATCH_TOKEN).toBeUndefined();
+      expect(env.CLAUDE_APPROVAL_SOCK).toBeUndefined();
       expect(env.ANTHROPIC_API_KEY).toBe("sk-test");
       expect(env.PROFILE_ONLY).toBe("yes");
     } finally {
@@ -61,6 +68,20 @@ describe("sandbox flag", () => {
     expect(profile).toContain('"/work/job"');
     expect(profile).toContain('"/Users/me/.grok-dispatch"');
     expect(profile.lastIndexOf("(deny file-read*")).toBeGreaterThan(profile.indexOf('"/work/job"'));
+  });
+
+  it("allows the approval socket without opening the host config directory", () => {
+    const profile = seatbeltProfile({
+      cwd: "/work/job",
+      extraDirs: [],
+      readOnlyDirs: [],
+      secret: "/Users/me/.grok-dispatch",
+      approvalSocket: "/tmp/cs-approval/approval.sock",
+      readOnlyFiles: ["/tmp/cs-approval/pretool-approval.mjs"],
+    });
+    expect(profile).toContain('"/tmp/cs-approval/approval.sock"');
+    expect(profile).toContain('"/tmp/cs-approval/pretool-approval.mjs"');
+    expect(profile).toContain("(deny file-read* file-write* (subpath \"/Users/me/.grok-dispatch\"))");
   });
 });
 
@@ -160,7 +181,7 @@ describe("sandboxed command", () => {
         cwd,
         sandbox: true,
       });
-      expect(r.stdout).toContain("note-visible");
+      expect(r.stdout, r.stderr).toContain("note-visible");
       expect(r.stdout).not.toContain("hidden-secret");
       expect(r.stdout).toContain("SECRET:1");
       expect(r.stdout).toContain("HOME_LS:sandbox");
@@ -215,9 +236,119 @@ describe("sandboxed command", () => {
         return;
       }
       const r = await runCommand({ command: "sleep 30", cwd, sandbox: true, timeoutMs: 500 });
-      expect(r.exitCode).toBe(-1);
+      expect(r.exitCode, r.stderr).toBe(-1);
       expect(r.durationMs).toBeLessThan(4000);
     } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+function collect(child: ReturnType<typeof spawnSandboxed>): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (buf: Buffer) => {
+      stdout += buf.toString("utf8");
+    });
+    child.stderr?.on("data", (buf: Buffer) => {
+      stderr += buf.toString("utf8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ stdout, stderr, code: code ?? 1 }));
+  });
+}
+
+describe("sandbox approval channel", () => {
+  it("refuses a missing socket and a file inside the host config directory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cs-sock-miss-"));
+    expect(() =>
+      spawnSandboxed({
+        bin: "/bin/bash",
+        args: ["-lc", "echo ran > ran.txt"],
+        cwd,
+        stdio: "ignore",
+        approvalSocket: join(cwd, "missing.sock"),
+      }),
+    ).toThrow(/approval socket/);
+    expect(existsSync(join(cwd, "ran.txt"))).toBe(false);
+    const root = hostConfigRoot();
+    mkdirSync(root, { recursive: true });
+    const secretFile = join(root, "not-a-hook.txt");
+    writeFileSync(secretFile, "nope\n");
+    expect(() =>
+      spawnSandboxed({
+        bin: "/bin/bash",
+        args: ["-lc", "true"],
+        cwd,
+        stdio: "ignore",
+        readOnlyFiles: [secretFile],
+      }),
+    ).toThrow(/host config/);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("bind-mounts the socket and the hook file, and withholds the host token", async () => {
+    if (process.platform !== "linux") return;
+    const seen: { sessionId?: string; raw?: string } = {};
+    const broker = await startApprovalBroker({
+      sessionId: "bound-session",
+      async create(body) {
+        seen.sessionId = body.sessionId;
+        seen.raw = JSON.stringify(body);
+        return { approvalId: "ap-jail" };
+      },
+      async poll() {
+        return { status: "approved", comment: "from the phone" };
+      },
+    });
+    const hookFile = join(broker.directory, "pretool-approval.mjs");
+    writeFileSync(hookFile, APPROVAL_HOOK_SOURCE);
+    writeFileSync(join(broker.directory, "secret.txt"), "hidden-secret\n");
+    const cwd = mkdtempSync(join(tmpdir(), "cs-sock-jail-"));
+    const node = sandboxNodeFiles();
+    const secretPath = join(broker.directory, "secret.txt");
+    const child = spawnSandboxed({
+      bin: "/bin/bash",
+      args: [
+        "-lc",
+        [
+          'echo TOKEN:${CLAUDE_DISPATCH_TOKEN-unset}',
+          'echo SESSION:${CLAUDE_DISPATCH_SESSION_ID-unset}',
+          `echo SECRET:$(cat ${JSON.stringify(secretPath)} 2>/dev/null || echo missing)`,
+          `exec ${JSON.stringify(node.nodeBin)} ${JSON.stringify(hookFile)} ${JSON.stringify(SANDBOX_APPROVAL_SOCK)}`,
+        ].join("\n"),
+      ],
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      approvalSocket: broker.socketPath,
+      readOnlyFiles: [hookFile, ...node.readOnlyFiles],
+      env: {
+        CLAUDE_DISPATCH_TOKEN: "host-token-value",
+        CLAUDE_DISPATCH_SESSION_ID: "attacker",
+        CLAUDE_APPROVAL_POLL_MS: "0",
+      },
+    });
+    child.stdin?.end(JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" } }));
+    try {
+      const result = await collect(child);
+      expect(result.code, `${result.stderr}\n${result.stdout}`).toBe(0);
+      expect(result.stdout).toContain("TOKEN:unset");
+      expect(result.stdout).toContain("SESSION:unset");
+      expect(result.stdout).toContain("SECRET:missing");
+      expect(result.stdout).not.toContain("hidden-secret");
+      expect(result.stdout).not.toContain("host-token-value");
+      const line = result.stdout.split("\n").find((row) => row.startsWith("{"));
+      const decision = JSON.parse(line ?? "") as {
+        hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+      };
+      expect(decision.hookSpecificOutput.permissionDecision).toBe("allow");
+      expect(decision.hookSpecificOutput.permissionDecisionReason).toBe("from the phone");
+      expect(seen.sessionId).toBe("bound-session");
+      expect(seen.raw).not.toContain("attacker");
+      expect(seen.raw).not.toContain("host-token-value");
+    } finally {
+      broker.close();
       rmSync(cwd, { recursive: true, force: true });
     }
   });

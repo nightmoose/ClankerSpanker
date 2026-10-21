@@ -99,3 +99,4 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 068 | [The gateway keeps its own log files bounded](068-gateway-log-rotation.md) | Shipped |
 | 069 | [Cheap session-list: slim shape, ETag, paging](069-sessions-list-summary.md) | Shipped |
 | 070 | [Opt-in per-job sandbox](070-per-job-sandbox.md) | Shipped |
+| 071 | [Phone approval inside a per-job sandbox](071-sandbox-approval-channel.md) | Shipped |

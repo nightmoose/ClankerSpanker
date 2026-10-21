@@ -52,6 +52,31 @@ describe("classifyUpdate", () => {
     expect(s.canApply).toBe(false);
   });
 
+  it("never applies from a branch that tracks anything but origin/main", () => {
+    // The 2026-10-21 case: the checkout was on an agent's feature branch.
+    const s = classifyUpdate({
+      repoDir: "/repo",
+      branch: "rfc-069-sessions-list-summary",
+      upstream: "origin/rfc-069-sessions-list-summary",
+      behind: 4,
+      autoUpdate: true,
+    });
+    expect(s.state).toBe("wrong-upstream");
+    expect(s.canApply).toBe(false);
+    expect(s.summary).toContain("origin/main");
+  });
+
+  it("allows any local branch name that tracks origin/main", () => {
+    const s = classifyUpdate({
+      repoDir: "/repo",
+      branch: "host-install",
+      upstream: "origin/main",
+      behind: 1,
+    });
+    expect(s.state).toBe("behind");
+    expect(s.canApply).toBe(true);
+  });
+
   it("allows a clean fast-forward", () => {
     const s = classifyUpdate({
       repoDir: "/repo",

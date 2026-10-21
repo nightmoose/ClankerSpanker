@@ -107,8 +107,17 @@ once:
 - Or set `"autoUpdate": true` in that machine's `config.json`. The host
   then fast-forwards itself when no session is running.
 
-It only fast-forwards the branch the checkout is already on. That branch
-needs an upstream, and `git fetch` has to work without a password prompt
+It only fast-forwards a checkout whose branch tracks `origin/main`; any other
+upstream is reported as `wrong-upstream` and never applied. Point `repoDir` in
+`config.json` at a checkout used only for installs, not the one agents work in.
+For example:
+
+```bash
+git clone https://github.com/nightmoose/ClankerSpanker.git ~/Projects/GrokDispatch-main
+git -C ~/Projects/GrokDispatch-main checkout -B host-install --track origin/main
+```
+
+`git fetch` has to work without a password prompt
 (a LaunchAgent has no terminal). Uncommitted files, a missing upstream, or
 a diverged branch are left alone. If the build fails, run it again; the
 log is `~/.grok-dispatch/self-update.log`.

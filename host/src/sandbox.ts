@@ -66,7 +66,9 @@ export function explicitChildEnv(merged: NodeJS.ProcessEnv | undefined): Record<
   const take = (key: string, value: string | undefined) => {
     if (typeof value !== "string" || value.length === 0) return;
     if (value.includes("\0") || value.includes("\n")) return;
-    if (BLOCKED_ENV.has(key) || key.startsWith("CLAUDE_DISPATCH_")) return;
+    if (BLOCKED_ENV.has(key) || key.startsWith("CLAUDE_DISPATCH_") || key === "CLAUDE_APPROVAL_SOCK") {
+      return;
+    }
     out[key] = value;
   };
   for (const key of ALLOWED_ENV) take(key, src[key]);
@@ -76,6 +78,9 @@ export function explicitChildEnv(merged: NodeJS.ProcessEnv | undefined): Record<
   }
   return out;
 }
+
+/** Path inside the Linux jail. The host socket is bind-mounted here, not copied. */
+export const SANDBOX_APPROVAL_SOCK = "/tmp/cs-approval.sock";
 
 export const LINUX_UNSHARE_ARGS = [
   "--user",
@@ -122,6 +127,43 @@ function assertRoMount(p: string): string | null {
   return target;
 }
 
+function assertRoFile(p: string): string {
+  const target = real(p);
+  if (isInsideSecret(target)) {
+    throw new SandboxUnavailableError("refusing to mount the host config directory (file)");
+  }
+  let st;
+  try {
+    st = statSync(target);
+  } catch {
+    throw new SandboxUnavailableError("read-only mount is not a file");
+  }
+  if (!st.isFile()) throw new SandboxUnavailableError("read-only mount is not a file");
+  return target;
+}
+
+function assertApprovalSocket(p: string): string {
+  const target = real(p);
+  if (isInsideSecret(target)) {
+    throw new SandboxUnavailableError("refusing to mount the host config directory (approval socket)");
+  }
+  let st;
+  try {
+    st = statSync(target);
+  } catch {
+    throw new SandboxUnavailableError("approval socket is missing");
+  }
+  if (!st.isSocket()) throw new SandboxUnavailableError("approval socket is missing");
+  return target;
+}
+
+/** Node binary the phone hook runs inside the jail. A copy outside the system prefixes is mounted as a file. */
+export function sandboxNodeFiles(): { nodeBin: string; readOnlyFiles: string[] } {
+  const bin = real(process.execPath);
+  if (coveredBySystem(bin)) return { nodeBin: bin, readOnlyFiles: [] };
+  return { nodeBin: bin, readOnlyFiles: [bin] };
+}
+
 function statExists(p: string): boolean {
   try {
     statSync(p);
@@ -163,6 +205,8 @@ export function seatbeltProfile(opts: {
   extraDirs: string[];
   readOnlyDirs: string[];
   secret: string;
+  approvalSocket?: string;
+  readOnlyFiles?: string[];
 }): string {
   const allow = (p: string, write: boolean) =>
     write
@@ -183,6 +227,14 @@ export function seatbeltProfile(opts: {
     ...opts.readOnlyDirs.map((d) => allow(d, false)),
     `(deny file-read* file-write* (subpath ${JSON.stringify(opts.secret)}))`,
   ];
+  if (opts.approvalSocket) {
+    lines.push(
+      `(allow file-read* file-write* (literal ${JSON.stringify(opts.approvalSocket)}))`,
+    );
+  }
+  for (const file of opts.readOnlyFiles ?? []) {
+    lines.push(`(allow file-read* (literal ${JSON.stringify(file)}))`);
+  }
   return lines.join("\n") + "\n";
 }
 
@@ -207,8 +259,8 @@ function assertSandboxTool(): void {
 
 const SETUP_SCRIPT = `#!/bin/bash
 set -euo pipefail
-root="$1"; cwd="$2"; home="$3"; ptmp="$4"; envfile="$5"; extrafile="$6"; rofile="$7"
-shift 7
+root="$1"; cwd="$2"; home="$3"; ptmp="$4"; envfile="$5"; extrafile="$6"; rofile="$7"; sock="$8"; rofiles="$9"
+shift 9
 bind_ro() {
   local src="$1" dest="$2"
   [ -d "$src" ] || return 0
@@ -248,11 +300,27 @@ if [ -f "$rofile" ]; then
     mount -o remount,bind,ro "$root$dir"
   done < "$rofile"
 fi
+if [ -n "$sock" ]; then
+  [ -S "$sock" ] || { echo "approval socket missing" >&2; exit 1; }
+  touch "$root${SANDBOX_APPROVAL_SOCK}"
+  mount --bind "$sock" "$root${SANDBOX_APPROVAL_SOCK}"
+fi
+if [ -f "$rofiles" ]; then
+  while IFS= read -r -d '' file || [ -n "$file" ]; do
+    [ -n "$file" ] || continue
+    [ -f "$file" ] || continue
+    dest="$root$file"
+    mkdir -p "$(dirname "$dest")"
+    touch "$dest"
+    mount --bind "$file" "$dest"
+    mount -o remount,bind,ro "$dest"
+  done < "$rofiles"
+fi
 env_args=(PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 if [ -f "$envfile" ]; then
   while IFS= read -r -d '' line || [ -n "$line" ]; do
     case "$line" in
-      ""|CLAUDE_DISPATCH_TOKEN=*|CLAUDE_DISPATCH_HOST=*|CLAUDE_DISPATCH_SESSION_ID=*|CLAUDE_DISPATCH_*) continue ;;
+      ""|CLAUDE_DISPATCH_TOKEN=*|CLAUDE_DISPATCH_HOST=*|CLAUDE_DISPATCH_SESSION_ID=*|CLAUDE_DISPATCH_*|CLAUDE_APPROVAL_SOCK=*) continue ;;
       *=*) env_args+=("$line") ;;
     esac
   done < "$envfile"
@@ -274,6 +342,10 @@ export interface SandboxSpawnOptions {
   extraDirs?: string[];
   env?: NodeJS.ProcessEnv;
   stdio: StdioOptions;
+  /** Host path of the approval socket. Linux bind-mounts it at SANDBOX_APPROVAL_SOCK. */
+  approvalSocket?: string;
+  /** Regular files bind-mounted read-only at the same absolute path. Never a directory. */
+  readOnlyFiles?: string[];
 }
 
 export function spawnSandboxed(opts: SandboxSpawnOptions): ChildProcess {
@@ -300,6 +372,8 @@ export function spawnSandboxed(opts: SandboxSpawnOptions): ChildProcess {
   const readOnly = roDirs
     .map((d) => assertRoMount(d))
     .filter((d): d is string => Boolean(d));
+  const readOnlyFiles = [...new Set((opts.readOnlyFiles ?? []).map((file) => assertRoFile(file)))];
+  const approvalSocket = opts.approvalSocket ? assertApprovalSocket(opts.approvalSocket) : "";
   assertSandboxTool();
 
   if (process.platform === "darwin") {
@@ -307,7 +381,14 @@ export function spawnSandboxed(opts: SandboxSpawnOptions): ChildProcess {
     const profilePath = path.join(work, "seatbelt.sb");
     writeFileSync(
       profilePath,
-      seatbeltProfile({ cwd, extraDirs, readOnlyDirs: readOnly, secret: real(hostConfigRoot()) }),
+      seatbeltProfile({
+        cwd,
+        extraDirs,
+        readOnlyDirs: readOnly,
+        secret: real(hostConfigRoot()),
+        approvalSocket: approvalSocket || undefined,
+        readOnlyFiles,
+      }),
     );
     const childEnv: NodeJS.ProcessEnv = {
       ...env,
@@ -339,11 +420,13 @@ export function spawnSandboxed(opts: SandboxSpawnOptions): ChildProcess {
   const envFile = path.join(work, "env");
   const extraFile = path.join(work, "extra");
   const roFile = path.join(work, "ro");
+  const roFilesFile = path.join(work, "rofiles");
   writeFileSync(script, SETUP_SCRIPT, { mode: 0o700 });
   const envLines = Object.entries(env).map(([k, v]) => `${k}=${v}`);
   writeNulList(envFile, envLines);
   writeNulList(extraFile, extraDirs);
   writeNulList(roFile, readOnly);
+  writeNulList(roFilesFile, readOnlyFiles);
   const child = spawn(
     "unshare",
     [
@@ -358,6 +441,8 @@ export function spawnSandboxed(opts: SandboxSpawnOptions): ChildProcess {
       envFile,
       extraFile,
       roFile,
+      approvalSocket,
+      roFilesFile,
       bin,
       ...opts.args,
     ],

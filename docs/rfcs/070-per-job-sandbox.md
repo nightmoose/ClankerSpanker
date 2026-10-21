@@ -37,7 +37,7 @@ Cua's product is "the agent gets a computer." Here the sandbox is off unless the
 - Turning the network off. Model CLIs need it to reach their APIs. A network-off switch is a follow-up.
 - Mounting the operator's home, or `~/.grok-dispatch`.
 - Copying `process.env` into the child.
-- Injecting the host token. Phone-approval hooks that need `CLAUDE_DISPATCH_TOKEN` do not fire inside the jail.
+- Injecting the host token. The child still does not receive `CLAUDE_DISPATCH_TOKEN`. Phone approval from inside the jail is [RFC-071](071-sandbox-approval-channel.md).
 - A sandbox UI on iOS, Mac, or the desktop shell. Callers send the flag.
 - Filling the sandbox with a container runtime. Linux uses `unshare`. macOS uses `sandbox-exec` when that binary exists.
 
@@ -81,7 +81,7 @@ Network stays on (no `--net`). That is deliberate for this version.
 ## Follow-ups
 
 - A network-off switch, still opt-in, defaulting to today's network.
-- Phone approval inside a jail, which needs a scoped credential instead of the host token.
+- Phone approval inside a jail without the host token: [RFC-071](071-sandbox-approval-channel.md).
 - Desktop driver: screenshot, click, type, background delivery.
 - A VM or container runtime (Lume-style, gVisor, Spaces) for jobs that need a full computer.
 - An in-sandbox daemon for processes, files, and screenshots.

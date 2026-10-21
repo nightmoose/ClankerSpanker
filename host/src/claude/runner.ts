@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { spawnSandboxed } from "../sandbox.js";
+import { explicitChildEnv, SANDBOX_APPROVAL_SOCK, sandboxNodeFiles, spawnSandboxed } from "../sandbox.js";
+import { hostApprovalHandlers, startApprovalBroker, type ApprovalBroker } from "../approval-broker.js";
 import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
@@ -75,6 +76,8 @@ export interface ClaudeRunnerEvents {
  */
 export class ClaudeRunner extends EventEmitter {
   private proc: ChildProcess | null = null;
+  /** Phone-approval socket for a sandboxed turn. Closed when the child exits. */
+  private approvalBroker: ApprovalBroker | null = null;
   private fullText = "";
   /** Last stderr output and Claude's own error result — for a useful failure message (RFC-053). */
   private stderrTail = "";
@@ -94,75 +97,109 @@ export class ClaudeRunner extends EventEmitter {
 
   async run(): Promise<{ text: string; sessionId?: string }> {
     const claudeBin = findClaudeBinary();
-    const settingsPath = this.writeSettings();
-    const args = [
-      "-p",
-      this.opts.prompt,
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--verbose",
-    ];
+    const sandboxed = this.opts.sandbox === true;
+    this.closeApprovalBroker();
+    let settingsDir = join(this.opts.dataDir, "claude-hooks");
+    let channel: { approvalSock?: string; nodeBin?: string } | undefined;
+    let approvalSocket: string | undefined;
+    let readOnlyFiles: string[] | undefined;
+    try {
+      if (sandboxed && this.opts.requirePhoneApproval) {
+        const node = sandboxNodeFiles();
+        const broker = await startApprovalBroker({
+          sessionId: this.opts.dispatchSessionId,
+          ...hostApprovalHandlers({
+            sessionId: this.opts.dispatchSessionId,
+            hostBaseUrl: this.opts.hostBaseUrl,
+            hostToken: this.opts.hostToken,
+          }),
+        });
+        this.approvalBroker = broker;
+        settingsDir = broker.directory;
+        const sockForHook = process.platform === "linux" ? SANDBOX_APPROVAL_SOCK : broker.socketPath;
+        channel = { approvalSock: sockForHook, nodeBin: node.nodeBin };
+        approvalSocket = broker.socketPath;
+        readOnlyFiles = [join(settingsDir, "pretool-approval.mjs"), ...node.readOnlyFiles];
+      }
+      const settingsPath = this.writeSettings(settingsDir, channel);
+      if (readOnlyFiles) readOnlyFiles.push(settingsPath);
 
-    if (this.opts.resumeSessionId) {
-      args.push("--resume", this.opts.resumeSessionId);
-    }
+      const args = [
+        "-p",
+        this.opts.prompt,
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--verbose",
+      ];
 
-    // Pin the model when the profile/request specifies one. Sentinels
-    // ("claude" / "default") skip this so the CLI's own default applies —
-    // otherwise old profile configs would pin stale slugs forever.
-    const model = this.opts.model?.trim();
-    if (model && !isClaudeModelSentinel(model)) {
-      args.push("--model", model);
-    }
+      if (this.opts.resumeSessionId) {
+        args.push("--resume", this.opts.resumeSessionId);
+      }
 
-    // Persona / project context injected once per turn.
-    const persona = this.opts.appendSystemPrompt?.trim();
-    if (persona) {
-      args.push("--append-system-prompt", persona);
-    }
+      // Pin the model when the profile/request specifies one. Sentinels
+      // ("claude" / "default") skip this so the CLI's own default applies —
+      // otherwise old profile configs would pin stale slugs forever.
+      const model = this.opts.model?.trim();
+      if (model && !isClaudeModelSentinel(model)) {
+        args.push("--model", model);
+      }
 
-    args.push(...claudeToolRestrictArgs(this.opts.toolAllowlist));
-    args.push(...claudeMcpConfigArgs(this.opts.mcpConfigPath));
+      // Persona / project context injected once per turn.
+      const persona = this.opts.appendSystemPrompt?.trim();
+      if (persona) {
+        args.push("--append-system-prompt", persona);
+      }
 
-    if (this.opts.requirePhoneApproval) {
-      // default mode + hook gate for write/execute tools
-      args.push("--permission-mode", "default");
-      args.push("--settings", settingsPath);
-    } else {
-      args.push("--permission-mode", "acceptEdits");
-    }
+      args.push(...claudeToolRestrictArgs(this.opts.toolAllowlist));
+      args.push(...claudeMcpConfigArgs(this.opts.mcpConfigPath));
 
-    for (const dir of extraDirsForClaude(this.opts.extraDirs)) {
-      args.push("--add-dir", dir);
-    }
+      if (this.opts.requirePhoneApproval) {
+        // default mode + hook gate for write/execute tools
+        args.push("--permission-mode", "default");
+        args.push("--settings", settingsPath);
+      } else {
+        args.push("--permission-mode", "acceptEdits");
+      }
 
-    if (this.opts.sandbox === true) {
-      // No host token and no copy of the host environment. Phone-approval
-      // hooks need that token, so they do not fire inside the jail.
-      this.proc = spawnSandboxed({
-        bin: claudeBin,
-        args,
-        cwd: this.opts.cwd,
-        extraDirs: this.opts.extraDirs,
-        env: { ...(this.opts.profileEnv ?? {}), CI: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
+      for (const dir of extraDirsForClaude(this.opts.extraDirs)) {
+        args.push("--add-dir", dir);
+      }
+
+      const childEnv = claudeChildEnv({
+        sandbox: sandboxed,
+        dispatchSessionId: this.opts.dispatchSessionId,
+        hostBaseUrl: this.opts.hostBaseUrl,
+        hostToken: this.opts.hostToken,
+        profileEnv: this.opts.profileEnv,
       });
-    } else {
-      this.proc = spawn(claudeBin, args, {
-        cwd: this.opts.cwd,
-        env: {
-          ...process.env,
-          ...(this.opts.profileEnv ?? {}),
-          PATH: agentPathEnv(),
-          CLAUDE_DISPATCH_SESSION_ID: this.opts.dispatchSessionId,
-          CLAUDE_DISPATCH_HOST: this.opts.hostBaseUrl,
-          CLAUDE_DISPATCH_TOKEN: this.opts.hostToken,
-          // Avoid interactive prompts
-          CI: "1",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+
+      if (sandboxed) {
+        // The host token stays in this process. A phone hook inside the jail
+        // talks to the approval socket, which can only create and poll.
+        this.proc = spawnSandboxed({
+          bin: claudeBin,
+          args,
+          cwd: this.opts.cwd,
+          extraDirs: this.opts.extraDirs,
+          env: childEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+          approvalSocket,
+          readOnlyFiles,
+        });
+      } else {
+        this.proc = spawn(claudeBin, args, {
+          cwd: this.opts.cwd,
+          env: childEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      }
+      const release = () => this.closeApprovalBroker();
+      this.proc.on("exit", release);
+      this.proc.on("error", release);
+    } catch (err) {
+      this.closeApprovalBroker();
+      throw err;
     }
 
     const proc = this.proc;
@@ -215,17 +252,22 @@ export class ClaudeRunner extends EventEmitter {
     } catch {
       /* ignore */
     }
+    this.closeApprovalBroker();
   }
 
-  private writeSettings(): string {
-    const dir = join(this.opts.dataDir, "claude-hooks");
+  private closeApprovalBroker(): void {
+    const broker = this.approvalBroker;
+    this.approvalBroker = null;
+    broker?.close();
+  }
+
+  private writeSettings(dir: string, channel?: { approvalSock?: string; nodeBin?: string }): string {
     mkdirSync(dir, { recursive: true });
     const hookPath = join(dir, "pretool-approval.mjs");
     writeFileSync(hookPath, APPROVAL_HOOK_SOURCE, "utf8");
     chmodSync(hookPath, 0o755);
-
     const settingsPath = join(dir, `settings-${this.opts.dispatchSessionId}.json`);
-    const settings = buildClaudeHookSettings(hookPath, extraDirsForClaude(this.opts.extraDirs));
+    const settings = buildClaudeHookSettings(hookPath, extraDirsForClaude(this.opts.extraDirs), channel);
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
     return settingsPath;
   }
@@ -558,7 +600,16 @@ export const CLAUDE_PRETOOL_MATCHER =
   "Edit|Write|MultiEdit|NotebookEdit|Bash|Delete|mcp_.*|mcp__.*";
 
 /** Settings.json body: PreToolUse hook + optional extra-dir Read grants. */
-export function buildClaudeHookSettings(hookPath: string, extraDirs: string[] = []): Record<string, unknown> {
+export function buildClaudeHookSettings(
+  hookPath: string,
+  extraDirs: string[] = [],
+  channel?: { approvalSock?: string; nodeBin?: string },
+): Record<string, unknown> {
+  const node = channel?.nodeBin?.trim() || "node";
+  const nodeCmd = node.includes("/") ? JSON.stringify(node) : node;
+  const command = channel?.approvalSock
+    ? `${nodeCmd} ${JSON.stringify(hookPath)} ${JSON.stringify(channel.approvalSock)}`
+    : `${nodeCmd} ${JSON.stringify(hookPath)}`;
   const settings: Record<string, unknown> = {
     hooks: {
       PreToolUse: [
@@ -567,7 +618,7 @@ export function buildClaudeHookSettings(hookPath: string, extraDirs: string[] = 
           hooks: [
             {
               type: "command",
-              command: `node ${JSON.stringify(hookPath)}`,
+              command,
               timeout: 600,
             },
           ],
@@ -584,12 +635,39 @@ export function buildClaudeHookSettings(hookPath: string, extraDirs: string[] = 
   return settings;
 }
 
+/**
+ * Env for one model-CLI turn. A sandboxed turn keeps the allow-list only.
+ * The host token is set on the unsandboxed path and omitted from the jail.
+ */
+export function claudeChildEnv(opts: {
+  sandbox?: boolean;
+  dispatchSessionId: string;
+  hostBaseUrl: string;
+  hostToken: string;
+  profileEnv?: NodeJS.ProcessEnv;
+}): NodeJS.ProcessEnv {
+  if (opts.sandbox === true) {
+    return explicitChildEnv({ ...(opts.profileEnv ?? {}), CI: "1" });
+  }
+  return {
+    ...process.env,
+    ...(opts.profileEnv ?? {}),
+    PATH: agentPathEnv(),
+    CLAUDE_DISPATCH_SESSION_ID: opts.dispatchSessionId,
+    CLAUDE_DISPATCH_HOST: opts.hostBaseUrl,
+    CLAUDE_DISPATCH_TOKEN: opts.hostToken,
+    CI: "1",
+  };
+}
+
 export const APPROVAL_HOOK_SOURCE = `#!/usr/bin/env node
 import { readFileSync } from "fs";
+import { createConnection } from "net";
 
 const sessionId = process.env.CLAUDE_DISPATCH_SESSION_ID;
 const host = (process.env.CLAUDE_DISPATCH_HOST || "http://127.0.0.1:8787").replace(/\\/$/, "");
 const token = process.env.CLAUDE_DISPATCH_TOKEN || "";
+const approvalSock = process.argv[2] || "";
 
 /**
  * PreToolUse only honors hookSpecificOutput.permissionDecision.
@@ -607,6 +685,58 @@ function decide(decision, reason) {
 
 function log(msg) {
   try { process.stderr.write("[clankerspanker-hook] " + msg + "\\n"); } catch { /* ignore */ }
+}
+
+function pollWaitMs() {
+  const n = Number(process.env.CLAUDE_APPROVAL_POLL_MS);
+  if (Number.isFinite(n) && n >= 0 && n <= 1500) return n;
+  return 1500;
+}
+
+function brokerCall(sockPath, msg) {
+  return new Promise((resolve, reject) => {
+    const sock = createConnection(sockPath);
+    let buf = "";
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(new Error("approval socket timeout"));
+    }, 20000);
+    sock.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    sock.on("data", (d) => { buf += d; });
+    sock.on("end", () => {
+      clearTimeout(timer);
+      try { resolve(JSON.parse(buf.trim())); }
+      catch { reject(new Error("bad approval response")); }
+    });
+    sock.write(JSON.stringify(msg) + "\\n");
+    sock.end();
+  });
+}
+
+async function waitStatus(readStatus) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  const wait = pollWaitMs();
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, wait));
+    const st = await readStatus();
+    if (!st) continue;
+    if (st.status === "approved") {
+      log("approved");
+      decide("allow", st.comment || "approved on phone");
+      process.exit(0);
+    }
+    if (st.status === "rejected") {
+      log("rejected");
+      decide("deny", st.comment || "rejected on phone");
+      process.exit(0);
+    }
+  }
+  log("timed out waiting for approval");
+  decide("deny", "approval timed out (10m)");
+  process.exit(0);
 }
 
 async function main() {
@@ -634,13 +764,35 @@ async function main() {
     process.exit(0);
   }
 
-  if (!sessionId || !token) {
-    log("missing CLAUDE_DISPATCH_SESSION_ID or CLAUDE_DISPATCH_TOKEN");
-    decide("deny", "ClankerSpanker hook missing session/token env");
-    process.exit(0);
-  }
-
   try {
+    if (approvalSock) {
+      log("requesting approval for " + title);
+      const created = await brokerCall(approvalSock, {
+        op: "create",
+        toolName,
+        title,
+        toolInput,
+      });
+      if (!created || created.ok !== true || !created.approvalId) {
+        log("create failed");
+        decide("deny", "approval create failed");
+        process.exit(0);
+      }
+      const approvalId = created.approvalId;
+      await waitStatus(async () => {
+        const st = await brokerCall(approvalSock, { op: "poll", approvalId });
+        if (!st || st.ok !== true) throw new Error("approval poll failed");
+        return st;
+      });
+      return;
+    }
+
+    if (!sessionId || !token) {
+      log("missing CLAUDE_DISPATCH_SESSION_ID or CLAUDE_DISPATCH_TOKEN");
+      decide("deny", "ClankerSpanker hook missing session/token env");
+      process.exit(0);
+    }
+
     log("requesting approval for " + title);
     const createRes = await fetch(host + "/internal/claude-approval", {
       method: "POST",
@@ -662,28 +814,13 @@ async function main() {
       process.exit(0);
     }
     const { approvalId } = await createRes.json();
-    const deadline = Date.now() + 10 * 60 * 1000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 1500));
+    await waitStatus(async () => {
       const poll = await fetch(host + "/internal/claude-approval/" + approvalId, {
         headers: { Authorization: "Bearer " + token },
       });
-      if (!poll.ok) continue;
-      const st = await poll.json();
-      if (st.status === "approved") {
-        log("approved " + approvalId);
-        decide("allow", st.comment || "approved on phone");
-        process.exit(0);
-      }
-      if (st.status === "rejected") {
-        log("rejected " + approvalId);
-        decide("deny", st.comment || "rejected on phone");
-        process.exit(0);
-      }
-    }
-    log("timed out waiting for approval");
-    decide("deny", "approval timed out (10m)");
-    process.exit(0);
+      if (!poll.ok) return null;
+      return poll.json();
+    });
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     log("error: " + msg);

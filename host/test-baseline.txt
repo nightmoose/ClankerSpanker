@@ -2,4 +2,4 @@
 # sibling DataContractGate repo; that other repo's number is not an RFC here.
 # Fail CI if `npm test` reports fewer tests than this integer.
 # Bump it in the same PR when you add tests. Never lower it to land a change.
-625
+638

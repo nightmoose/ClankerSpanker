@@ -141,5 +141,9 @@ Per phase (three separate commits, one merge):
 - Collapse `profileHasCredentials`'s four branches into one table
   once all backends share the same env-var / config-dir contract.
 - Client UI for `grokHome` if not wired in Phase A.
-- Manual: a profile with `toolAllowlist=[Read, Grep]` cannot fire `Write`
-  on any of the four backends (Grok, Claude, Antigravity, Bot).
+- Manual check replaced by `host/src/tool-allowlist-write.test.ts` (no live
+  CLIs). `toolAllowlist=[Read, Grep]` rejects a Grok Write permission, passes
+  Claude `--tools Read,Grep` and rejects the Write hook, and does not offer or
+  run Bot `write_file` (`Read`/`Grep` map onto `read_file`/`grep`). Antigravity
+  has no tool flag; the same test checks that a fresh turn's instruction names
+  only Read and Grep. A live `agy` that ignores that note is still untested.

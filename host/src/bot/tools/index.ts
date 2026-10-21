@@ -3,6 +3,7 @@ import { extname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ToolSpec } from "../protocol.js";
 import type { FetchLike } from "../protocol.js";
+import { isToolOnAllowlist } from "../../profiles.js";
 import { assertOutboxPath, OUTBOX_DIR, resolveUnderCwd } from "./paths.js";
 
 export interface ToolContext {
@@ -43,12 +44,16 @@ export function allTools(): BotTool[] {
   return [readFileTool, grepTool, listDirTool, webFetchTool, webSearchTool, writeFileTool, outboundTool];
 }
 
+/**
+ * Tools this profile may call. An empty allowlist is the full set.
+ * Matching goes through the shared pre-flight helper, so `Read` selects
+ * `read_file` and `Grep` selects `grep`. A non-empty list that names
+ * nothing returns no tools: it must not fall open to `write_file`.
+ */
 export function toolsForAllowlist(names?: string[]): BotTool[] {
   const all = allTools();
   if (!names?.length) return all;
-  const want = new Set(names);
-  const picked = all.filter((t) => want.has(t.spec.name));
-  return picked.length ? picked : all;
+  return all.filter((t) => isToolOnAllowlist(names, t.spec.name));
 }
 
 const readFileTool: BotTool = {

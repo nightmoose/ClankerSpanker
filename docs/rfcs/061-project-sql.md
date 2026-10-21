@@ -7,8 +7,8 @@
 **Renumbered:** 2026-10-19, from RFC-058. 058 is the hosted product site on `main`; 059 is host
 self-update. The branch name keeps the old number.
 **RFC-062:** the follow-on that was going to carry `sql_execute` is delivered by this RFC and
-this PR (see [Agent tool](#agent-tool-sql_execute)). No `062-*.md` file was ever written and
-nothing else points at the number.
+this PR (see [Agent tool](#agent-tool-sql_execute)). [`062-absorbed-by-project-sql.md`](062-absorbed-by-project-sql.md)
+records that absorption so the number cannot be reused.
 
 ---
 

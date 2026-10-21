@@ -19,7 +19,8 @@ make rfc SLUG=short-kebab      # allocates the next number from docs/rfcs/_templ
 ```
 
 RFC numbers are global across every branch. Run `git fetch --prune origin` first; `make rfc`
-scans all branches, and CI rejects a number another branch already uses. Agents: read
+scans every branch, branch name, index row, and "RFC-NNN will…" promise, then refuses to
+write a file if that number is already taken. It does not fill gaps. Agents: read
 [`AGENTS.md`](AGENTS.md).
 
 List the RFC in [`docs/rfcs/README.md`](docs/rfcs/README.md). Typos and obvious one-liners can skip an RFC.

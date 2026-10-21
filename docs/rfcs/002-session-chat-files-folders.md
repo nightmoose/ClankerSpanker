@@ -1,6 +1,6 @@
 # RFC-002 — Transcript chat-only, session Files, extra folders
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-24
 **Branch:** nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders
 **Severity:** P2 — daily-driver Mac/iOS/Linux UX
@@ -81,8 +81,7 @@ picker) with no extra folders, and none can be added later.
 
 1. Land on the named branch.
 2. `make check`
-3. `docs/STATUS.md` → Shipped
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 5. Kickstart LaunchAgent so `host/dist` loads; rebuild Mac app.
 
 ## Follow-ups

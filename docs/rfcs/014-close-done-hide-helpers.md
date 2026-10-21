@@ -1,6 +1,6 @@
 # RFC-014 — Close as done sticks; hide Grok helper sessions
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-09
 **Branch:** nightly-maintenance-2026-09-09-rfc014-close-done-hide-helpers
 **Severity:** P1 — Active list is unusable; “Close as done” / Archive appear to no-op
@@ -65,8 +65,7 @@
 
 1. Kick the host LaunchAgent so `host/dist` has the list/persist fix.
 2. `make check`
-3. Update `docs/STATUS.md` → Shipped after merge
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 5. No iOS rebuild required (list comes from the host). Linux Electron
    picks up the Close as done refresh on next desktop start.
 

@@ -105,7 +105,7 @@ an origin that is not a `*.ts.net` serve name.
 1. One install of this build per machine (the checker is not on older hosts).
 2. After that, Settings → Update from repo, or `"autoUpdate": true` in that
    machine's `config.json`.
-3. `make check` when the branch is ready. `docs/STATUS.md`, this log.
+3. `make check` when the branch is ready. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

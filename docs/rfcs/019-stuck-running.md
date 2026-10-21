@@ -1,6 +1,6 @@
 # RFC-019 — Stuck "Running" + phantom pending questions
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-09-11
 **Branch:** nightly-maintenance-2026-09-11-rfc019-stuck-running
 **Severity:** P1
@@ -127,8 +127,7 @@ Two small edits in `host/src/acp/session-manager.ts`, plus tests:
    — set `status: "idle"` and re-kick the agent so the in-memory copy
    picks up the disk state. Newer stuck sessions will heal on the next
    event under the fixed code path.
-5. Update `docs/STATUS.md` → Accepted.
-6. Append `MAINTENANCE_LOG.md`.
+5. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

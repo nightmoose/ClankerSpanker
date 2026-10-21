@@ -1,6 +1,6 @@
 # RFC-020 — Apply the MCP catalog per profile
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-16
 **Branch:** nightly-maintenance-2026-09-16-rfc020-mcp-catalog-apply
 **Severity:** P1 — RFC-008/009/013 shipped the mechanism and paste map;
@@ -91,8 +91,7 @@ not the Claude Vercel plugin.
 2. Kick LaunchAgent so `host/dist` loads
 3. `/app/` → Profiles (this Mac) → **Apply catalog defaults** on
    NightMoose / Personal / FullScore → **Sign in** HTTP rows
-4. `docs/STATUS.md` → Shipped on merge
-5. Append `MAINTENANCE_LOG.md`
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

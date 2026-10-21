@@ -56,7 +56,7 @@ Measured on 2026-09-25 across 169 sessions:
 ## Rollout
 
 1. `make check`; Install / update host.
-2. `docs/STATUS.md` → Shipped; `MAINTENANCE_LOG.md`.
+2. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

@@ -133,8 +133,7 @@ Per phase (three separate commits, one merge):
 
 1. `make check` + `cd host && npm test && npm run typecheck && npm run build`
 2. Kick LaunchAgent, rebuild Mac / your iPad if UI wiring touched
-3. `docs/STATUS.md` → Shipped on merge
-4. Append `MAINTENANCE_LOG.md` per phase letter
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

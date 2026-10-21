@@ -1,6 +1,6 @@
 # RFC-012 — Stop the NightMoose login modal on every message
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-09-02
 **Branch:** nightly-maintenance-2026-09-02-rfc011-apns
 **Severity:** P0 — Mac/iPhone pop a blocking “NightMoose needs to sign in”
@@ -71,7 +71,7 @@ connectors from `~/.grok`.
 
 1. Kick LaunchAgent so `host/dist` loads.
 2. Rebuild Mac (and your iPhone if the phone showed it).
-3. `docs/STATUS.md` / `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

@@ -1,6 +1,6 @@
 # RFC-018 — Markdown link resolver with cwd context
 
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-09-11
 **Branch:** nightly-maintenance-2026-09-11-rfc018-mdlink
 **Severity:** P2
@@ -101,7 +101,7 @@ Swift-only, one flow, scoped to `TranscriptView`:
 3. `xcodebuild -scheme ClankerSpanker -destination 'platform=macOS' build`
    and `xcodebuild -scheme ClankerSpankerPhone -destination
    'generic/platform=iOS' build`.
-4. Update `docs/STATUS.md` → Accepted; append `MAINTENANCE_LOG.md`.
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

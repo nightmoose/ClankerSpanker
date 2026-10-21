@@ -1,6 +1,6 @@
 # RFC-005 — Attach Antigravity / Gemini CLI conversations
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-24
 **Branch:** nightly-maintenance-2026-08-24-rfc005-attach-agy
 **Severity:** P2 — Gemini profile has no “open this CLI chat” picker
@@ -55,8 +55,7 @@ Consumer Gemini app chats (gemini.google.com) stay out of scope.
 
 1. `make check`
 2. Kickstart host + rebuild Mac / your iPad
-3. `docs/STATUS.md` → Shipped on merge
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

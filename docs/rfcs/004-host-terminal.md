@@ -1,6 +1,6 @@
 # RFC-004 — Host terminal from the phone (and other clients)
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-24
 **Branch:** nightly-maintenance-2026-08-24-rfc002-session-chat-files-folders
 **Severity:** P1 — operator loop (“run this when you’re back at the Mac”)
@@ -59,8 +59,7 @@ commands in that shell.
 
 1. Kickstart host so `host/dist` + `pty-bridge.py` load.
 2. Rebuild Mac/iPhone apps.
-3. `docs/STATUS.md` → Shipped on merge
-4. Append `MAINTENANCE_LOG.md`
+3. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

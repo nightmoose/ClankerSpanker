@@ -157,8 +157,7 @@ the fix is client-side plumbing, not schema.
 2. No host redeploy required — RFC-025 is desktop-side only.
 3. the maintainer launches the updated Electron shell (`npm start` in
    `desktop/`) on your iPad and soak-tests.
-4. `docs/STATUS.md` → Shipped on merge.
-5. Append `MAINTENANCE_LOG.md`.
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

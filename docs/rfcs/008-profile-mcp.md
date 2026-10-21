@@ -1,6 +1,6 @@
 # RFC-008 — Per-profile MCP servers (payer isolation)
 
-**Status:** Accepted
+**Status:** Shipped
 **Date:** 2026-08-29
 **Branch:** nightly-maintenance-2026-08-29-rfc008-profile-mcp
 **Severity:** P1 — NightMoose / Personal / FullScore currently share or
@@ -65,8 +65,7 @@ NightMoose turn (or the reverse).
 1. `make check`
 2. Kick LaunchAgent so `host/dist` loads
 3. Add servers on the host Profiles editor (this machine)
-4. `docs/STATUS.md` → Shipped on merge
-5. Append `MAINTENANCE_LOG.md`
+4. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

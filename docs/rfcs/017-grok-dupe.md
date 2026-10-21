@@ -115,7 +115,7 @@ Two-step, gated by hypothesis validation:
    reproduce the dupe.
 3. Land Step 2 based on evidence.
 4. `make check`
-5. `docs/STATUS.md` → Accepted; append `MAINTENANCE_LOG.md`.
+5. Record the status on the row in `docs/rfcs/README.md` (RFC-000).
 
 ## Follow-ups
 

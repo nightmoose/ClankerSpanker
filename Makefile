@@ -1,6 +1,6 @@
 .PHONY: check house-style test typecheck build rfc test-swift
 
-# DataContractGate-shaped one command. CI runs this.
+# One local gate. CI runs the same house-style check, typecheck, and build.
 check: house-style typecheck build
 
 house-style:

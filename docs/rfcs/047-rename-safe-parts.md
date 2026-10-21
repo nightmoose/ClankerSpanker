@@ -27,7 +27,7 @@ ids, dropping the `grokdispatch://` scheme or the legacy header.
   (same constant-time compare); CORS allow-list includes it.
 - OpenAPI title; AGENTS / README / CLIENTS / NEXT-STEPS / RUN-MAC /
   PROJECT_STATUS / CLAUDE / HOUSE-STYLE / Makefile paths and naming table.
-  Historical RFCs and MAINTENANCE_LOG keep the old paths.
+  Historical RFCs keep the old paths.
 
 ## Testing
 

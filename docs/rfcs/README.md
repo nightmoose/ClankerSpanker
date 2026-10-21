@@ -3,6 +3,8 @@
 Design notes for non-trivial changes. **Shipped** = on `main`; **Accepted** = signed off;
 **Draft** = under review; **Superseded** = the number is kept and the work lives in another RFC.
 
+066 stays Accepted because its Linux desktop soak is still open. 006 and 017 stay Draft.
+
 Start a new RFC with `make rfc SLUG=short-kebab` (template: [`_template.md`](_template.md)) and add a row below.
 That command fetches `origin`, takes the next integer above every number already used in this
 checkout, on any branch, in any branch name, in this index, or in an "RFC-NNN will…" promise,
@@ -28,28 +30,28 @@ Each of those already had one meaning in a merged commit and in the code. The de
 |---|---|---|
 | 000 | [House style for the gateway repo](000-house-style.md) | Shipped |
 | 001 | [Markdown tables + todo jump to source](001-md-tables-todo-jump.md) | Shipped |
-| 002 | [Transcript chat-only, session Files, extra folders](002-session-chat-files-folders.md) | Accepted |
-| 003 | [Create and run bots from the iPhone app](003-phone-bots.md) | Accepted |
-| 004 | [Host terminal from the phone](004-host-terminal.md) | Accepted |
-| 005 | [Attach Antigravity / Gemini CLI conversations](005-attach-agy.md) | Accepted |
+| 002 | [Transcript chat-only, session Files, extra folders](002-session-chat-files-folders.md) | Shipped |
+| 003 | [Create and run bots from the iPhone app](003-phone-bots.md) | Shipped |
+| 004 | [Host terminal from the phone](004-host-terminal.md) | Shipped |
+| 005 | [Attach Antigravity / Gemini CLI conversations](005-attach-agy.md) | Shipped |
 | 006 | [Backend parity pass (Grok / Claude / Antigravity / Bot)](006-backend-parity.md) | Draft |
-| 007 | [Phone copy/paste: Term paste + session message selection](007-ios-term-copy-paste.md) | Accepted |
-| 008 | [Per-profile MCP servers (payer isolation)](008-profile-mcp.md) | Accepted |
-| 009 | [Remote MCP OAuth (PKCE)](009-mcp-oauth.md) | Accepted |
-| 010 | [iOS app icon badge](010-ios-app-icon-badge.md) | Accepted |
+| 007 | [Phone copy/paste: Term paste + session message selection](007-ios-term-copy-paste.md) | Shipped |
+| 008 | [Per-profile MCP servers (payer isolation)](008-profile-mcp.md) | Shipped |
+| 009 | [Remote MCP OAuth (PKCE)](009-mcp-oauth.md) | Shipped |
+| 010 | [iOS app icon badge](010-ios-app-icon-badge.md) | Shipped |
 | 011 | [Push to a phone that is not running](011-apns.md) | Shipped |
-| 012 | [Stop NightMoose login modal on MCP AuthRequired](012-login-modal-mcp-false-positive.md) | Accepted |
-| 013 | [Profile MCP catalog](013-profile-mcp-catalog.md) | Accepted |
-| 014 | [Close as done sticks; hide Grok helper sessions](014-close-done-hide-helpers.md) | Accepted |
-| 015 | [Detach the Mac app from the host process](015-host-detach.md) | Accepted |
+| 012 | [Stop NightMoose login modal on MCP AuthRequired](012-login-modal-mcp-false-positive.md) | Shipped |
+| 013 | [Profile MCP catalog](013-profile-mcp-catalog.md) | Shipped |
+| 014 | [Close as done sticks; hide Grok helper sessions](014-close-done-hide-helpers.md) | Shipped |
+| 015 | [Detach the Mac app from the host process](015-host-detach.md) | Shipped |
 | 016 | [Menu-bar host tray](016-mac-host-tray.md) | Shipped |
 | 017 | [Duplicate Grok assistant messages](017-grok-dupe.md) | Draft |
-| 018 | [Markdown link resolver with cwd context](018-mdlink.md) | Accepted |
-| 019 | [Stuck "Running" + phantom pending questions](019-stuck-running.md) | Accepted |
+| 018 | [Markdown link resolver with cwd context](018-mdlink.md) | Shipped |
+| 019 | [Stuck "Running" + phantom pending questions](019-stuck-running.md) | Shipped |
 | 020 | [Apply the MCP catalog per profile](020-mcp-catalog-apply.md) | Shipped |
 | 021 | [Per-session Grok credit meter](021-session-credit-meter.md) | Shipped |
 | 022 | [Reset-time tooltip on profile usage chip](022-usage-reset-times.md) | Shipped |
-| 023 | [In-app PDF preview + share on the session file viewer](023-file-viewer-pdf.md) | Accepted |
+| 023 | [In-app PDF preview + share on the session file viewer](023-file-viewer-pdf.md) | Shipped |
 | 024 | [One phone, more than one host](024-ios-multi-host.md) | Shipped |
 | 025 | [Electron desktop multi-host: WS pool, per-host fan-out, hostId end-to-end](025-desktop-multi-host.md) | Shipped |
 | 026 | [The host token stays on the host machine](026-host-token-local-only.md) | Shipped |
@@ -94,5 +96,5 @@ Each of those already had one meaning in a merged commit and in the code. The de
 | 065 | [The hosted site gets no shell and no profile secrets](065-browser-origin-hardening.md) | Shipped |
 | 066 | [Linux desktop on Electron 44](066-electron-44.md) | Accepted |
 | 067 | [The hosted site explains itself and has a read-only demo](067-hosted-demo-explainer.md) | Shipped |
-| 068 | [The gateway keeps its own log files bounded](068-gateway-log-rotation.md) | Accepted |
-| 069 | [Cheap session-list: slim shape, ETag, paging](069-sessions-list-summary.md) | Draft |
+| 068 | [The gateway keeps its own log files bounded](068-gateway-log-rotation.md) | Shipped |
+| 069 | [Cheap session-list: slim shape, ETag, paging](069-sessions-list-summary.md) | Shipped |

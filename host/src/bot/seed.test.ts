@@ -32,13 +32,13 @@ function scratch(): { dataDir: string; configPath: string; checkout: string } {
 }
 
 describe("seedHunter", () => {
-  it("does not advertise a hunter when this host has no ContractGate checkout", () => {
+  it("does not advertise a hunter when this host has no DataContractGate checkout", () => {
     const { dataDir, configPath, checkout } = scratch();
     const cfg = config(dataDir);
     const store = new BotStore(dataDir);
     store.create({
       id: HUNTER_BOT_ID,
-      name: "ContractGate Hunter",
+      name: "DataContractGate Hunter",
       enabled: false,
       profileId: "nightmoose",
       projectId: "contractgate",
@@ -95,11 +95,11 @@ describe("seedHunter", () => {
     const store = new BotStore(dataDir);
     store.create({
       id: HUNTER_BOT_ID,
-      name: "ContractGate Hunter",
+      name: "DataContractGate Hunter",
       enabled: false,
       profileId: "nightmoose",
       projectId: "contractgate",
-      job: "You are ContractGate Hunter. Do not conclude there is no market because a search tool returned nothing.",
+      job: "You are DataContractGate Hunter. Do not conclude there is no market because a search tool returned nothing.",
       interval: "6h",
     });
 
@@ -117,7 +117,7 @@ describe("seedHunter", () => {
     cfg.projects = [
       normalizeProject({
         id: "contractgate",
-        name: "ContractGate",
+        name: "DataContractGate",
         path: join(dataDir, "missing-checkout"),
       }),
     ];

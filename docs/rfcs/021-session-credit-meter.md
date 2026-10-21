@@ -20,7 +20,7 @@ that profile. Nothing tells the operator *which* chat is expensive.
 
 Concrete evidence, 2026-09-17:
 
-- `~/.grok-dispatch/sessions/bab5fa06-*.json` — "ContractGate and
+- `~/.grok-dispatch/sessions/bab5fa06-*.json` — "DataContractGate and
   NeverBlink.AI", NightMoose Grok, 2026-09-16T14:16 → 2026-09-17T16:08
   (~26h continuous rolling context).
 - `~/.grok-dispatch/sessions/964f78b1-*.json` — "ClankerSpanker

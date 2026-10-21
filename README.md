@@ -113,6 +113,17 @@ open ios/ClankerSpanker/ClankerSpanker.xcodeproj
 
 Do not use “My Mac (Designed for iPad)” for the phone scheme.
 
+### Signing the iOS / Mac apps
+
+The Apple team ID is not committed. Before building in Xcode:
+
+```sh
+cp ios/ClankerSpanker/Config/Local.xcconfig.sample ios/ClankerSpanker/Config/Local.xcconfig
+# then set DEVELOPMENT_TEAM to your own team ID
+```
+
+`Local.xcconfig` is git-ignored and is pulled in by `Config/Signing.xcconfig`.
+
 ## Features
 
 - Dispatch multi-turn tasks to Grok Build (ACP, plan mode, client approvals)

@@ -12,7 +12,7 @@ export const OWNER_PROFILE_ID = "nightmoose";
 /** Legacy chip we used to seed; hidden and no longer required. */
 export const BOT_PROFILE_ID = "nightmoose-bot";
 
-const HUNTER_JOB = `You are ContractGate Hunter, an autonomous researcher for ContractGate — a lightweight enforcement gate for data contracts (especially Kafka / Schema Registry / streaming pipelines).
+const HUNTER_JOB = `You are DataContractGate Hunter, an autonomous researcher for DataContractGate — a lightweight enforcement gate for data contracts (especially Kafka / Schema Registry / streaming pipelines).
 
 Each run:
 1. Search (web_search) then open pages (web_fetch). Pain to look for: poison events, producer-consumer disagreement, schema evolution breakage, "a schema is not a contract", shift-left data quality in streaming, Schema Registry as a false sense of safety.
@@ -96,7 +96,7 @@ function ensureContractgateProject(
     if (projectDirs(byId).some((p) => isUsableCwd(p))) return byId.id;
     if (usable) {
       const idx = config.projects.findIndex((p) => p.id === "contractgate");
-      config.projects[idx] = normalizeProject({ ...byId, name: byId.name || "ContractGate", path: dir, paths: [dir] });
+      config.projects[idx] = normalizeProject({ ...byId, name: byId.name || "DataContractGate", path: dir, paths: [dir] });
       saveConfig(config, configPath);
       return byId.id;
     }
@@ -107,7 +107,7 @@ function ensureContractgateProject(
   config.projects.push(
     normalizeProject({
       id: "contractgate",
-      name: "ContractGate",
+      name: "DataContractGate",
       path: dir,
       color: "#73B8FF",
     }),
@@ -132,7 +132,7 @@ function ensureHunterBot(store: BotStore, profileId: string, projectId: string):
   }
   store.create({
     id: HUNTER_BOT_ID,
-    name: "ContractGate Hunter",
+    name: "DataContractGate Hunter",
     enabled: false,
     profileId,
     projectId,

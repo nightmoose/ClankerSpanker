@@ -230,7 +230,7 @@ struct BotsView: View {
 
     private func openSession(_ sessionId: String, bot: Bot? = nil) {
         // The run may have landed on a different paired host than the row
-        // (that host had no ContractGate project). Prefer the host that
+        // (that host had no DataContractGate project). Prefer the host that
         // accepted it, then a listed session, then the row's own host.
         let listed = appState.sessions.first { $0.id == sessionId }
             ?? appState.archivedSessions.first { $0.id == sessionId }

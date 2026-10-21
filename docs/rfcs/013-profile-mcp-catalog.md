@@ -55,7 +55,7 @@ remote.
 | Id | Vendor | Transport | Auth | Why we have it |
 |---|---|---|---|---|
 | `github` | GitHub | HTTP `https://api.githubcopilot.com/mcp/` | OAuth (RFC-009 Sign in) | All Nightmoose GitHub work |
-| `vercel` | Vercel | HTTP `https://mcp.vercel.com` | OAuth | Smolder, Drea, ContractGate, Mercenary, Dirt Work, BlessingBox |
+| `vercel` | Vercel | HTTP `https://mcp.vercel.com` | OAuth | Smolder, Drea, DataContractGate, Mercenary, Dirt Work, BlessingBox |
 | `fly` | Fly.io | stdio `flyctl mcp server` | flyctl already logged in | Machines / apps if we run anything on Fly |
 | `supabase` | Supabase | HTTP `https://mcp.supabase.com/mcp` (fallback stdio `@supabase/mcp-server-supabase`) | OAuth or access token in profile env | BlessingBox, Smolder, Dirt Work, Mercenary |
 | `databricks` | Databricks | stdio or workspace HTTP (URL is per-workspace) | PAT in `profile.env` | FullScore client data |

@@ -56,6 +56,11 @@ jobs:
       - name: Install host deps
         working-directory: host
         run: npm ci
+      - name: Allow user namespaces for per-job sandbox tests
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: House-style check
         run: python3 scripts/house-style-check.py
 

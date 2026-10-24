@@ -71,6 +71,14 @@ What the serve listener does:
 
 Do not point `tailscale serve` (or Funnel) at `8787`: its peer is loopback, which `8787` treats as the host machine.
 
+### Remote MCP (`POST /mcp`)
+
+Cloud clients start Claude Code and Grok Build tasks here. The route is on the main port. An optional `mcpGateway.publicBindPort` listens on `127.0.0.1` and serves only `/mcp` and `/health`, which is the port to give Tailscale Funnel or a Cloudflare Tunnel. Do not publish `bindPort`.
+
+The connector should send `Authorization: Bearer <mcpGateway.token>`. That token does not work on other routes. The host token also works on `/mcp`. Tasks stay inside `mcpGateway.allowedRoots` (or the configured projects, when that list is empty), with a turn timeout and a concurrency cap.
+
+Full steps, including what to run on the Mac mini: [docs/MCP-GATEWAY.md](../docs/MCP-GATEWAY.md).
+
 ### Logs
 
 On macOS the LaunchAgent writes to `~/Library/Logs/clankerspanker-host.log` and

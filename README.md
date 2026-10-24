@@ -132,6 +132,14 @@ cp ios/ClankerSpanker/Config/Local.xcconfig.sample ios/ClankerSpanker/Config/Loc
 - Optional desktop/OS notifications (host + laptop shells)
 - Cross-platform host PATH / binary discovery (no hardcoded machine IPs)
 
+## Remote MCP
+
+The gateway is also an MCP server. A cloud client can start Claude Code and Grok Build tasks on the host, then poll output, send a follow-up, and read the diff. Edits and shell commands still wait for approval on the phone.
+
+`POST /mcp` uses the host bearer token, or a separate `mcpGateway.token` that cannot call the rest of the API. To publish it, set `publicBindPort` and point Tailscale Funnel or a Cloudflare Tunnel at that loopback port only — not at 8787.
+
+Setup, the token, and the connector fields: **[docs/MCP-GATEWAY.md](docs/MCP-GATEWAY.md)**.
+
 ## Security
 
 - Listens on loopback + Tailscale by default (`bindHost: "auto"`); bearer host token

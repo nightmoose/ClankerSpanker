@@ -446,6 +446,7 @@ export class SessionManager extends EventEmitter {
       id,
       backend,
       botId: req.botId,
+      ...(req.source === "mcp" ? { source: "mcp" as const } : {}),
       profileId: profile.id,
       profileName: profile.name,
       profileColor: profile.color,

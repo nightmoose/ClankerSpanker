@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { expandHome, inferProjectId } from "./project-resolve.js";
 import { discoverRepoProjects } from "./discover-repos.js";
 import { fileURLToPath } from "node:url";
-import type { HostConfigFile, ProjectInfo } from "./types.js";
+import type { HostConfigFile, McpGatewayConfig, ProjectInfo } from "./types.js";
 import {
   defaultProjectPathCandidates,
   findGrokBinaryCandidates,
@@ -20,6 +20,77 @@ const DEFAULT_CONFIG_PATH = join(DEFAULT_DATA_DIR, "config.json");
 
 // Note: do NOT include "other" — AskUserQuestion uses kind=other and must reach the client.
 const DEFAULT_AUTO_APPROVE = ["read", "search", "think", "fetch"];
+
+/** RFC-072. One MCP turn. `0` in config disables the cap. */
+export const MCP_DEFAULT_TASK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+/** RFC-072. Queued, running, or waiting on a person. `0` in config refuses new work. */
+export const MCP_DEFAULT_MAX_CONCURRENT = 2;
+
+/**
+ * `mcpGateway` from config.json. Undefined when the key is absent (the
+ * endpoint still runs, with the defaults above and no public port).
+ * A bad public port is dropped rather than failing the whole config load.
+ */
+export function normalizeMcpGateway(
+  raw: unknown,
+  bindPort: number,
+  serveBindPort: number | undefined,
+): McpGatewayConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const token = typeof o.token === "string" && o.token.trim() ? o.token.trim() : undefined;
+  const allowedRoots: string[] = [];
+  if (Array.isArray(o.allowedRoots)) {
+    const seen = new Set<string>();
+    for (const entry of o.allowedRoots) {
+      if (typeof entry !== "string") continue;
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      if (!trimmed.startsWith("~") && !isAbsolute(trimmed)) {
+        console.warn(`[config] mcpGateway.allowedRoots entry ${JSON.stringify(trimmed)} is not absolute; ignored`);
+        continue;
+      }
+      const resolved = resolve(expandHome(trimmed));
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      allowedRoots.push(resolved);
+    }
+  }
+  let taskTimeoutMs = MCP_DEFAULT_TASK_TIMEOUT_MS;
+  if (typeof o.taskTimeoutMs === "number" && Number.isFinite(o.taskTimeoutMs) && o.taskTimeoutMs >= 0) {
+    taskTimeoutMs = Math.floor(o.taskTimeoutMs);
+  }
+  let maxConcurrent = MCP_DEFAULT_MAX_CONCURRENT;
+  if (typeof o.maxConcurrent === "number" && Number.isInteger(o.maxConcurrent) && o.maxConcurrent >= 0) {
+    maxConcurrent = o.maxConcurrent;
+  }
+  const allowedOrigins = Array.isArray(o.allowedOrigins)
+    ? o.allowedOrigins
+        .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+        .map((v) => v.trim())
+    : [];
+  let publicBindPort: number | undefined;
+  if (o.publicBindPort !== undefined && o.publicBindPort !== null && o.publicBindPort !== "") {
+    const n = typeof o.publicBindPort === "string" ? Number(o.publicBindPort) : o.publicBindPort;
+    const portOk =
+      typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 65535 && n !== bindPort && n !== serveBindPort;
+    if (portOk) publicBindPort = n;
+    else {
+      console.warn(
+        `[config] mcpGateway.publicBindPort ${JSON.stringify(o.publicBindPort)} is not a free port distinct from bindPort` +
+          `${serveBindPort ? ` and serveBindPort` : ""}; public MCP listener off`,
+      );
+    }
+  }
+  return {
+    token,
+    allowedRoots,
+    taskTimeoutMs,
+    maxConcurrent,
+    allowedOrigins,
+    ...(publicBindPort !== undefined ? { publicBindPort } : {}),
+  };
+}
 
 /** Well-known local repos — only included when the path exists on this host. */
 function knownWorkspaceProjects(): ProjectInfo[] {
@@ -378,6 +449,23 @@ export function loadConfig(configPath = process.env.GROK_DISPATCH_CONFIG ?? DEFA
   // After the port override, so the "must differ from bindPort" check sees the real port.
   const serveBindPort = normalizeServeBindPort(raw.serveBindPort, merged.bindPort);
   if (serveBindPort !== undefined) merged.serveBindPort = serveBindPort;
+  const mcpGateway = normalizeMcpGateway(
+    (raw as { mcpGateway?: unknown }).mcpGateway,
+    merged.bindPort,
+    merged.serveBindPort,
+  );
+  if (mcpGateway) merged.mcpGateway = mcpGateway;
+  const mcpTokenEnv = process.env.GROK_DISPATCH_MCP_TOKEN?.trim();
+  if (mcpTokenEnv) {
+    merged.mcpGateway = {
+      allowedRoots: [],
+      taskTimeoutMs: MCP_DEFAULT_TASK_TIMEOUT_MS,
+      maxConcurrent: MCP_DEFAULT_MAX_CONCURRENT,
+      allowedOrigins: [],
+      ...merged.mcpGateway,
+      token: mcpTokenEnv,
+    };
+  }
   // RFC-068: log rotation threshold; 0 disables, anything invalid uses the default.
   if (typeof raw.logMaxBytes === "number" && Number.isFinite(raw.logMaxBytes) && raw.logMaxBytes >= 0) {
     merged.logMaxBytes = Math.floor(raw.logMaxBytes);

@@ -7,6 +7,7 @@
 | [CLIENTS.md](CLIENTS.md) | Which client owns what (macOS, iOS, Linux Electron, browser) and how to deploy them |
 | [STANDALONE-INSTALLS.md](STANDALONE-INSTALLS.md) | Installing the host and agent CLIs on macOS / Linux |
 | [MCP.md](MCP.md) | Per-profile MCP servers and remote OAuth |
+| [MCP-GATEWAY.md](MCP-GATEWAY.md) | This host as an MCP server: remote clients start Claude / Grok tasks |
 | [MCP-CATALOG.md](MCP-CATALOG.md) | Curated MCP catalog and how it is applied per profile |
 | [ANTIGRAVITY.md](ANTIGRAVITY.md) | Attaching Antigravity / Gemini CLI conversations |
 | [APNS.md](APNS.md) | Apple Push setup so a closed phone app still gets approvals |

@@ -87,7 +87,7 @@ export function corsAllowedFor(path: string): boolean {
 export const HOSTED_PRODUCT_ORIGIN = "https://clankerspanker.tech";
 
 const CORS_ALLOW_HEADERS =
-  "Authorization, Content-Type, X-ClankerSpanker-Token, X-Grok-Dispatch-Token";
+  "Authorization, Content-Type, X-ClankerSpanker-Token, X-Grok-Dispatch-Token, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id";
 const CORS_ALLOW_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
 
 export type CorsHeaderMap = Record<string, string>;

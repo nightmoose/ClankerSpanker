@@ -36,6 +36,7 @@ import { isGrokHelperCwd, listAgySessions, listClaudeSessions, listDiskSessions 
 import { preferredClientHost } from "./platform.js";
 import { normalizeBackend, publicProfiles, resolveProfile, splitProfileToolFields } from "./profiles.js";
 import { mcpEnvFor, normalizeMcpServers } from "./mcp.js";
+import { attachMcpTaskGuards, handleMcpHttp, listenMcpOnly } from "./mcp-gateway.js";
 import { applyCatalogDefaults, publicMcpCatalog } from "./mcp-catalog.js";
 import {
   completeMcpOAuth,
@@ -341,6 +342,12 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     serveListener = srv;
   }
 
+  // RFC-072: POST /mcp on the main gateway, plus an optional loopback port
+  // that serves only that endpoint (Funnel / tunnel target).
+  const mcpGuard = attachMcpTaskGuards(config, manager);
+  const mcpOnly = listenMcpOnly(config, manager);
+  console.log("[server] MCP endpoint POST /mcp");
+
   const rebind = isAutoBind(config.bindHost) ? setInterval(syncListeners, 30_000) : undefined;
   rebind?.unref();
 
@@ -363,6 +370,8 @@ export function startServer(config: HostConfigFile, manager: SessionManager, bot
     wss.close();
     for (const srv of listeners.values()) srv.close();
     serveListener?.close();
+    mcpGuard.dispose();
+    mcpOnly?.close();
     await manager.shutdown();
   };
 
@@ -480,6 +489,21 @@ async function handleHttp(
         `Could not finish MCP sign-in: ${escapeHtml(e instanceof Error ? e.message : String(e))}`,
       );
     }
+    return;
+  }
+
+  // RFC-072. Auth is the host token or mcpGateway.token. The MCP token is
+  // checked inside handleMcpHttp and is not accepted on any other route.
+  if (method === "POST" && path === "/mcp") {
+    await handleMcpHttp(req, res, config, manager);
+    return;
+  }
+  if (method === "GET" && path === "/mcp") {
+    await handleMcpHttp(req, res, config, manager);
+    return;
+  }
+  if (method === "DELETE" && path === "/mcp") {
+    await handleMcpHttp(req, res, config, manager);
     return;
   }
 

@@ -1,5 +1,7 @@
 # Per-profile MCP
 
+This page is MCP servers a profile connects **to**. For the other direction — a remote client starting Claude Code or Grok Build through this gateway — see [MCP-GATEWAY.md](MCP-GATEWAY.md).
+
 MCP servers are billed to the **profile**, not the host. Configure them on
 this Mac in `/app/` → Profiles (loopback only). Public API lists **names
 only** — env, headers, and OAuth tokens never leave the machine.

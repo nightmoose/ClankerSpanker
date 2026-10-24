@@ -162,6 +162,20 @@ paths:
   /app/terminal.html:
     get:
       summary: xterm.js page for the host terminal (static; socket is the auth gate)
+  /mcp:
+    post:
+      summary: |
+        Streamable HTTP MCP endpoint (RFC-072). Starts Claude Code or Grok
+        Build tasks through the existing session model. Accepts the host
+        bearer token or mcpGateway.token. The MCP token does not authorize
+        any other route. GET and DELETE are 405 (POST only).
+      security: [{ bearerAuth: [] }]
+    get:
+      summary: Not used. 405 with Allow POST (RFC-072).
+      security: [{ bearerAuth: [] }]
+    delete:
+      summary: Not used. 405 with Allow POST (RFC-072).
+      security: [{ bearerAuth: [] }]
   /mcp/catalog:
     get:
       summary: Checked-in MCP catalog (names, urls, default profile assignment). No secrets.

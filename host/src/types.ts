@@ -116,6 +116,11 @@ export interface DispatchRequest {
    * host process, environment, and tools.
    */
   sandbox?: boolean;
+  /**
+   * RFC-072. The remote MCP gateway sets this to `"mcp"` for tasks it starts.
+   * Any other value is ignored.
+   */
+  source?: "mcp";
 }
 
 export type SessionBackend = "grok" | "claude" | "antigravity" | "bot";
@@ -333,6 +338,8 @@ export interface DispatchSession {
   backend?: SessionBackend;
   /** Set when this session was started by a Bot scheduler / manual /run. */
   botId?: string;
+  /** RFC-072. Set when the remote MCP gateway started this task. */
+  source?: "mcp";
   /** Agent profile (account) this session runs under. */
   profileId?: string;
   /** Denormalized display name for list UI. */
@@ -781,6 +788,47 @@ export interface HostConfigFile {
    * This is NOT the old 120s wall clock — only an orphan safety net.
    */
   promptMaxMs?: number;
+  /**
+   * Remote MCP endpoint that hands work to Claude Code and Grok Build (RFC-072).
+   * Absent: `POST /mcp` is still served on the main gateway, limited to
+   * configured project paths, with a 2-hour turn cap and 2 tasks at a time.
+   * No extra port is opened.
+   */
+  mcpGateway?: McpGatewayConfig;
+}
+
+/**
+ * RFC-072. Stored in config.json (mode 0600). The token is a secret.
+ * `loadConfig` fills the numeric fields when the object is present.
+ */
+export interface McpGatewayConfig {
+  /**
+   * Bearer accepted only by `/mcp`. The host token also works there.
+   * This token does not authorize any other route.
+   */
+  token?: string;
+  /**
+   * Directories a remote task may use as its working directory, absolute
+   * or `~/…`. Empty or omitted: every configured project path, and nothing else.
+   */
+  allowedRoots?: string[];
+  /** Wall clock for one MCP turn, in ms. `0` disables. Default 2 hours. */
+  taskTimeoutMs?: number;
+  /**
+   * How many MCP tasks may be queued, running, or waiting on a person.
+   * `0` refuses new work. Default 2.
+   */
+  maxConcurrent?: number;
+  /**
+   * Extra `Origin` values allowed on `/mcp`, compared exactly.
+   * Missing Origin is allowed (server-to-server clients). Localhost is always allowed.
+   */
+  allowedOrigins?: string[];
+  /**
+   * Loopback port that serves only `/mcp` (and `/health`). Point Tailscale
+   * Funnel or a Cloudflare Tunnel here, never at `bindPort`. Unset = off.
+   */
+  publicBindPort?: number;
 }
 
 /**

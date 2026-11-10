@@ -89,9 +89,9 @@ export const MCP_CATALOG: readonly McpCatalogServer[] = [
     vendor: "Azure DevOps",
     transport: "stdio",
     command: "npx",
-    args: ["-y", "@azure-devops/mcp", "ShoreCP"],
+    args: ["-y", "@azure-devops/mcp", "example-org"],
     auth: "interactive Entra (browser on first tool use)",
-    notes: "FullScore org ShoreCP. Remote HTTP Sign in needs an Entra app oauthClientId; stdio is the working path.",
+    notes: "Example Azure DevOps organization. Remote HTTP Sign in needs an Entra app oauthClientId; stdio is the working path.",
   },
   {
     id: "azure",

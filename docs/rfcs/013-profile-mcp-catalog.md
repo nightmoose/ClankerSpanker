@@ -59,7 +59,7 @@ remote.
 | `fly` | Fly.io | stdio `flyctl mcp server` | flyctl already logged in | Machines / apps if we run anything on Fly |
 | `supabase` | Supabase | HTTP `https://mcp.supabase.com/mcp` (fallback stdio `@supabase/mcp-server-supabase`) | OAuth or access token in profile env | BlessingBox, Smolder, Dirt Work, Mercenary |
 | `databricks` | Databricks | stdio or workspace HTTP (URL is per-workspace) | PAT in `profile.env` | FullScore client data |
-| `azure-devops` | Azure DevOps | HTTP `https://mcp.dev.azure.com/{organization}` | Entra (RFC-009 may need a pre-registered client — Entra often rejects DCR). Fallback stdio `@azure-devops/mcp` | Shore / consulting; Azure DevOps repos stay off GitHub |
+| `azure-devops` | Azure DevOps | HTTP `https://mcp.dev.azure.com/{organization}` | Entra (RFC-009 may need a pre-registered client — Entra often rejects DCR). Fallback stdio `@azure-devops/mcp` | A consulting client; Azure DevOps repos stay off GitHub |
 | `azure` | Microsoft Azure MCP | stdio / remote `https://mcp.management.azure.com` | Entra | Data Factory / storage / Fabric-adjacent “data ops” |
 | `notion` | Notion | HTTP `https://mcp.notion.com/mcp` | OAuth | Ops notes / product docs |
 

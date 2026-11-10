@@ -93,7 +93,7 @@ NightMoose’s unless you reuse it). Notion: Sign in (separate OAuth under
   {
     "name": "azure-devops",
     "command": "npx",
-    "args": ["-y", "@azure-devops/mcp", "ShoreCP"],
+    "args": ["-y", "@azure-devops/mcp", "example-org"],
     "transport": "stdio"
   },
   {
